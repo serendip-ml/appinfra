@@ -1,0 +1,1052 @@
+"""
+Comprehensive tests for the configuration management module.
+
+Tests the Config class functionality including:
+- YAML loading and parsing
+- Variable substitution (${var} syntax)
+- Environment variable overrides
+- Relative path resolution
+- File size validation
+- Type conversion
+- Nested value access
+"""
+
+import os
+from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
+
+from appinfra.app.cfg import (
+    Config,
+    _check_file_size,
+    _preserve_config_attributes,
+    _restore_config_attributes,
+    get_config_path,
+    get_default_config,
+    get_etc_dir,
+    get_project_root,
+)
+from appinfra.app.constants import MAX_CONFIG_SIZE_BYTES
+
+# =============================================================================
+# Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def temp_yaml_file(tmp_path):
+    """Create a temporary YAML config file."""
+    config_file = tmp_path / "config.yaml"
+    content = """
+app:
+  name: test_app
+  version: 1.0.0
+  debug: false
+
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+
+logging:
+  level: info
+  format: json
+"""
+    config_file.write_text(content)
+    return str(config_file)
+
+
+@pytest.fixture
+def temp_yaml_with_substitution(tmp_path):
+    """Create a YAML file with variable substitution."""
+    config_file = tmp_path / "config.yaml"
+    content = """
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  url: postgresql://${database.host}:${database.port}/${database.name}
+
+api:
+  endpoint: http://${database.host}/api
+"""
+    config_file.write_text(content)
+    return str(config_file)
+
+
+@pytest.fixture
+def temp_yaml_with_paths(tmp_path):
+    """Create a YAML file with relative paths."""
+    config_file = tmp_path / "config.yaml"
+    content = """
+files:
+  data: ./data/file.txt
+  logs: ../logs/app.log
+  absolute: /var/log/app.log
+  url: http://example.com/path
+"""
+    config_file.write_text(content)
+    return str(config_file)
+
+
+@pytest.fixture
+def clean_env():
+    """Clean environment variables before and after test."""
+    original_env = os.environ.copy()
+    # Remove any INFRA_* variables
+    for key in list(os.environ.keys()):
+        if key.startswith("INFRA_"):
+            del os.environ[key]
+    yield
+    # Restore original environment
+    os.environ.clear()
+    os.environ.update(original_env)
+
+
+# =============================================================================
+# Test Config Initialization
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestConfigInitialization:
+    """Test Config class initialization."""
+
+    def test_init_with_valid_yaml(self, temp_yaml_file):
+        """Test initialization with valid YAML file."""
+        config = Config(temp_yaml_file)
+        assert config.app.name == "test_app"
+        assert config.app.version == "1.0.0"
+        assert config.database.host == "localhost"
+        assert config.database.port == 5432
+
+    def test_init_with_nonexistent_file(self, tmp_path):
+        """Test initialization with nonexistent file raises error."""
+        nonexistent = tmp_path / "nonexistent.yaml"
+        with pytest.raises(FileNotFoundError):
+            Config(str(nonexistent))
+
+    def test_init_stores_configuration_attributes(self, temp_yaml_file):
+        """Test that initialization stores configuration attributes."""
+        config = Config(
+            temp_yaml_file,
+            enable_env_overrides=False,
+            env_prefix="MYAPP_",
+            merge_strategy="merge",
+            resolve_paths=False,
+        )
+        assert config._enable_env_overrides is False
+        assert config._env_prefix == "MYAPP_"
+        assert config._merge_strategy == "merge"
+        assert config._resolve_paths is False
+
+    def test_init_default_attributes(self, temp_yaml_file):
+        """Test that default attributes are set correctly."""
+        config = Config(temp_yaml_file)
+        assert config._enable_env_overrides is True
+        assert config._env_prefix == "INFRA_"
+        assert config._merge_strategy == "replace"
+        assert config._resolve_paths is True
+
+    def test_init_with_malformed_yaml(self, tmp_path):
+        """Test initialization with malformed YAML raises error."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("invalid: yaml: content: ::::")
+        with pytest.raises(Exception):  # yaml.YAMLError or similar
+            Config(str(config_file))
+
+    def test_init_with_empty_file(self, tmp_path):
+        """Test initialization with empty YAML file."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("")
+        # Empty YAML returns None which causes TypeError
+        with pytest.raises(TypeError):
+            Config(str(config_file))
+
+
+# =============================================================================
+# Test Variable Substitution
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestVariableSubstitution:
+    """Test ${variable} substitution in configuration values."""
+
+    def test_simple_variable_substitution(self, temp_yaml_with_substitution):
+        """Test basic variable substitution."""
+        config = Config(temp_yaml_with_substitution)
+        assert config.database.url == "postgresql://localhost:5432/testdb"
+
+    def test_nested_variable_substitution(self, temp_yaml_with_substitution):
+        """Test variable substitution with nested paths."""
+        config = Config(temp_yaml_with_substitution)
+        assert config.api.endpoint == "http://localhost/api"
+
+    def test_multiple_substitutions_in_string(self, tmp_path):
+        """Test multiple variable substitutions in single string."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+server:
+  host: example.com
+  port: 8080
+  protocol: https
+  url: ${server.protocol}://${server.host}:${server.port}/api
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file))
+        assert config.server.url == "https://example.com:8080/api"
+
+    def test_substitution_with_nonexistent_variable(self, tmp_path):
+        """Test substitution with undefined variable raises error."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+app:
+  url: http://${undefined.variable}/path
+"""
+        config_file.write_text(content)
+        # Undefined variables raise DotDictPathNotFoundError
+        from appinfra.dot_dict import DotDictPathNotFoundError
+
+        with pytest.raises(DotDictPathNotFoundError):
+            Config(str(config_file))
+
+    def test_no_substitution_in_non_string_values(self, tmp_path):
+        """Test that substitution only applies to strings."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+values:
+  number: 123
+  boolean: true
+  list: [1, 2, 3]
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file))
+        assert config.values.number == 123
+        assert config.values.boolean is True
+        assert config.values.list == [1, 2, 3]
+
+
+# =============================================================================
+# Test Security
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestSecurity:
+    """Test security fixes and protections."""
+
+    def test_redos_prevention_malicious_pattern(self, tmp_path):
+        """Test that malicious ReDoS patterns are rejected (don't match)."""
+        import time
+
+        config_file = tmp_path / "config.yaml"
+        # Malicious pattern with many opening braces that could cause exponential backtracking
+        # With the old regex (.*?), this would cause catastrophic backtracking
+        # With the new regex ([a-zA-Z0-9_.]+), this simply won't match
+        content = """
+app:
+  name: myapp
+  # This malicious pattern should not cause ReDoS
+  url: ${{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{
+"""
+        config_file.write_text(content)
+
+        start = time.time()
+        config = Config(str(config_file))
+        elapsed = time.time() - start
+
+        # Should complete quickly (well under 1 second)
+        assert elapsed < 1.0, f"ReDoS vulnerability detected: took {elapsed}s"
+
+        # The malicious pattern should not be substituted (stays as-is)
+        assert "${" in config.app.url
+
+    def test_variable_substitution_restricts_to_valid_names(self, tmp_path):
+        """Test that variable substitution only works with valid names."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+app:
+  name: myapp
+  valid: ${app.name}
+  # Invalid characters in variable name (spaces, special chars)
+  invalid1: ${app name}
+  invalid2: ${app-name}
+  invalid3: ${app@name}
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file))
+
+        # Valid variable name should be substituted
+        assert config.app.valid == "myapp"
+
+        # Invalid variable names should not be substituted (stay as-is)
+        assert "${app name}" in config.app.invalid1
+        assert "${app-name}" in config.app.invalid2
+        assert "${app@name}" in config.app.invalid3
+
+    def test_variable_substitution_accepts_dots_and_underscores(self, tmp_path):
+        """Test that dots and underscores are allowed in variable names."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+db_config:
+  host: localhost
+  port: 5432
+app:
+  # Should support dots for nested paths
+  url1: http://${db_config.host}:${db_config.port}
+  # Should support underscores in section names
+  url2: ${db_config.host}
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file))
+
+        assert config.app.url1 == "http://localhost:5432"
+        assert config.app.url2 == "localhost"
+
+
+# =============================================================================
+# Test Environment Variable Overrides
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestEnvironmentOverrides:
+    """Test environment variable override functionality."""
+
+    def test_env_override_disabled(self, temp_yaml_file, clean_env):
+        """Test that env overrides can be disabled."""
+        os.environ["INFRA_LOGGING_LEVEL"] = "debug"
+        config = Config(temp_yaml_file, enable_env_overrides=False)
+        assert config.logging.level == "info"  # Original value, not debug
+
+    def test_env_override_enabled(self, temp_yaml_file, clean_env):
+        """Test that env overrides work when enabled."""
+        os.environ["INFRA_LOGGING_LEVEL"] = "debug"
+        config = Config(temp_yaml_file, enable_env_overrides=True)
+        assert config.logging.level == "debug"
+
+    def test_env_override_string_value(self, temp_yaml_file, clean_env):
+        """Test environment override for string values."""
+        os.environ["INFRA_APP_NAME"] = "overridden_app"
+        config = Config(temp_yaml_file)
+        assert config.app.name == "overridden_app"
+
+    def test_env_override_boolean_true(self, temp_yaml_file, clean_env):
+        """Test environment override for boolean true."""
+        os.environ["INFRA_APP_DEBUG"] = "true"
+        config = Config(temp_yaml_file)
+        assert config.app.debug is True
+
+    def test_env_override_boolean_false(self, temp_yaml_file, clean_env):
+        """Test environment override for boolean false."""
+        os.environ["INFRA_APP_DEBUG"] = "false"
+        config = Config(temp_yaml_file)
+        assert config.app.debug is False
+
+    def test_env_override_integer_value(self, temp_yaml_file, clean_env):
+        """Test environment override for integer values."""
+        os.environ["INFRA_DATABASE_PORT"] = "3306"
+        config = Config(temp_yaml_file)
+        assert config.database.port == 3306
+        assert isinstance(config.database.port, int)
+
+    def test_env_override_float_value(self, tmp_path, clean_env):
+        """Test environment override for float values."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("metrics:\n  threshold: 0.5")
+        os.environ["INFRA_METRICS_THRESHOLD"] = "0.95"
+        config = Config(str(config_file))
+        assert config.metrics.threshold == 0.95
+        assert isinstance(config.metrics.threshold, float)
+
+    def test_env_override_list_value(self, tmp_path, clean_env):
+        """Test environment override for list values."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("servers:\n  hosts: [localhost]")
+        os.environ["INFRA_SERVERS_HOSTS"] = "host1,host2,host3"
+        config = Config(str(config_file))
+        assert config.servers.hosts == ["host1", "host2", "host3"]
+
+    def test_env_override_list_with_mixed_types(self, tmp_path, clean_env):
+        """Test environment override for list with mixed types."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("data:\n  values: []")
+        os.environ["INFRA_DATA_VALUES"] = "text,123,true,3.14"
+        config = Config(str(config_file))
+        # Each element converted to its proper type
+        assert config.data.values == ["text", 123, True, 3.14]
+
+    def test_env_override_null_value(self, tmp_path, clean_env):
+        """Test environment override for null values."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("optional:\n  value: something")
+        os.environ["INFRA_OPTIONAL_VALUE"] = "null"
+        config = Config(str(config_file))
+        assert config.optional.value is None
+
+    def test_env_override_none_value(self, tmp_path, clean_env):
+        """Test environment override with 'none' string."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("optional:\n  value: something")
+        os.environ["INFRA_OPTIONAL_VALUE"] = "none"
+        config = Config(str(config_file))
+        assert config.optional.value is None
+
+    def test_env_override_empty_string(self, tmp_path, clean_env):
+        """Test environment override with empty string."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("optional:\n  value: something")
+        os.environ["INFRA_OPTIONAL_VALUE"] = ""
+        config = Config(str(config_file))
+        assert config.optional.value is None
+
+    def test_env_override_nested_path(self, temp_yaml_file, clean_env):
+        """Test environment override for deeply nested values."""
+        os.environ["INFRA_DATABASE_HOST"] = "remote.example.com"
+        config = Config(temp_yaml_file)
+        assert config.database.host == "remote.example.com"
+
+    def test_env_override_creates_missing_sections(self, temp_yaml_file, clean_env):
+        """Test that env overrides create missing config sections."""
+        os.environ["INFRA_NEW_SECTION_NEW_KEY"] = "new_value"
+        config = Config(temp_yaml_file)
+        assert config.new.section.new.key == "new_value"
+
+    def test_env_override_preserves_existing_structure(self, temp_yaml_file, clean_env):
+        """Test that env overrides don't destroy existing structure."""
+        os.environ["INFRA_LOGGING_LEVEL"] = "debug"
+        config = Config(temp_yaml_file)
+        # Override applied
+        assert config.logging.level == "debug"
+        # Other values preserved
+        assert config.logging.format == "json"
+
+    def test_custom_env_prefix(self, temp_yaml_file, clean_env):
+        """Test custom environment variable prefix."""
+        os.environ["MYAPP_LOGGING_LEVEL"] = "debug"
+        os.environ["INFRA_LOGGING_LEVEL"] = "warning"  # Should be ignored
+        config = Config(temp_yaml_file, env_prefix="MYAPP_")
+        assert config.logging.level == "debug"
+
+    def test_get_env_overrides_returns_applied_overrides(
+        self, temp_yaml_file, clean_env
+    ):
+        """Test get_env_overrides returns all applied overrides."""
+        os.environ["INFRA_LOGGING_LEVEL"] = "debug"
+        os.environ["INFRA_DATABASE_PORT"] = "3306"
+        config = Config(temp_yaml_file)
+        overrides = config.get_env_overrides()
+        assert "logging.level" in overrides
+        assert "database.port" in overrides
+        assert overrides["logging.level"] == "debug"
+        assert overrides["database.port"] == 3306
+
+    def test_get_env_overrides_when_disabled(self, temp_yaml_file, clean_env):
+        """Test get_env_overrides returns empty dict when disabled."""
+        os.environ["INFRA_LOGGING_LEVEL"] = "debug"
+        config = Config(temp_yaml_file, enable_env_overrides=False)
+        overrides = config.get_env_overrides()
+        assert overrides == {}
+
+
+# =============================================================================
+# Test Path Resolution
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestPathResolution:
+    """Test relative path resolution functionality."""
+
+    def test_resolve_relative_paths_enabled(self, temp_yaml_with_paths):
+        """Test relative path resolution when enabled."""
+        config = Config(temp_yaml_with_paths, resolve_paths=True)
+        # Relative paths should be resolved to absolute
+        assert Path(config.files.data).is_absolute()
+        assert Path(config.files.logs).is_absolute()
+        # Absolute paths should remain unchanged
+        assert config.files.absolute == "/var/log/app.log"
+        # URLs should remain unchanged
+        assert config.files.url == "http://example.com/path"
+
+    def test_resolve_relative_paths_disabled(self, temp_yaml_with_paths):
+        """Test that path resolution can be disabled."""
+        config = Config(temp_yaml_with_paths, resolve_paths=False)
+        # Paths should remain as-is
+        assert config.files.data == "./data/file.txt"
+        assert config.files.logs == "../logs/app.log"
+
+    def test_path_resolution_with_dot_slash(self, tmp_path):
+        """Test resolution of ./ paths."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("file: ./relative/path.txt")
+        config = Config(str(config_file), resolve_paths=True)
+        expected = str((tmp_path / "relative" / "path.txt").resolve())
+        assert config.file == expected
+
+    def test_path_resolution_with_dot_dot_slash(self, tmp_path):
+        """Test resolution of ../ paths."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("file: ../parent/path.txt")
+        config = Config(str(config_file), resolve_paths=True)
+        expected = str((tmp_path.parent / "parent" / "path.txt").resolve())
+        assert config.file == expected
+
+    def test_url_not_resolved_as_path(self, tmp_path):
+        """Test that URLs are not treated as paths."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+urls:
+  http: http://example.com/path
+  https: https://example.com/path
+  file: file:///absolute/path
+  postgres: postgresql://localhost:5432/db
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file), resolve_paths=True)
+        # All URLs should remain unchanged
+        assert config.urls.http == "http://example.com/path"
+        assert config.urls.https == "https://example.com/path"
+        assert config.urls.file == "file:///absolute/path"
+        assert config.urls.postgres == "postgresql://localhost:5432/db"
+
+    def test_absolute_path_not_resolved(self, tmp_path):
+        """Test that absolute paths are not changed."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("file: /absolute/path.txt")
+        config = Config(str(config_file), resolve_paths=True)
+        assert config.file == "/absolute/path.txt"
+
+    def test_non_path_strings_not_resolved(self, tmp_path):
+        """Test that regular strings are not treated as paths."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+strings:
+  plain: just_a_string
+  with_slash: some/value
+  number_like: 123/456
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file), resolve_paths=True)
+        # None of these should be resolved (no ./ or ../ prefix)
+        assert config.strings.plain == "just_a_string"
+        assert config.strings.with_slash == "some/value"
+        assert config.strings.number_like == "123/456"
+
+
+# =============================================================================
+# Test File Validation
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestFileValidation:
+    """Test file size validation and error handling."""
+
+    def test_file_size_within_limit(self, temp_yaml_file):
+        """Test that normal-sized files load successfully."""
+        config = Config(temp_yaml_file)
+        assert config.app.name == "test_app"
+
+    def test_file_size_exceeds_limit(self, tmp_path):
+        """Test that oversized files are rejected."""
+        config_file = tmp_path / "huge_config.yaml"
+        # Create a file larger than MAX_CONFIG_SIZE_BYTES
+        large_content = "x: " + ("a" * (MAX_CONFIG_SIZE_BYTES + 1000))
+        config_file.write_text(large_content)
+
+        with pytest.raises(ValueError, match="exceeding maximum size"):
+            Config(str(config_file))
+
+    def test_check_file_size_helper_accepts_valid(self, temp_yaml_file):
+        """Test _check_file_size helper with valid file."""
+        # Should not raise
+        _check_file_size(temp_yaml_file)
+
+    def test_check_file_size_helper_rejects_large(self, tmp_path):
+        """Test _check_file_size helper rejects large files."""
+        config_file = tmp_path / "huge.yaml"
+        large_content = "x" * (MAX_CONFIG_SIZE_BYTES + 1)
+        config_file.write_text(large_content)
+
+        with pytest.raises(ValueError, match="exceeding maximum size"):
+            _check_file_size(str(config_file))
+
+
+# =============================================================================
+# Test Type Conversion
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestTypeConversion:
+    """Test environment variable type conversion."""
+
+    def test_convert_boolean_true_lowercase(self, tmp_path, clean_env):
+        """Test conversion of 'true' string to boolean."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("flag: false")
+        os.environ["INFRA_FLAG"] = "true"
+        config = Config(str(config_file))
+        assert config.flag is True
+
+    def test_convert_boolean_false_lowercase(self, tmp_path, clean_env):
+        """Test conversion of 'false' string to boolean."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("flag: true")
+        os.environ["INFRA_FLAG"] = "false"
+        config = Config(str(config_file))
+        assert config.flag is False
+
+    def test_convert_integer(self, tmp_path, clean_env):
+        """Test conversion of integer strings."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("port: 0")
+        os.environ["INFRA_PORT"] = "8080"
+        config = Config(str(config_file))
+        assert config.port == 8080
+        assert type(config.port) is int
+
+    def test_convert_negative_integer(self, tmp_path, clean_env):
+        """Test conversion of negative integers."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("offset: 0")
+        os.environ["INFRA_OFFSET"] = "-100"
+        config = Config(str(config_file))
+        assert config.offset == -100
+
+    def test_convert_float(self, tmp_path, clean_env):
+        """Test conversion of float strings."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("ratio: 0.0")
+        os.environ["INFRA_RATIO"] = "3.14159"
+        config = Config(str(config_file))
+        assert config.ratio == 3.14159
+        assert type(config.ratio) is float
+
+    def test_convert_string_remains_string(self, tmp_path, clean_env):
+        """Test that plain strings remain as strings."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("name: original")
+        os.environ["INFRA_NAME"] = "new_name"
+        config = Config(str(config_file))
+        assert config.name == "new_name"
+        assert type(config.name) is str
+
+    def test_convert_comma_list(self, tmp_path, clean_env):
+        """Test conversion of comma-separated values to list."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("items: []")
+        os.environ["INFRA_ITEMS"] = "item1,item2,item3"
+        config = Config(str(config_file))
+        assert config.items == ["item1", "item2", "item3"]
+
+    def test_convert_mixed_type_list(self, tmp_path, clean_env):
+        """Test list with mixed types."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("mixed: []")
+        os.environ["INFRA_MIXED"] = "text,42,true,3.14,false"
+        config = Config(str(config_file))
+        assert config.mixed == ["text", 42, True, 3.14, False]
+
+
+# =============================================================================
+# Test Helper Functions
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestHelperFunctions:
+    """Test module-level helper functions."""
+
+    def test_preserve_config_attributes(self):
+        """Test preserving config attributes."""
+        mock_config = Mock()
+        mock_config._enable_env_overrides = False
+        mock_config._env_prefix = "TEST_"
+        mock_config._merge_strategy = "merge"
+        mock_config._resolve_paths = False
+
+        attrs = _preserve_config_attributes(mock_config)
+
+        assert attrs["enable_env_overrides"] is False
+        assert attrs["env_prefix"] == "TEST_"
+        assert attrs["merge_strategy"] == "merge"
+        assert attrs["resolve_paths"] is False
+
+    def test_preserve_config_attributes_with_defaults(self):
+        """Test preserving config attributes with missing attributes."""
+        mock_config = Mock(spec=[])  # Empty spec - no attributes
+
+        attrs = _preserve_config_attributes(mock_config)
+
+        # Should return defaults
+        assert attrs["enable_env_overrides"] is True
+        assert attrs["env_prefix"] == "INFRA_"
+        assert attrs["merge_strategy"] == "replace"
+        assert attrs["resolve_paths"] is True
+
+    def test_restore_config_attributes(self):
+        """Test restoring config attributes."""
+        mock_config = Mock()
+        attrs = {
+            "enable_env_overrides": False,
+            "env_prefix": "CUSTOM_",
+            "merge_strategy": "deep",
+            "resolve_paths": False,
+        }
+
+        _restore_config_attributes(mock_config, attrs)
+
+        assert mock_config._enable_env_overrides is False
+        assert mock_config._env_prefix == "CUSTOM_"
+        assert mock_config._merge_strategy == "deep"
+        assert mock_config._resolve_paths is False
+
+
+# =============================================================================
+# Test Utility Functions
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestUtilityFunctions:
+    """Test utility functions for project paths."""
+
+    def test_get_project_root_finds_root(self):
+        """Test get_project_root finds root directory."""
+        # This test only works if we're in the infra project
+        try:
+            root = get_project_root()
+            assert root.is_dir()
+            assert (root / "etc" / "infra.yaml").exists()
+        except FileNotFoundError:
+            pytest.skip("Not running in infra project directory")
+
+    def test_get_etc_dir_returns_etc_path(self):
+        """Test get_etc_dir returns etc directory."""
+        try:
+            etc_dir = get_etc_dir()
+            assert etc_dir.is_dir()
+            assert etc_dir.name == "etc"
+        except FileNotFoundError:
+            pytest.skip("Not running in infra project directory")
+
+    def test_get_config_path_with_default(self):
+        """Test get_config_path with default filename."""
+        try:
+            config_path = get_config_path()
+            assert config_path.name == "infra.yaml"
+            assert config_path.parent.name == "etc"
+        except FileNotFoundError:
+            pytest.skip("Not running in infra project directory")
+
+    def test_get_config_path_with_custom_file(self):
+        """Test get_config_path with custom filename."""
+        try:
+            config_path = get_config_path("custom.yaml")
+            assert config_path.name == "custom.yaml"
+            assert config_path.parent.name == "etc"
+        except FileNotFoundError:
+            pytest.skip("Not running in infra project directory")
+
+    def test_get_default_config_returns_config(self):
+        """Test get_default_config returns Config instance."""
+        try:
+            config = get_default_config()
+            if config is not None:
+                assert isinstance(config, Config)
+        except FileNotFoundError:
+            pytest.skip("Not running in infra project directory")
+
+
+# =============================================================================
+# Test Validation
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestValidation:
+    """Test configuration validation."""
+
+    def test_validate_with_simple_config(self, tmp_path):
+        """Test validation with simple config."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("app:\n  name: test")
+        config = Config(str(config_file))
+        # Validation may return True, False, or validated object depending on pydantic availability
+        result = config.validate(raise_on_error=False)
+        # Should not raise and should return something
+        assert result is not None or result is False
+
+    def test_validate_returns_result(self, tmp_path):
+        """Test validation returns a result."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("simple: value")
+        config = Config(str(config_file))
+        # Validation should return something (True, False, or validated object)
+        result = config.validate(raise_on_error=False)
+        # Just verify it doesn't crash
+        assert result is not None or result is False or result is True
+
+
+# =============================================================================
+# Test Integration Scenarios
+# =============================================================================
+
+
+@pytest.mark.integration
+class TestIntegrationScenarios:
+    """Test real-world configuration scenarios."""
+
+    def test_config_reload_preserves_attributes(self, temp_yaml_file, tmp_path):
+        """Test that reloading config preserves attributes."""
+        # Create initial config with custom attributes
+        config = Config(temp_yaml_file, enable_env_overrides=False, env_prefix="TEST_")
+
+        # Verify initial attributes
+        assert config._enable_env_overrides is False
+        assert config._env_prefix == "TEST_"
+
+        # Create a new config file
+        new_file = tmp_path / "new_config.yaml"
+        new_file.write_text("new:\n  value: 123")
+
+        # Reload config
+        config._load(str(new_file))
+
+        # Attributes should be preserved
+        assert config._enable_env_overrides is False
+        assert config._env_prefix == "TEST_"
+
+        # New values should be loaded
+        assert config.new.value == 123
+
+    def test_substitution_not_recursive(self, tmp_path):
+        """Test that variable substitution is not recursive."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+env: production
+region: us-west
+tier: web
+
+cluster: ${env}-${region}-${tier}
+endpoint: https://${cluster}.example.com
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file))
+
+        # First level substitution works
+        assert config.cluster == "production-us-west-web"
+        # When ${cluster} is substituted, it becomes "${env}-${region}-${tier}"
+        # but those variables are not recursively resolved
+        # This is a limitation - substitution is not recursive
+        assert config.endpoint == "https://${env}-${region}-${tier}.example.com"
+
+    def test_env_overrides_with_substitution(self, tmp_path, clean_env):
+        """Test environment overrides work with variable substitution."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+database:
+  host: localhost
+  port: 5432
+  url: postgresql://${database.host}:${database.port}/db
+"""
+        config_file.write_text(content)
+        os.environ["INFRA_DATABASE_HOST"] = "remote.example.com"
+        config = Config(str(config_file))
+
+        # Env override should be applied before substitution
+        assert config.database.host == "remote.example.com"
+        assert config.database.url == "postgresql://remote.example.com:5432/db"
+
+    def test_nested_list_and_dict_structures(self, tmp_path):
+        """Test handling of complex nested structures."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+servers:
+  - name: web1
+    host: web1.example.com
+    ports: [80, 443]
+  - name: web2
+    host: web2.example.com
+    ports: [80, 443]
+
+database:
+  replicas:
+    primary:
+      host: db-primary.example.com
+      port: 5432
+    secondary:
+      host: db-secondary.example.com
+      port: 5432
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file))
+
+        assert len(config.servers) == 2
+        assert config.servers[0].name == "web1"
+        assert config.servers[0].ports == [80, 443]
+        assert config.database.replicas.primary.host == "db-primary.example.com"
+
+    def test_path_resolution_in_nested_structures(self, tmp_path):
+        """Test path resolution works in nested lists and dicts."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+files:
+  configs:
+    - ./config1.yaml
+    - ./config2.yaml
+  logs:
+    primary: ./logs/primary.log
+    secondary: ./logs/secondary.log
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file), resolve_paths=True)
+
+        # List paths should be resolved
+        assert Path(config.files.configs[0]).is_absolute()
+        assert Path(config.files.configs[1]).is_absolute()
+
+        # Nested dict paths should be resolved
+        assert Path(config.files.logs.primary).is_absolute()
+        assert Path(config.files.logs.secondary).is_absolute()
+
+
+# =============================================================================
+# Test Edge Cases
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestEdgeCases:
+    """Test edge cases and boundary conditions."""
+
+    def test_empty_config_file(self, tmp_path):
+        """Test empty configuration file raises TypeError."""
+        config_file = tmp_path / "empty.yaml"
+        config_file.write_text("")
+        # Empty YAML returns None which causes TypeError
+        with pytest.raises(TypeError):
+            Config(str(config_file))
+
+    def test_config_with_only_comments(self, tmp_path):
+        """Test config file with only comments raises TypeError."""
+        config_file = tmp_path / "comments.yaml"
+        content = """
+# This is a comment
+# Another comment
+"""
+        config_file.write_text(content)
+        # Comments-only YAML returns None which causes TypeError
+        with pytest.raises(TypeError):
+            Config(str(config_file))
+
+    def test_config_with_unicode(self, tmp_path):
+        """Test config with unicode characters."""
+        config_file = tmp_path / "unicode.yaml"
+        content = """
+message: "Hello 世界 🌍"
+name: "José García"
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file))
+        assert config.message == "Hello 世界 🌍"
+        assert config.name == "José García"
+
+    def test_very_deep_nesting(self, tmp_path):
+        """Test very deeply nested configuration."""
+        config_file = tmp_path / "deep.yaml"
+        content = """
+a:
+  b:
+    c:
+      d:
+        e:
+          f:
+            g:
+              value: deep
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file))
+        assert config.a.b.c.d.e.f.g.value == "deep"
+
+    def test_env_override_very_deep_nesting(self, tmp_path, clean_env):
+        """Test env override for very deeply nested path."""
+        config_file = tmp_path / "deep.yaml"
+        config_file.write_text("a:\n  b:\n    c: original")
+        os.environ["INFRA_A_B_C"] = "overridden"
+        config = Config(str(config_file))
+        assert config.a.b.c == "overridden"
+
+    def test_numeric_string_not_converted_in_yaml(self, tmp_path):
+        """Test that numeric strings in YAML remain strings."""
+        config_file = tmp_path / "strings.yaml"
+        content = """
+version: "1.0.0"
+code: "00123"
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file))
+        assert config.version == "1.0.0"
+        assert config.code == "00123"
+
+    def test_special_yaml_values(self, tmp_path):
+        """Test YAML special values (null, true, false)."""
+        config_file = tmp_path / "special.yaml"
+        content = """
+null_value: null
+true_value: true
+false_value: false
+yes_value: yes
+no_value: no
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file))
+        assert config.null_value is None
+        assert config.true_value is True
+        assert config.false_value is False
+        assert config.yes_value is True
+        assert config.no_value is False
+
+
+@pytest.mark.unit
+class TestConfigErrors:
+    """Test configuration error handling."""
+
+    def test_invalid_yaml_raises_error(self, tmp_path):
+        """Test that invalid YAML raises YAMLError."""
+        import yaml
+
+        config_file = tmp_path / "invalid.yaml"
+        # Invalid YAML: unmatched brackets
+        config_file.write_text("invalid: yaml: content: [")
+
+        with pytest.raises(yaml.YAMLError):
+            Config(str(config_file))
+
+    def test_file_not_found_raises_error(self, tmp_path):
+        """Test that missing config file raises FileNotFoundError."""
+        missing_file = tmp_path / "nonexistent.yaml"
+
+        with pytest.raises(FileNotFoundError):
+            Config(str(missing_file))
+
+    def test_yaml_with_invalid_substitution(self, tmp_path):
+        """Test YAML with reference to nonexistent key."""
+        from appinfra.dot_dict import DotDictPathNotFoundError
+
+        config_file = tmp_path / "config.yaml"
+        content = """
+database:
+  host: localhost
+  # Reference to nonexistent key should cause error during substitution
+  url: postgresql://${nonexistent.key}:5432/db
+"""
+        config_file.write_text(content)
+
+        # Should raise DotDictPathNotFoundError when trying to substitute ${nonexistent.key}
+        with pytest.raises(DotDictPathNotFoundError):
+            Config(str(config_file))

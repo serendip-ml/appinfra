@@ -1,0 +1,23 @@
+# Test config with various path types
+logging:
+  file: ./logs/app.log  # Should resolve relative to this file
+  error_file: ../errors/error.log  # Should resolve relative to this file
+
+database:
+  cert_path: ./certs/pg.crt
+  data_dir: ./data
+  backup_dir: ../backups
+
+server:
+  url: http://localhost:8080/api  # Should NOT resolve (URL)
+  base_path: /var/data  # Should NOT resolve (absolute path)
+  config_file: ./server.conf  # Should resolve
+
+paths_in_list:
+  files:
+    - ./file1.txt
+    - ./file2.txt
+    - ../file3.txt
+
+# Include another config file
+included: !include "./includes/database_paths.yaml"

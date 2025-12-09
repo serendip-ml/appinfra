@@ -1,0 +1,57 @@
+# Makefile.cicd - Docker-based CI/CD Targets
+#
+# Provides: cicd.test, cicd.shell, cicd.build, cicd.clean, cicd.erase
+# Requires: areyousure (from Makefile.utils)
+#
+# Configuration variables (set in Makefile before include):
+#   INFRA_CICD_PYTHON_VERSION - Default Python version for CICD (default: 3.12)
+
+# Flag to indicate CICD Makefile is loaded
+CICD_INCLUDED := true
+
+# Configuration
+INFRA_CICD_PYTHON_VERSION ?= 3.12
+
+CICD_DIR := $(local)/scripts/cicd
+
+##@ CI/CD (Docker Compose)
+
+cicd.test:: ## Run complete CI checks in Docker (summaries + failures only, Python 3.12)
+	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.12.yml run --build --rm cicd-test bash -c "make check.summary"
+.PHONY: cicd.test
+
+cicd.test.v:: ## Run complete CI checks in Docker with verbose output (Python 3.12)
+	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.12.yml run --build --rm cicd-test bash -c "make check.raw"
+.PHONY: cicd.test.v
+
+cicd.test.py311:: ## Run complete CI checks in Docker (Python 3.11)
+	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.11.yml run --build --rm cicd-test bash -c "make check.summary"
+.PHONY: cicd.test.py311
+
+cicd.test.py313:: ## Run complete CI checks in Docker (Python 3.13)
+	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.13.yml run --build --rm cicd-test bash -c "make check.summary"
+.PHONY: cicd.test.py313
+
+cicd.shell:: ## Open interactive shell in Docker container (Python 3.12)
+	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.12.yml run --build --rm cicd-test bash
+.PHONY: cicd.shell
+
+cicd.build:: ## Build Docker images for all Python versions
+	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.11.yml build
+	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.12.yml build
+	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.13.yml build
+.PHONY: cicd.build
+
+cicd.clean:: ## Stop and remove Docker containers and volumes
+	cd $(CICD_DIR) && docker compose down -v --remove-orphans
+.PHONY: cicd.clean
+
+cicd.erase:: areyousure ## Stop and remove Docker containers, volumes, and images
+	@$(MAKE) cicd.erase.internal
+.PHONY: cicd.erase
+
+cicd.erase.internal:: # Internal: cleanup without confirmation (used by clean.full)
+	cd $(CICD_DIR) && docker compose down -v --rmi all --remove-orphans
+	@echo "Force removing any remaining CICD images..."
+	@docker images --filter "reference=infra-test:*" --format "{{.ID}}" | xargs -r docker rmi -f 2>/dev/null || true
+.PHONY: cicd.erase.internal

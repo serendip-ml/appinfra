@@ -1,0 +1,14 @@
+# Config with no relative paths (for testing resolve_paths=False)
+server:
+  host: localhost
+  port: 8080
+  url: http://example.com/api
+
+database:
+  host: db.example.com
+  port: 5432
+  name: mydb
+
+settings:
+  debug: true
+  log_level: info

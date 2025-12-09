@@ -1,0 +1,53 @@
+# Makefile.clean - Cleanup Targets
+#
+# Provides: clean, clean.full
+# Requires: areyousure (from Makefile.utils)
+#
+# Configuration variables (set in Makefile before include):
+#   INFRA_CLEAN_PRESERVE - Space-separated list of files/dirs to preserve (default: .data .logs .GRADING.md)
+
+# Configuration
+INFRA_CLEAN_PRESERVE ?= .data .logs .GRADING.md
+
+##@ Cleanup
+
+clean:: areyousure ## restores project to original post-clone state (preserves .data/, .logs/, .GRADING.md)
+	@echo "* restoring project to original state..."
+	@echo "  - Removing coverage files (.htmlcov/, .coverage, .coverage.json, .cicd-coverage/)..."
+	@rm -rf .htmlcov .cicd-coverage
+	@rm -f .coverage .coverage.json
+	@echo "  - Removing build artifacts (*.egg-info, .dist/, .build/, dist/, build/)..."
+	@rm -rf *.egg-info .dist .build dist build
+	@echo "  - Removing documentation build (.site/)..."
+	@rm -rf .site
+	@echo "  - Removing tool caches (.mypy_cache/, .pytest_cache/, .ruff_cache/)..."
+	@rm -rf .mypy_cache .pytest_cache .ruff_cache
+	@echo "  - Removing hidden markdown files (.*.md except .GRADING.md)..."
+	@find . -maxdepth 1 -name ".*.md" -type f ! -name ".GRADING.md" -delete 2>/dev/null || true
+	@echo "  - Removing local env overrides (.env.local)..."
+	@find . -name ".env.local" -type f -delete 2>/dev/null || true
+	@echo "  - Removing Python cache directories (__pycache__/)..."
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@echo "  - Removing Python compiled files (*.pyc, *.pyo)..."
+	@find . -name "*.pyc" -delete 2>/dev/null || true
+	@find . -name "*.pyo" -delete 2>/dev/null || true
+	@echo "* cleanup complete - project restored to original state (.data/, .logs/, .GRADING.md preserved)"
+.PHONY: clean
+
+clean.full:: clean ## Complete cleanup: local files + Docker resources (if available)
+ifdef CICD_INCLUDED
+	@$(MAKE) cicd.erase.internal
+endif
+ifdef PG_INCLUDED
+	@$(MAKE) pg.server.clean.internal
+endif
+ifdef CICD_INCLUDED
+	@echo "* full cleanup complete - all files and Docker resources removed"
+else
+ifdef PG_INCLUDED
+	@echo "* full cleanup complete - all files and Docker resources removed"
+else
+	@echo "* full cleanup complete - all files removed (Docker not included, resources skipped)"
+endif
+endif
+.PHONY: clean.full

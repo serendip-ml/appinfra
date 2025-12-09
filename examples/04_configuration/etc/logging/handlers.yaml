@@ -1,0 +1,9 @@
+# Logging handlers configuration
+
+console:
+  enabled: true
+  format: text
+
+file:
+  enabled: true
+  format: json

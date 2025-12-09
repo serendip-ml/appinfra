@@ -1,0 +1,38 @@
+# Makefile.all - Convenience master include for Infra Makefile Framework
+#
+# Includes all modules. For selective inclusion, include individual
+# Makefiles instead of this file.
+#
+# Usage (in consuming project's Makefile):
+#   infra := path/to/infra
+#   INFRA_DEV_PKG_NAME := myproject
+#   include $(infra)/scripts/make/Makefile.all
+#
+# For selective inclusion (preferred for submodule use):
+#   infra := path/to/infra
+#   INFRA_DEV_PKG_NAME := myproject
+#   include $(infra)/scripts/make/Makefile.config
+#   include $(infra)/scripts/make/Makefile.env
+#   include $(infra)/scripts/make/Makefile.help
+#   include $(infra)/scripts/make/Makefile.utils
+#   include $(infra)/scripts/make/Makefile.dev
+#   include $(infra)/scripts/make/Makefile.pytest
+#   # Skip: Makefile.docs, Makefile.pg, Makefile.cicd if not needed
+#   include $(infra)/scripts/make/Makefile.clean
+
+# Determine the directory containing this Makefile
+_infra_make_dir := $(dir $(lastword $(MAKEFILE_LIST)))
+
+# Load configuration first
+include $(_infra_make_dir)Makefile.config
+
+# Include all modules
+include $(_infra_make_dir)Makefile.env
+include $(_infra_make_dir)Makefile.help
+include $(_infra_make_dir)Makefile.utils
+include $(_infra_make_dir)Makefile.dev
+include $(_infra_make_dir)Makefile.pytest
+include $(_infra_make_dir)Makefile.docs
+include $(_infra_make_dir)Makefile.pg
+include $(_infra_make_dir)Makefile.cicd
+include $(_infra_make_dir)Makefile.clean

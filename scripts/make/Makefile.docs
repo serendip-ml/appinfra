@@ -1,0 +1,33 @@
+# Makefile.docs - Documentation Targets (MkDocs)
+#
+# Provides: docs.serve, docs.check, docs.build, docs.deploy
+# Requires: PYTHON (from Makefile.env), areyousure (from Makefile.utils)
+#
+# Configuration variables (set in Makefile before include):
+#   INFRA_DOCS_CONFIG     - Path to mkdocs.yaml (default: etc/mkdocs.yaml)
+#   INFRA_DOCS_OUTPUT_DIR - Output directory for build (default: .site)
+
+# Configuration
+INFRA_DOCS_CONFIG ?= etc/mkdocs.yaml
+INFRA_DOCS_OUTPUT_DIR ?= .site
+
+##@ Documentation
+
+docs.serve:: ## Serve documentation with live reload
+	$(PYTHON) -m mkdocs serve -f $(INFRA_DOCS_CONFIG)
+.PHONY: docs.serve
+
+docs.check:: ## Validate documentation without permanent output
+	@echo "* validating documentation build..."
+	@$(PYTHON) -m mkdocs build -f $(INFRA_DOCS_CONFIG) -d /tmp/infra-mkdocs-check -q
+	@rm -rf /tmp/infra-mkdocs-check
+	@echo "* documentation validation passed"
+.PHONY: docs.check
+
+docs.build:: ## Build static documentation site
+	$(PYTHON) -m mkdocs build -f $(INFRA_DOCS_CONFIG) -d $(INFRA_DOCS_OUTPUT_DIR)
+.PHONY: docs.build
+
+docs.deploy:: areyousure ## Deploy documentation to GitHub Pages
+	$(PYTHON) -m mkdocs gh-deploy -f $(INFRA_DOCS_CONFIG)
+.PHONY: docs.deploy

@@ -1,0 +1,4 @@
+# Nested Includes Example
+# Demonstrates multi-level includes: main → level1 → level2 → level3
+
+config: !include './02_nested_level1.yaml'

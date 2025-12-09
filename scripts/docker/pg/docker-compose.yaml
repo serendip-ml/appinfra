@@ -1,0 +1,104 @@
+services:
+  # Single instance mode (default)
+  postgres:
+    profiles: ["single"]
+    container_name: ${NAME:?}
+    image: postgres:${VERSION:?}
+    command:
+      - postgres
+      - -c
+      - max_connections=500
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - join_collapse_limit=1
+      - -c
+      - autovacuum=true
+    restart: always
+    volumes:
+      - "$PWD:$PWD"
+    working_dir: $PWD
+    ports:
+      - ${PORT:?}:${PORT}
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+      - PGPORT=${PORT}
+
+  # Replication mode: Primary server
+  postgres-primary:
+    profiles: ["replication"]
+    container_name: ${NAME:?}-primary
+    image: postgres:${VERSION:?}
+    command:
+      - postgres
+      - -c
+      - max_connections=500
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - join_collapse_limit=1
+      - -c
+      - autovacuum=true
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+    restart: always
+    volumes:
+      - "$PWD:$PWD"
+      - pgdata_primary:/var/lib/postgresql/data
+      - ${PWD}/scripts/docker/pg/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    working_dir: $PWD
+    ports:
+      - ${PORT:?}:${PORT}
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+      - PGPORT=${PORT}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Replication mode: Standby server (read-only replica)
+  postgres-standby:
+    profiles: ["replication"]
+    container_name: ${NAME:?}-standby
+    image: postgres:${VERSION:?}
+    restart: always
+    volumes:
+      - "$PWD:$PWD"
+      - pgdata_standby:/var/lib/postgresql/data
+    working_dir: $PWD
+    ports:
+      - ${PORT_R:?}:${PORT_R}
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+      - PGPORT=${PORT_R}
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    entrypoint: >
+      bash -c "
+        rm -rf /var/lib/postgresql/data/*
+        until pg_isready -h postgres-primary -p ${PORT} -U postgres; do
+          echo 'Waiting for primary to be ready...'
+          sleep 2
+        done
+        echo 'Primary is ready, starting base backup...'
+        PGPASSWORD='' pg_basebackup -h postgres-primary -p ${PORT} -U postgres -D /var/lib/postgresql/data -Fp -Xs -P -R
+        chown -R postgres:postgres /var/lib/postgresql/data
+        chmod 0700 /var/lib/postgresql/data
+        echo 'Base backup complete, starting standby server...'
+        exec gosu postgres postgres -c max_connections=500
+      "
+
+volumes:
+  pgdata_primary:
+  pgdata_standby:

@@ -1,0 +1,4 @@
+# Database config (included by 04_multiple_main.yaml)
+
+host: localhost
+port: 5432

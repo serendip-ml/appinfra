@@ -1,0 +1,69 @@
+# FastAPI Server Configuration
+# ============================
+# This file contains FastAPI server configuration for HTTP APIs with optional
+# subprocess isolation and queue-based IPC.
+#
+# Installation: pip install appinfra[fastapi]
+
+# API Server Settings
+# ===================
+# Core server binding and OpenAPI metadata
+api:
+  host: "0.0.0.0"              # Bind address (use 127.0.0.1 for local-only)
+  port: 8000                   # Bind port
+  title: "API Server"          # OpenAPI documentation title
+  description: ""              # OpenAPI documentation description
+  version: "0.1.0"             # API version shown in docs
+  response_timeout: 60.0       # Default response timeout in seconds
+
+  # Subprocess Settings
+  # -------------------
+  # Controls behavior when running API server in a separate process
+  log_file: null               # Path for subprocess log isolation (null = no file logging)
+  auto_restart: true           # Automatically restart subprocess on crash
+  restart_delay: 1.0           # Seconds to wait before restarting
+  max_restarts: 5              # Maximum restart attempts (0 = unlimited)
+
+# Uvicorn Settings
+# ================
+# Configuration passed to uvicorn ASGI server
+uvicorn:
+  workers: 1                   # Number of worker processes (1 recommended for subprocess mode)
+  log_level: "warning"         # Uvicorn log level: debug, info, warning, error, critical
+  access_log: false            # Enable HTTP access logging (increases verbosity)
+  timeout_keep_alive: 5        # Keep-alive timeout in seconds
+  backlog: 2048                # Socket connection backlog size
+  limit_concurrency: null      # Max concurrent connections (null = unlimited)
+  limit_max_requests: null     # Max requests per worker before restart (null = unlimited)
+  # SSL Configuration (uncomment to enable HTTPS)
+  # ssl_keyfile: "/path/to/key.pem"
+  # ssl_certfile: "/path/to/cert.pem"
+
+# IPC Settings
+# ============
+# Inter-process communication settings for subprocess mode
+# These settings control queue-based communication between the main process
+# and the FastAPI subprocess
+ipc:
+  poll_interval: 0.01          # Response queue polling interval in seconds (10ms = 100 polls/sec)
+  response_timeout: 60.0       # Default timeout waiting for response from main process
+  max_pending: 100             # Maximum pending requests before rejection (prevents memory growth)
+  enable_health_reporting: true  # Include IPC status in /_health endpoint
+
+# Usage Examples
+# ==============
+#
+# Direct Mode (simple, blocking):
+#   server = (ServerBuilder("myapi")
+#       .with_config(ApiConfig(**config['api']))
+#       .uvicorn.with_config(UvicornConfig(**config['uvicorn'])).done()
+#       .build())
+#   server.start()
+#
+# Subprocess Mode (non-blocking, IPC):
+#   request_q, response_q = mp.Queue(), mp.Queue()
+#   server = (ServerBuilder("myapi")
+#       .with_config(ApiConfig(**config['api'], ipc=IPCConfig(**config['ipc'])))
+#       .subprocess.with_ipc(request_q, response_q).done()
+#       .build())
+#   proc = server.start_subprocess()

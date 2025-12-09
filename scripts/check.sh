@@ -1,0 +1,527 @@
+#!/usr/bin/env bash
+# Code quality check runner with progress indicators
+# Supports parallel execution, coverage checking, and fail-fast mode
+#
+# IMPORTANT: Run via 'make check', not directly. The Makefile exports required
+# variables (PYTHON, INFRA_DEV_PKG_NAME, INFRA_DEV_CQ_STRICT, INFRA_DEV_PROJECT_ROOT).
+# Direct execution uses fallback defaults that may not match your project configuration.
+
+set -euo pipefail
+shopt -s nullglob
+
+# === PARAMETER PARSING ===
+
+PARALLEL=true
+NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
+PYTEST_JOBS=$(( NPROC / 4 > 2 ? NPROC / 4 : 2 ))
+PYTEST_PARALLEL="-n ${PYTEST_JOBS}"
+COVERAGE_TARGET=""
+FAIL_FAST=false
+RAW=false
+SUMMARY=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --sequential) PARALLEL=false; PYTEST_PARALLEL=""; shift ;;
+        --coverage-target) COVERAGE_TARGET="$2"; shift 2 ;;
+        --fail-fast) FAIL_FAST=true; shift ;;
+        --raw)
+            RAW=true
+            PARALLEL=false
+            PYTEST_PARALLEL=""
+            FAIL_FAST=true
+            shift
+            ;;
+        --summary) SUMMARY=true; shift ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--sequential] [--coverage-target <percentage>] [--fail-fast] [--raw] [--summary]"
+            exit 1
+            ;;
+    esac
+done
+
+# === CONFIGURATION ===
+
+GREEN=$'\033[32m'
+RED=$'\033[31m'
+YELLOW=$'\033[33m'
+GRAY=$'\033[90m'
+RESET=$'\033[0m'
+CLEAR=$'\033[K'
+
+CHECK_PENDING="[ ] "
+CHECK_RUNNING="[...]"
+CHECK_SUCCESS="[✓] "
+CHECK_FAILURE="[✗] "
+
+PYTHON="${PYTHON:-~/.venv/bin/python}"
+PKG_NAME="${INFRA_DEV_PKG_NAME:-appinfra}"
+CQ_STRICT="${INFRA_DEV_CQ_STRICT:-false}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="${INFRA_DEV_PROJECT_ROOT:-$(dirname "$SCRIPT_DIR")}"
+
+MAIN_PID=$$
+DISPLAY_LOCK="/tmp/infra-check-display-lock-${MAIN_PID}"
+STATUS_DIR="/tmp/infra-check-status-${MAIN_PID}"
+mkdir -p "$STATUS_DIR"
+
+DEFAULT_COVERAGE_TARGET="95.0"
+COVERAGE_TARGET="${COVERAGE_TARGET:-$DEFAULT_COVERAGE_TARGET}"
+
+# Check definitions: "Name|Make Target|Command|Fix Target"
+declare -a CHECKS=(
+    "Formatting check|fmt.check|${PYTHON} -m ruff format --check .|fmt"
+    "Linting|lint|${PYTHON} -m ruff check .|lint.fix"
+    "Type checking|type|${PYTHON} -m mypy ${PKG_NAME}/ --exclude 'examples/'|"
+)
+
+# Add examples type check only if directory exists (top-level or inside package)
+EXAMPLES_DIR=""
+if [ -d "examples" ]; then
+    EXAMPLES_DIR="examples"
+elif [ -d "${PKG_NAME}/examples" ]; then
+    EXAMPLES_DIR="${PKG_NAME}/examples"
+fi
+if [ -n "$EXAMPLES_DIR" ]; then
+    CHECKS+=("Type checking (examples)|type|${PYTHON} -m mypy ${EXAMPLES_DIR}/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports|")
+fi
+
+# Build CQ command based on strictness setting
+if [ "$CQ_STRICT" = "true" ]; then
+    CQ_CMD="${PYTHON} -m appinfra.cli.cli -l error cq cf --strict"
+else
+    CQ_CMD="${PYTHON} -m appinfra.cli.cli -l error cq cf"
+fi
+
+# Add remaining checks
+CHECKS+=(
+    "Function size check|cq.strict|${CQ_CMD}|"
+    "Test suite|test.all|SPECIAL|test.v"
+)
+
+# Test subchecks: "Name|Make Target|Command|Coverage Target"
+declare -a TEST_SUBCHECKS=(
+    "Unit tests|test.unit|${PYTHON} -m pytest tests/ -m unit --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
+    "Integration tests|test.integration|${PYTHON} -m pytest tests/ -m integration --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
+    "E2E tests|test.e2e|${PYTHON} -m pytest tests/ -m e2e --tb=short --no-header -qq|"
+    "Security tests|test.security|${PYTHON} -m pytest tests/ -m security --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
+    "Performance tests|test.perf|${PYTHON} -m pytest tests/ -m performance --tb=short --no-header -qq|"
+    "Code coverage|test.coverage|${PYTHON} -m pytest tests/ -m unit --cov=${PKG_NAME} --cov-report=term -qq ${PYTEST_PARALLEL}|${COVERAGE_TARGET}"
+)
+
+# Verbose versions for raw mode
+declare -a TEST_SUBCHECKS_RAW=(
+    "Unit tests|test.unit.v|${PYTHON} -m pytest tests/ -m unit -v --tb=short ${PYTEST_PARALLEL}|"
+    "Integration tests|test.integration.v|${PYTHON} -m pytest tests/ -m integration -v --tb=short ${PYTEST_PARALLEL}|"
+    "E2E tests|test.e2e.v|${PYTHON} -m pytest tests/ -m e2e -v --tb=short|"
+    "Security tests|test.security.v|${PYTHON} -m pytest tests/ -m security -v --tb=short ${PYTEST_PARALLEL}|"
+    "Performance tests|test.perf.v|${PYTHON} -m pytest tests/ -m performance -v --tb=short|"
+    "Code coverage|test.coverage|${PYTHON} -m pytest tests/ -m unit --cov=${PKG_NAME} --cov-report=term-missing ${PYTEST_PARALLEL}|${COVERAGE_TARGET}"
+)
+
+declare -A CHECK_LINES
+declare -A SUBCHECK_LINES
+TOTAL_LINES=0
+INTERRUPTED=false
+
+# === CLEANUP ===
+
+cleanup() {
+    if [ "$BASHPID" -eq "$MAIN_PID" ]; then
+        jobs -p | xargs -r kill -TERM 2>/dev/null || true
+        sleep 0.1
+        jobs -p | xargs -r kill -KILL 2>/dev/null || true
+        rm -rf "$STATUS_DIR" "$DISPLAY_LOCK" 2>/dev/null || true
+    fi
+}
+
+handle_interrupt() {
+    INTERRUPTED=true
+    jobs -p | xargs -r kill -TERM 2>/dev/null || true
+}
+
+check_interrupted() {
+    if [ "$INTERRUPTED" = true ]; then
+        cleanup
+        tput cnorm 2>/dev/null || printf "\033[?25h"
+        echo ""
+        echo -e "${RED}✗ Interrupted by user${RESET}"
+        exit 130
+    fi
+}
+
+trap cleanup EXIT
+trap handle_interrupt INT TERM
+
+# === DISPLAY HELPERS ===
+
+update_line() {
+    local line_num=$1 status=$2 name=$3 extra=$4
+    {
+        flock -x 200
+        local lines_up=$((TOTAL_LINES - line_num))
+        [ $lines_up -gt 0 ] && printf "\033[${lines_up}A"
+        printf "\r%b%s %s%b\n" "$CLEAR" "$status" "$name" "$extra"
+        [ $lines_up -gt 1 ] && printf "\033[$((lines_up - 1))B"
+        printf "\r"
+    } 200>"$DISPLAY_LOCK"
+}
+
+display_failures() {
+    [ -f "${STATUS_DIR}/failures" ] || return 0
+
+    while IFS='|' read -r name make_target fix_target logfile extra; do
+        echo -e "${RED}ERROR: ${name} failed${RESET}"
+        [ -n "$extra" ] && echo -e "→ ${extra}"
+        [ -n "$make_target" ] && echo -e "→ To investigate: ${YELLOW}make ${make_target}${RESET}"
+        [ -n "$fix_target" ] && echo -e "→ To fix: ${YELLOW}make ${fix_target}${RESET}"
+        if [ "$FAIL_FAST" = true ] && [ -n "$logfile" ] && [ -f "$logfile" ]; then
+            echo ""
+            echo -e "${GRAY}Output:${RESET}"
+            tail -20 "$logfile"
+        fi
+        echo ""
+    done < "${STATUS_DIR}/failures"
+}
+
+# === COVERAGE HELPERS ===
+
+parse_coverage() {
+    grep "^TOTAL" "$1" 2>/dev/null | awk '{print $NF}' | tr -d '%' || echo "0"
+}
+
+check_coverage_threshold() {
+    local actual="$1" target="$2"
+    [ "$(echo "$actual >= $target" | bc -l 2>/dev/null || echo "0")" -eq 1 ]
+}
+
+# === CHECK EXECUTION ===
+
+record_failure() {
+    local name="$1" make_target="$2" fix_target="$3" logfile="$4" extra="${5:-}"
+    echo "$name|$make_target|$fix_target|$logfile|$extra" >> "${STATUS_DIR}/failures"
+}
+
+# Unified check runner - handles both main checks and subchecks
+run_check() {
+    local name="$1" cmd="$2" line_num="$3"
+    local is_subcheck="${4:-false}" coverage_target="${5:-}"
+    local fix_target="${6:-}" make_target="${7:-}"
+    local check_id="${8:-$line_num}"
+
+    local prefix=""
+    [ "$is_subcheck" = true ] && prefix="  "
+
+    # Update to running state
+    update_line "$line_num" "${YELLOW}${CHECK_RUNNING}${RESET}" "${prefix}${name}" ""
+
+    # For test subchecks, check if required directory exists first
+    # This prevents hangs from pytest-xdist or unittest on non-existent directories
+    if [ "$is_subcheck" = true ]; then
+        if [[ "$cmd" == *"tests/e2e"* ]] && [ ! -d "tests/e2e" ]; then
+            update_line "$line_num" "${GRAY}${CHECK_PENDING}${RESET}" "${prefix}${name}" " ${GRAY}(no tests)${RESET}"
+            return 0
+        elif [[ "$cmd" == *"tests/"* ]] && [ ! -d "tests" ]; then
+            update_line "$line_num" "${GRAY}${CHECK_PENDING}${RESET}" "${prefix}${name}" " ${GRAY}(no tests)${RESET}"
+            return 0
+        fi
+    fi
+
+    # Execute and capture output
+    local tmpfile="${STATUS_DIR}/check-${check_id}.log"
+    local exit_code=0
+    eval "$cmd" > "$tmpfile" 2>&1 || exit_code=$?
+
+    # Check if cleanup happened (fail-fast triggered by another check)
+    [ -d "$STATUS_DIR" ] || return 0
+
+    # Handle result based on exit code
+    case "$exit_code" in
+        0)
+            if [ -n "$coverage_target" ]; then
+                local actual=$(parse_coverage "$tmpfile")
+                if check_coverage_threshold "$actual" "$coverage_target"; then
+                    update_line "$line_num" "${GREEN}${CHECK_SUCCESS}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% ≥ ${coverage_target}%)${RESET}"
+                else
+                    update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% < ${coverage_target}%)${RESET}"
+                    record_failure "$name" "$make_target" "" "$tmpfile" "Coverage: ${actual}% (target: ${coverage_target}%)"
+                    return 1
+                fi
+            else
+                update_line "$line_num" "${GREEN}${CHECK_SUCCESS}${RESET}" "${prefix}${name}" ""
+            fi
+            rm -f "$tmpfile"
+            ;;
+        5)  # No tests collected
+            update_line "$line_num" "${GRAY}${CHECK_PENDING}${RESET}" "${prefix}${name}" " ${GRAY}(no tests)${RESET}"
+            rm -f "$tmpfile"
+            ;;
+        *)  # Failure
+            update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" ""
+            record_failure "$name" "$make_target" "$fix_target" "$tmpfile"
+            return $exit_code
+            ;;
+    esac
+    return 0
+}
+
+# === EXECUTION MODES ===
+
+monitor_jobs() {
+    local pids=("$@")
+    local any_failed=false
+
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid" 2>/dev/null; then
+            any_failed=true
+            [ "$FAIL_FAST" = true ] && break
+        fi
+    done
+
+    [ "$any_failed" = false ]
+}
+
+run_test_suite() {
+    local line_num="$1"
+    update_line "$line_num" "${YELLOW}${CHECK_RUNNING}${RESET}" "Test suite" ""
+
+    if [ "$PARALLEL" = true ]; then
+        # Run test subchecks in parallel (except performance tests - need isolated CPU)
+        local pids=()
+        local perf_subcheck=""
+        for subcheck_def in "${TEST_SUBCHECKS[@]}"; do
+            IFS='|' read -r subname submake subcmd coverage_target <<< "$subcheck_def"
+            if [[ "$subname" == "Performance tests" ]]; then
+                perf_subcheck="$subcheck_def"
+                continue
+            fi
+            local subline=${SUBCHECK_LINES["$subname"]}
+            run_check "$subname" "$subcmd" "$subline" true "$coverage_target" "" "$submake" &
+            pids+=($!)
+        done
+        monitor_jobs "${pids[@]}" || true
+
+        # Run performance tests last (needs isolated CPU for accurate timing)
+        if [ -n "$perf_subcheck" ]; then
+            IFS='|' read -r subname submake subcmd coverage_target <<< "$perf_subcheck"
+            local subline=${SUBCHECK_LINES["$subname"]}
+            run_check "$subname" "$subcmd" "$subline" true "$coverage_target" "" "$submake" || true
+        fi
+    else
+        # Run test subchecks sequentially
+        for subcheck_def in "${TEST_SUBCHECKS[@]}"; do
+            IFS='|' read -r subname submake subcmd coverage_target <<< "$subcheck_def"
+            local subline=${SUBCHECK_LINES["$subname"]}
+            if ! run_check "$subname" "$subcmd" "$subline" true "$coverage_target" "" "$submake"; then
+                [ "$FAIL_FAST" = true ] && { update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "Test suite" ""; return 1; }
+            fi
+        done
+    fi
+
+    if [ -f "${STATUS_DIR}/failures" ]; then
+        update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "Test suite" ""
+        return 1
+    else
+        update_line "$line_num" "${GREEN}${CHECK_SUCCESS}${RESET}" "Test suite" ""
+        return 0
+    fi
+}
+
+run_checks() {
+    local any_failed=false
+    local test_suite_line=""
+
+    if [ "$PARALLEL" = true ]; then
+        # Run ALL checks in parallel (except perf tests)
+        local pids=()
+        local perf_subcheck=""
+
+        # Launch pre-test checks
+        for check_def in "${CHECKS[@]}"; do
+            IFS='|' read -r name make_target cmd fix_target <<< "$check_def"
+            local line_num=${CHECK_LINES["$name"]}
+
+            if [[ "$name" == "Test suite" ]]; then
+                test_suite_line="$line_num"
+                update_line "$line_num" "${YELLOW}${CHECK_RUNNING}${RESET}" "Test suite" ""
+            else
+                run_check "$name" "$cmd" "$line_num" false "" "$fix_target" "$make_target" &
+                pids+=($!)
+            fi
+        done
+
+        # Launch test subchecks in parallel (except perf tests)
+        for subcheck_def in "${TEST_SUBCHECKS[@]}"; do
+            IFS='|' read -r subname submake subcmd coverage_target <<< "$subcheck_def"
+            if [[ "$subname" == "Performance tests" ]]; then
+                perf_subcheck="$subcheck_def"
+                continue
+            fi
+            local subline=${SUBCHECK_LINES["$subname"]}
+            run_check "$subname" "$subcmd" "$subline" true "$coverage_target" "" "$submake" &
+            pids+=($!)
+        done
+
+        # Wait for all parallel checks
+        monitor_jobs "${pids[@]}" || any_failed=true
+
+        # Run performance tests last (needs isolated CPU)
+        if [ -n "$perf_subcheck" ]; then
+            [ "$FAIL_FAST" = true ] && [ "$any_failed" = true ] && {
+                update_line "$test_suite_line" "${RED}${CHECK_FAILURE}${RESET}" "Test suite" ""
+                return 1
+            }
+            IFS='|' read -r subname submake subcmd coverage_target <<< "$perf_subcheck"
+            local subline=${SUBCHECK_LINES["$subname"]}
+            run_check "$subname" "$subcmd" "$subline" true "$coverage_target" "" "$submake" || any_failed=true
+        fi
+
+        # Update test suite status
+        if [ -f "${STATUS_DIR}/failures" ]; then
+            update_line "$test_suite_line" "${RED}${CHECK_FAILURE}${RESET}" "Test suite" ""
+        else
+            update_line "$test_suite_line" "${GREEN}${CHECK_SUCCESS}${RESET}" "Test suite" ""
+        fi
+    else
+        # Sequential mode
+        for check_def in "${CHECKS[@]}"; do
+            IFS='|' read -r name make_target cmd fix_target <<< "$check_def"
+            local line_num=${CHECK_LINES["$name"]}
+
+            if [[ "$name" == "Test suite" ]]; then
+                run_test_suite "$line_num" || { any_failed=true; [ "$FAIL_FAST" = true ] && break; }
+            else
+                run_check "$name" "$cmd" "$line_num" false "" "$fix_target" "$make_target" || {
+                    any_failed=true; [ "$FAIL_FAST" = true ] && break
+                }
+            fi
+        done
+    fi
+
+    [ "$any_failed" = false ]
+}
+
+run_raw() {
+    cd "$PROJECT_ROOT"
+    echo "Running code quality checks (raw mode)..."
+    echo ""
+
+    local start_time=$(date +%s.%N)
+    local failed=false
+
+    local subchecks=()
+    [ "$SUMMARY" = true ] && subchecks=("${TEST_SUBCHECKS[@]}") || subchecks=("${TEST_SUBCHECKS_RAW[@]}")
+
+    for check_def in "${CHECKS[@]}"; do
+        IFS='|' read -r name make_target cmd fix_target <<< "$check_def"
+
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Running: $name"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+        if [[ "$name" == "Test suite" ]]; then
+            for subcheck_def in "${subchecks[@]}"; do
+                IFS='|' read -r subname submake subcmd coverage_target <<< "$subcheck_def"
+                echo "  → $subname"
+                echo ""
+
+                if eval "$subcmd"; then
+                    echo "  ${GREEN}✓${RESET} $subname passed"
+                else
+                    echo "  ${RED}✗${RESET} $subname failed"
+                    failed=true
+                    [ "$FAIL_FAST" = true ] && break 2
+                fi
+                echo ""
+            done
+        else
+            if eval "$cmd"; then
+                echo "${GREEN}✓${RESET} $name passed"
+            else
+                echo "${RED}✗${RESET} $name failed"
+                [ -n "$fix_target" ] && echo "  To fix: make $fix_target"
+                failed=true
+                [ "$FAIL_FAST" = true ] && break
+            fi
+            echo ""
+        fi
+    done
+
+    local elapsed=$(printf "%.1f" $(echo "$(date +%s.%N) - $start_time" | bc))
+    echo ""
+    if [ "$failed" = true ]; then
+        echo "${RED}✗ Some checks failed${RESET} ${GRAY}in ${elapsed}s${RESET}"
+        exit 1
+    else
+        echo "${GREEN}✓ All checks passed${RESET} ${GRAY}in ${elapsed}s${RESET}"
+    fi
+}
+
+# === MAIN ===
+
+main() {
+    cd "$PROJECT_ROOT"
+
+    [ "$RAW" = true ] && { run_raw; return $?; }
+
+    echo "Running code quality checks..."
+    echo ""
+
+    # Calculate line numbers for cursor positioning
+    local current_line=3
+    for check_def in "${CHECKS[@]}"; do
+        IFS='|' read -r name _ _ _ <<< "$check_def"
+        CHECK_LINES["$name"]=$current_line
+        current_line=$((current_line + 1))
+
+        if [[ "$name" == "Test suite" ]]; then
+            for subcheck_def in "${TEST_SUBCHECKS[@]}"; do
+                IFS='|' read -r subname _ _ _ <<< "$subcheck_def"
+                SUBCHECK_LINES["$subname"]=$current_line
+                current_line=$((current_line + 1))
+            done
+        fi
+    done
+    TOTAL_LINES=$current_line
+
+    # Print initial checkboxes
+    for check_def in "${CHECKS[@]}"; do
+        IFS='|' read -r name _ _ _ <<< "$check_def"
+        printf "%b %s\n" "$CHECK_PENDING" "$name"
+
+        if [[ "$name" == "Test suite" ]]; then
+            for subcheck_def in "${TEST_SUBCHECKS[@]}"; do
+                IFS='|' read -r subname _ _ _ <<< "$subcheck_def"
+                printf "  %b %s\n" "$CHECK_PENDING" "$subname"
+            done
+        fi
+    done
+
+    # Hide cursor during updates
+    tput civis 2>/dev/null || printf "\033[?25l"
+
+    local start_time=$(date +%s.%N)
+    local success=true
+
+    run_checks || success=false
+
+    check_interrupted
+
+    # Show cursor and display results
+    tput cnorm 2>/dev/null || printf "\033[?25h"
+    local elapsed=$(printf "%.1f" $(echo "$(date +%s.%N) - $start_time" | bc))
+
+    echo ""
+    if [ "$success" = false ]; then
+        local failure_count=$(wc -l < "${STATUS_DIR}/failures" 2>/dev/null || echo "1")
+        echo -e "${RED}✗ ${failure_count} check(s) failed${RESET} ${GRAY}after ${elapsed}s${RESET}"
+        echo ""
+        display_failures
+        exit 1
+    else
+        echo -e "${GREEN}✓ All checks passed${RESET} ${GRAY}in ${elapsed}s${RESET}"
+    fi
+}
+
+main "$@"

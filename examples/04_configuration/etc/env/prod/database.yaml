@@ -1,0 +1,6 @@
+# Production database configuration
+
+host: prod-db.example.com
+port: 5432
+user: prod_user
+debug: false

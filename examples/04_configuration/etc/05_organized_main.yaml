@@ -1,0 +1,7 @@
+# Organized Configuration Example
+# Demonstrates best practices for structuring configuration
+
+app_name: organized_app
+database: !include './database/config.yaml'
+logging: !include './logging/config.yaml'
+debug: false

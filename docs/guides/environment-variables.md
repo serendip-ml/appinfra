@@ -1,0 +1,300 @@
+# Environment Variable Overrides for Configuration
+
+This document describes how to use environment variables to override configuration values from `infra.yaml`.
+
+## Overview
+
+The `infra.cfg.Config` class now supports environment variable overrides, allowing you to modify configuration values without changing the YAML file. This is particularly useful for:
+
+- Development environments
+- Testing scenarios
+- Production deployments with different settings
+- CI/CD pipelines
+
+## Environment Variable Naming Convention
+
+Environment variables follow the pattern: `INFRA_<SECTION>_<SUBSECTION>_<KEY>`
+
+### Examples
+
+```bash
+# Override logging level
+INFRA_LOGGING_LEVEL=debug
+
+# Override database port
+INFRA_PGSERVER_PORT=5432
+
+# Override nested configuration
+INFRA_TEST_LOGGING_LEVEL=info
+INFRA_TEST_LOGGING_COLORS_ENABLED=true
+
+# Override multiple values
+INFRA_LOGGING_MICROS=true
+INFRA_PGSERVER_USER=myuser
+INFRA_TEST_TIMEOUT=120
+```
+
+## Supported Data Types
+
+The system automatically converts environment variable values to appropriate types:
+
+### String Values
+```bash
+INFRA_LOGGING_LEVEL=debug
+INFRA_PGSERVER_USER=myuser
+```
+
+### Boolean Values
+```bash
+INFRA_LOGGING_MICROS=true
+INFRA_TEST_CLEANUP=false
+```
+
+### Numeric Values
+```bash
+INFRA_PGSERVER_PORT=5432
+INFRA_TEST_TIMEOUT=120
+```
+
+### Float Values
+```bash
+INFRA_TEST_VALUE=3.14
+```
+
+### List Values (comma-separated)
+```bash
+INFRA_TEST_LIST=item1,item2,item3
+```
+
+### Null Values
+```bash
+INFRA_TEST_VALUE=null
+INFRA_TEST_VALUE=none
+INFRA_TEST_VALUE=  # empty string
+```
+
+## Usage Examples
+
+### Basic Usage
+
+```python
+from appinfra.cfg import Config
+
+# Load config with environment overrides (default behavior)
+config = Config('etc/infra.yaml')
+
+# Access overridden values
+print(config.logging.level)  # Will be 'debug' if INFRA_LOGGING_LEVEL=debug
+print(config.pgserver.port)  # Will be 5432 if INFRA_PGSERVER_PORT=5432
+```
+
+### Disable Environment Overrides
+
+```python
+from appinfra.cfg import Config
+
+# Load config without environment overrides
+config = Config('etc/infra.yaml', enable_env_overrides=False)
+```
+
+### Custom Environment Prefix
+
+```python
+from appinfra.cfg import Config
+
+# Use custom prefix for environment variables
+config = Config('etc/infra.yaml', env_prefix='MYAPP_')
+
+# Now looks for MYAPP_* environment variables
+# MYAPP_LOGGING_LEVEL=debug
+```
+
+### Check Applied Overrides
+
+```python
+from appinfra.cfg import Config
+
+config = Config('etc/infra.yaml')
+overrides = config.get_env_overrides()
+
+print("Applied overrides:")
+for key, value in overrides.items():
+    print(f"  {key}: {value}")
+```
+
+## Command Line Usage
+
+### Development Environment
+```bash
+# Set development-specific overrides
+export INFRA_LOGGING_LEVEL=debug
+export INFRA_LOGGING_MICROS=true
+export INFRA_PGSERVER_PORT=5432
+export INFRA_PGSERVER_USER=devuser
+
+# Run application
+python my_app.py
+```
+
+### Testing Environment
+```bash
+# Enable logging for tests
+export INFRA_TEST_LOGGING_LEVEL=info
+export INFRA_TEST_LOGGING_COLORS_ENABLED=false
+
+# Run tests
+make test
+```
+
+### Production Environment
+```bash
+# Production overrides
+export INFRA_LOGGING_LEVEL=warning
+export INFRA_PGSERVER_PORT=5432
+export INFRA_PGSERVER_USER=produser
+export INFRA_PGSERVER_PASS=securepassword
+
+# Run application
+python my_app.py
+```
+
+## Integration with Logging System
+
+The environment variable overrides work seamlessly with the logging system:
+
+```bash
+# Disable logging completely
+export INFRA_TEST_LOGGING_LEVEL=false
+
+# Enable logging with specific level
+export INFRA_TEST_LOGGING_LEVEL=debug
+
+# Disable colors
+export INFRA_TEST_LOGGING_COLORS_ENABLED=false
+```
+
+```python
+from appinfra.test_helpers import create_test_logger
+
+# Logger will use environment variable overrides
+logger = create_test_logger('my_test')
+logger.info('This will respect INFRA_TEST_LOGGING_LEVEL')
+```
+
+## Configuration File Structure
+
+The environment variable names must match the YAML structure:
+
+```yaml
+# etc/infra.yaml
+logging:
+  level: info
+  micros: false
+  colors: true
+
+pgserver:
+  port: 7432
+  user: postgres
+
+test:
+  timeout: 30
+  logging:
+    level: false
+    colors: false
+```
+
+Corresponding environment variables:
+```bash
+INFRA_LOGGING_LEVEL=debug
+INFRA_LOGGING_MICROS=true
+INFRA_LOGGING_COLORS_ENABLED=false
+
+INFRA_PGSERVER_PORT=5432
+INFRA_PGSERVER_USER=myuser
+
+INFRA_TEST_TIMEOUT=60
+INFRA_TEST_LOGGING_LEVEL=info
+INFRA_TEST_LOGGING_COLORS_ENABLED=true
+```
+
+## Important Notes
+
+### Naming Convention Limitations
+
+Due to the underscore-based naming convention, some YAML keys with underscores may not map directly:
+
+```yaml
+# YAML
+test:
+  my_key: value
+```
+
+```bash
+# Environment variable creates: test.my.key
+INFRA_TEST_MY_KEY=value
+```
+
+To access: `config.test.my.key` (not `config.test.my_key`)
+
+### Variable Substitution
+
+Environment variable overrides are applied before variable substitution (`${variable_name}`), so overridden values can be used in variable references:
+
+```yaml
+# YAML
+pgserver:
+  port: 7432
+dbs:
+  main:
+    url: "postgresql://user:pass@localhost:${pgserver.port}/main"
+```
+
+```bash
+# Override port
+export INFRA_PGSERVER_PORT=5432
+```
+
+The URL will use the overridden port: `postgresql://user:pass@localhost:5432/main`
+
+### Case Sensitivity
+
+Environment variable paths are case-insensitive:
+
+```bash
+# All of these work
+INFRA_LOGGING_LEVEL=debug
+INFRA_Logging_Level=debug
+INFRA_LOGGING_level=debug
+```
+
+## Best Practices
+
+1. **Use descriptive names**: Choose environment variable names that clearly indicate what they override
+2. **Document overrides**: Keep a list of commonly used environment variables
+3. **Use in CI/CD**: Leverage environment variables for different deployment environments
+4. **Test overrides**: Verify that environment variable overrides work as expected
+5. **Fallback gracefully**: Ensure your application works with default configuration when overrides are not set
+
+## Troubleshooting
+
+### Check Applied Overrides
+```python
+config = Config('etc/infra.yaml')
+print("Environment overrides:", config.get_env_overrides())
+```
+
+### Verify Environment Variables
+```bash
+# List all INFRA_* environment variables
+env | grep INFRA_
+```
+
+### Debug Configuration Loading
+```python
+config = Config('etc/infra.yaml')
+print("Final configuration:", config.dict())
+```
+
+## Examples
+
+See `examples/environment_variable_overrides_example.py` for a comprehensive demonstration of the environment variable override functionality.

@@ -1,0 +1,6 @@
+# Basic Include Example
+# This demonstrates the simplest use of !include
+
+app_name: demo_app
+database: !include './01_basic_database.yaml'
+debug: true

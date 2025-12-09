@@ -1,0 +1,80 @@
+# Topic-Based Logging Configuration Example
+# ==========================================
+# This configuration demonstrates fine-grained log level control using topic patterns.
+
+logging:
+  # Global default log level
+  level: info
+  location: 0
+  micros: false
+
+  # Topic-based level overrides
+  # ===========================
+  # Control log levels for different parts of your application using glob patterns.
+  #
+  # Pattern Syntax:
+  #   '*'  - matches single path segment
+  #          Example: '/infra/db/*' matches '/infra/db/pg' but not '/infra/db/pg/queries'
+  #   '**' - matches any depth (recursive)
+  #          Example: '/infra/**' matches all descendants at any level
+  #   Exact paths for precise matching
+  #          Example: '/infra/db/queries' matches exactly that logger
+  #
+  # Precedence:
+  #   1. CLI arguments (--log-topic) override YAML
+  #   2. More specific patterns override less specific ones
+  #   3. Within same specificity, last rule wins
+  #
+  topics:
+    # Infrastructure framework loggers
+    "/infra/**": "info"              # All framework loggers → info (default)
+    "/infra/db/*": "debug"           # Database layer → debug (more specific)
+    "/infra/db/queries": "trace"     # SQL queries → trace (most specific)
+    "/infra/api/*": "warning"        # API layer → warning only
+
+    # Application loggers
+    "/myapp/**": "error"             # All app loggers → error only
+    "/myapp/critical/*": "warning"   # Critical services → warning (more specific)
+
+  # Handler configurations
+  handlers:
+    console_text:
+      type: console
+      enabled: true
+      level: trace               # Handler accepts all levels
+      format: text
+      stream: stdout
+      colors: true
+      location: 0
+      micros: false
+
+# Additional Configuration Examples
+# ==================================
+
+# Example 1: Development environment
+# -----------------------------------
+# topics:
+#   "/infra/**": "debug"          # See all framework activity
+#   "/myapp/**": "debug"          # See all application activity
+
+# Example 2: Production environment
+# ----------------------------------
+# topics:
+#   "/infra/**": "warning"        # Only warnings+ from framework
+#   "/infra/db/*": "info"         # Track DB operations
+#   "/myapp/**": "info"           # Track application flow
+#   "/myapp/critical/*": "debug"  # Debug critical services
+
+# Example 3: Troubleshooting specific component
+# ----------------------------------------------
+# topics:
+#   "/infra/**": "warning"        # Quiet everything else
+#   "/infra/db/queries": "trace"  # Deep dive into queries
+#   "/myapp/**": "info"           # Keep app visible
+
+# Example 4: Performance tuning
+# ------------------------------
+# topics:
+#   "/infra/**": "error"          # Minimal logging overhead
+#   "/infra/perf/*": "debug"      # Track performance metrics
+#   "/myapp/**": "error"          # Minimal app logging

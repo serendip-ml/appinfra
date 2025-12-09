@@ -1,0 +1,5 @@
+# Development environment configuration
+
+common: !include './common.yaml'
+database: !include './env/dev/database.yaml'
+environment: development

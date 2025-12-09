@@ -1,0 +1,15 @@
+# Makefile.utils - Reusable Utility Functions
+#
+# Provides: areyousure function and target
+#
+# Usage in other Makefiles:
+#   dangerous_target: areyousure
+#       @echo "doing something dangerous"
+
+define areyousure
+	@echo -n "Are you sure? [y/N] " && read ans && [ $${ans:-N} = y ]
+endef
+
+areyousure:
+	$(call areyousure)
+.PHONY: areyousure

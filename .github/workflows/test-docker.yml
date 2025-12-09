@@ -1,0 +1,72 @@
+name: Tests (Docker Compose)
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master, develop]
+  workflow_dispatch:  # Allow manual trigger
+
+# Cancel previous runs if new commits are pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-linux:
+    name: Python ${{ matrix.python-version }} (Linux/Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false  # Run all matrix jobs even if one fails
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker layer caching
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: docker-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('pyproject.toml', 'scripts/cicd/Dockerfile') }}
+          restore-keys: |
+            docker-${{ runner.os }}-py${{ matrix.python-version }}-
+
+      - name: Build Docker image
+        working-directory: scripts/cicd
+        run: |
+          docker compose -f docker-compose.yml \
+                        -f docker-compose.override.py${{ matrix.python-version }}.yml \
+                        build
+
+      - name: Run CI checks (code quality + all tests)
+        working-directory: scripts/cicd
+        run: |
+          docker compose -f docker-compose.yml \
+                        -f docker-compose.override.py${{ matrix.python-version }}.yml \
+                        up --abort-on-container-exit --exit-code-from app
+
+      - name: Generate coverage report (Python 3.12 only)
+        if: matrix.python-version == '3.12'
+        working-directory: scripts/cicd
+        run: |
+          docker compose -f docker-compose.yml \
+                        -f docker-compose.override.py3.12.yml \
+                        run --rm app make test.coverage.xml
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage-output/coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Cleanup Docker resources
+        if: always()
+        working-directory: scripts/cicd
+        run: docker compose down -v

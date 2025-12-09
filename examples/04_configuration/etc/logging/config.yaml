@@ -1,0 +1,4 @@
+# Main logging configuration
+
+level: info
+handlers: !include './handlers.yaml'

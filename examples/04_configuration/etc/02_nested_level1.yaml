@@ -1,0 +1,4 @@
+# Level 1 (included by 02_nested_main.yaml)
+
+level2: !include './02_nested_level2.yaml'
+value: top_level

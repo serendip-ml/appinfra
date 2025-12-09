@@ -1,0 +1,6 @@
+# Database configuration (included by 01_basic_main.yaml)
+
+host: localhost
+port: 5432
+user: postgres
+pool_size: 10

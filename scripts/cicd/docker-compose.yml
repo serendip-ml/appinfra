@@ -1,0 +1,88 @@
+services:
+  # CI/CD test runner service
+  cicd-test:
+    build:
+      context: ../../  # Project root (infra/)
+      dockerfile: scripts/cicd/Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.12}
+    image: infra-test:py${PYTHON_VERSION:-3.12}
+    user: "1000:1000"  # Run as testuser (non-root) for security
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    # Load environment variables from files
+    env_file:
+      - .env.test
+    # Note: .env.local is optional - create it manually for local overrides (gitignored)
+
+    # Volume mounts
+    # Source code mounted read-only for safety (prevents accidental modifications)
+    # Output directories mounted read-write for artifacts
+    volumes:
+      # Source code (read-only) - paths relative to scripts/cicd directory
+      - ../../appinfra:/workspace/appinfra:ro
+      - ../../tests:/workspace/tests:ro
+      - ../../pyproject.toml:/workspace/pyproject.toml:ro
+      - ../../Makefile:/workspace/Makefile:ro
+      - ../../scripts:/workspace/scripts:ro
+      - ../../etc:/workspace/etc:ro
+
+      # Named volumes for caching (improves performance)
+      - pytest-cache:/workspace/.pytest_cache
+      - mypy-cache:/workspace/.mypy_cache
+
+    working_dir: /workspace
+
+    # Environment variables for CI/testing
+    # Override PostgreSQL config to use docker-compose postgres service
+    environment:
+      - HOME=/home/testuser
+      - INFRA_PGSERVER_PORT=5432
+      - INFRA_PGSERVER_USER=postgres
+      - INFRA_PGSERVER_PASS=postgres
+      - COVERAGE_FILE=/home/testuser/.coverage
+
+    # Default command: run complete CI checks with summary output (summaries + failures only)
+    command: make check.summary
+
+    networks:
+      - infra-test
+
+  # PostgreSQL database service
+  postgres:
+    container_name: infra-cicd-pg-1
+    image: postgres:16
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+    # Health check ensures postgres is ready before tests start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+    networks:
+      - infra-test
+
+# Named volumes for persistent data and caching
+volumes:
+  postgres-data:
+  pytest-cache:
+  mypy-cache:
+
+# Bridge network for service communication
+networks:
+  infra-test:
+    driver: bridge

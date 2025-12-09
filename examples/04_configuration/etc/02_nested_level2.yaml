@@ -1,0 +1,4 @@
+# Level 2 (included by 02_nested_level1.yaml)
+
+level3: !include './02_nested_level3.yaml'
+value: middle_level

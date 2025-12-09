@@ -1,0 +1,29 @@
+__pycache__
+.archive
+.archives
+.installed_packages
+.coverage
+.coverage.json
+.htmlcov
+.logs
+*.egg-info
+.dist/
+.build/
+dist/
+build/
+.site/
+.*.md
+
+# Docker Compose local configuration
+.env.local
+.cicd-coverage/
+
+# Docker test logs
+.logs/
+
+# Hypothesis test cache
+.hypothesis/
+
+# Local Makefile overrides (custom PYTHON path, etc.)
+Makefile.local
+.claude/settings.local.json

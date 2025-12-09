@@ -1,0 +1,4 @@
+# Circular dependency example - File A
+# This creates an error: A includes B, which includes A
+
+b: !include './07_circular_b.yaml'

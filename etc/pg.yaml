@@ -1,0 +1,79 @@
+# PostgreSQL Configuration
+# ========================
+# This file contains PostgreSQL server and database connection configurations
+
+# PostgreSQL Server Configuration
+# ================================
+# Defines the PostgreSQL server connection settings
+# Password should be set via environment variable: INFRA_PGSERVER_PASS=your_password
+pgserver:
+  version: 16                  # PostgreSQL major version (used for compatibility checks)
+  name: infra-pg               # Server identifier/name for logging and identification
+  host: 127.0.0.1              # PostgreSQL host (default: 127.0.0.1, can be overridden with INFRA_PGSERVER_HOST)
+  port: 7432                   # PostgreSQL port (default: 5432, can be overridden with INFRA_PGSERVER_PORT)
+  port_r: 7433                 # PostgreSQL standby (read-only replica) port for replication mode
+  user: postgres               # Database username (can be overridden with INFRA_PGSERVER_USER)
+  pass: ''                     # Database password (RECOMMENDED: use environment variable)
+
+# Database Configurations
+# =======================
+# Defines multiple named database connections with various settings
+# Each database can have different pool settings, read-only modes, and connection parameters
+# Pool defaults are defined in appinfra/db/pg/pg.py: pool_size=5, max_overflow=10, etc.
+dbs:
+  # Main application database - primary read-write database
+  main:
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/main"
+    create_db: true             # Create database if it doesn't exist
+    readonly: false             # Read-write mode (default)
+    # Using default pool settings from appinfra/db/pg/pg.py
+
+  # Read-only main database - used for read-only queries on main database
+  main_ro:
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/main"
+    readonly: true              # Read-only mode - no writes allowed
+    create_db: false            # Don't create database (use existing main DB)
+    # Custom pool settings optimized for read-only workload
+    pool_size: 3                # Smaller pool for read-only operations
+    max_overflow: 5             # Smaller overflow for read-only operations
+    # Other pool defaults: pool_timeout=30, pool_recycle=3600, pool_pre_ping=true, echo=false
+
+  # Test database - used for unit tests and development
+  unittest:
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/unittest"
+    readonly: false             # Read-write for tests
+    create_db: true             # Auto-create test database
+    # Custom pool settings for test environment
+    pool_size: 5                # Connection pool size (matches default)
+    max_overflow: 10            # Maximum overflow connections (matches default)
+    # Other pool defaults: pool_timeout=30, pool_recycle=3600, pool_pre_ping=true, echo=false
+
+  # Read-only test database - used for read-only tests and development
+  unittest_ro:
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/unittest"
+    readonly: true              # Read-only mode - no writes allowed
+    create_db: false            # Don't create database (use existing test DB)
+    # Custom pool settings optimized for read-only workload
+    pool_size: 3                # Smaller pool for read-only operations
+    max_overflow: 5             # Smaller overflow for read-only operations
+    # Other pool defaults: pool_timeout=30, pool_recycle=3600, pool_pre_ping=true, echo=false
+
+  # Read-only replica database - connects to standby server in replication mode
+  unittest_reader:
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port_r}/unittest"
+    readonly: true              # Read-only mode - standby server is read-only
+    create_db: false            # Don't create database (replicated from primary)
+    # Custom pool settings for replica connections
+    pool_size: 3                # Smaller pool for read-only replica
+    max_overflow: 5             # Smaller overflow for read-only replica
+    # Other pool defaults: pool_timeout=30, pool_recycle=3600, pool_pre_ping=true, echo=false
+
+  # Main read-only replica - connects to standby server in replication mode
+  main_reader:
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port_r}/main"
+    readonly: true              # Read-only mode - standby server is read-only
+    create_db: false            # Don't create database (replicated from primary)
+    # Custom pool settings for replica connections
+    pool_size: 3                # Smaller pool for read-only replica
+    max_overflow: 5             # Smaller overflow for read-only replica
+    # Other pool defaults: pool_timeout=30, pool_recycle=3600, pool_pre_ping=true, echo=false

@@ -1,0 +1,8 @@
+# Database configurations using variables from 03_variables_main.yaml
+# Note: ${pgserver.*} variables are defined in the main file
+
+main:
+  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/main"
+
+test:
+  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/test"

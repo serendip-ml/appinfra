@@ -1,0 +1,158 @@
+# Makefile.pytest - Pytest-based Testing Targets
+#
+# Provides: test.unit, test.integration, test.e2e, test.coverage, etc.
+# Requires: PYTHON (from Makefile.env)
+#
+# Configuration variables (set in Makefile before include):
+#   INFRA_PYTEST_COVERAGE_PKG - Package to measure coverage for (default: INFRA_DEV_PKG_NAME)
+#   INFRA_PYTEST_TESTS_DIR    - Tests directory (default: tests)
+#   INFRA_PYTEST_ARGS         - Additional pytest arguments (default: empty)
+
+# Configuration (defaults set in Makefile.config)
+INFRA_PYTEST_TESTS_DIR ?= tests
+INFRA_PYTEST_ARGS ?=
+
+# Helper to check pytest availability with helpful error
+define _check_pytest
+@$(PYTHON) -c "import pytest" 2>/dev/null || { \
+	echo ""; \
+	echo "ERROR: pytest not installed"; \
+	echo ""; \
+	echo "To fix, run one of:"; \
+	echo "  $(PYTHON) -m pip install pytest pytest-xdist pytest-cov"; \
+	echo "  make setup"; \
+	echo ""; \
+	exit 1; \
+}
+endef
+
+# Helper to run pytest, treating "no tests collected" (exit 5) as success
+# Usage: $(call run_pytest,args)
+define run_pytest
+$(PYTHON) -m pytest $(1) || { ec=$$?; [ $$ec -eq 5 ] && exit 0 || exit $$ec; }
+endef
+
+##@ Testing
+
+test.unit:: ## runs unit tests (fast, isolated, mocked dependencies)
+	@echo "* running unit tests... (quiet)"
+	@$(call run_pytest,tests/ -m unit -q)
+	@echo "* unit tests done"
+.PHONY: test.unit
+
+test.unit.v:: ## runs unit tests (verbose)
+	@echo "* running unit tests... (verbose)"
+	@$(call run_pytest,tests/ -m unit -v)
+	@echo "* unit tests done"
+.PHONY: test.unit.v
+
+test.integration:: ## runs integration tests (real dependencies)
+	@echo "* running integration tests... (quiet)"
+	@$(call run_pytest,tests/ -m integration -q)
+	@echo "* integration tests done"
+.PHONY: test.integration
+
+test.integration.v:: ## runs integration tests (verbose)
+	@echo "* running integration tests... (verbose)"
+	@$(call run_pytest,tests/ -m integration -v)
+	@echo "* integration tests done"
+.PHONY: test.integration.v
+
+test.perf:: ## runs performance tests (benchmarks, load tests)
+	@echo "* running performance tests... (quiet)"
+	@$(call run_pytest,tests/ -m performance -q)
+	@echo "* performance tests done"
+.PHONY: test.perf
+
+test.perf.v:: ## runs performance tests (verbose)
+	@echo "* running performance tests... (verbose)"
+	@$(call run_pytest,tests/ -m performance -v -s)
+	@echo "* performance tests done"
+.PHONY: test.perf.v
+
+test.security:: ## runs security tests (injection, validation, XSS)
+	@echo "* running security tests... (quiet)"
+	@$(call run_pytest,tests/ -m security -q)
+	@echo "* security tests done"
+.PHONY: test.security
+
+test.security.v:: ## runs security tests (verbose)
+	@echo "* running security tests... (verbose)"
+	@$(call run_pytest,tests/ -m security -v)
+	@echo "* security tests done"
+.PHONY: test.security.v
+
+test.e2e:: ## runs end-to-end tests (full system workflows)
+	@echo "* running end-to-end tests... (quiet)"
+	@$(call run_pytest,tests/ -m e2e -q)
+	@echo "* end-to-end tests done"
+.PHONY: test.e2e
+
+test.e2e.v:: ## runs end-to-end tests (verbose)
+	@echo "* running end-to-end tests... (verbose)"
+	@$(call run_pytest,tests/ -m e2e -v)
+	@echo "* end-to-end tests done"
+.PHONY: test.e2e.v
+
+test.all:: test.unit test.integration test.e2e test.perf test.security ## runs all test types
+	@echo "* all tests completed"
+.PHONY: test.all
+
+test.all.v:: test.unit.v test.integration.v test.e2e.v test.perf.v test.security.v ## runs all test types (verbose)
+	@echo "* all tests completed (verbose)"
+.PHONY: test.all.v
+
+test.quick:: test.unit ## runs quick tests only (alias for test.unit)
+.PHONY: test.quick
+
+test.slow:: test.integration test.perf test.e2e ## runs slow tests (integration, performance, e2e)
+	@echo "* slow tests completed"
+.PHONY: test.slow
+
+test:: ## runs all tests
+	@echo "* running all tests... (quiet)"
+	@$(call run_pytest,tests/ -q)
+	@echo "* all tests completed"
+.PHONY: test
+
+test.v:: ## runs all tests (verbose)
+	@echo "* running all tests... (verbose)"
+	@$(call run_pytest,tests/ -v)
+	@echo "* all tests completed"
+.PHONY: test.v
+
+test.ci:: ## runs tests appropriate for CI (unit + integration)
+	@echo "* running CI test suite..."
+	@$(call run_pytest,tests/ -m "unit or integration" -q)
+	@echo "* CI test suite completed"
+.PHONY: test.ci
+
+test.coverage:: ## runs unit tests with coverage analysis
+	@echo "* running tests with coverage analysis..."
+	@$(call run_pytest,tests/ -m unit -q --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=term)
+	@echo "* coverage analysis completed"
+.PHONY: test.coverage
+
+test.coverage.v:: ## runs unit tests with coverage analysis (verbose, shows missing lines)
+	@echo "* running tests with coverage analysis... (verbose)"
+	@$(call run_pytest,tests/ -m unit -v --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=term-missing)
+	@echo "* coverage analysis completed"
+.PHONY: test.coverage.v
+
+test.coverage.html:: ## generates HTML coverage report
+	@echo "* running tests with coverage analysis..."
+	@$(call run_pytest,tests/ -m unit --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=html)
+	@echo "* HTML coverage report generated in .htmlcov/ directory"
+.PHONY: test.coverage.html
+
+test.coverage.xml:: ## generates XML coverage report for CI
+	@echo "* running tests with coverage analysis..."
+	@$(call run_pytest,tests/ -m unit --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=xml)
+	@echo "* XML coverage report generated as coverage.xml"
+.PHONY: test.coverage.xml
+
+test.coverage.json:: ## generates JSON coverage report
+	@echo "* running tests with coverage analysis..."
+	@$(call run_pytest,tests/ -m unit --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=json)
+	@echo "* JSON coverage report generated as .coverage.json"
+.PHONY: test.coverage.json

@@ -1,0 +1,70 @@
+# Python Environment Detection
+# Supports: PYTHON env var, Makefile.local, ~/.venv fallback
+-include Makefile.local
+
+ifndef PYTHON
+  ifneq ($(wildcard $(HOME)/.venv/bin/python),)
+    PYTHON := $(HOME)/.venv/bin/python
+  else
+    $(error No Python found. Set PYTHON env var, create ~/.venv, or add PYTHON= to Makefile.local)
+  endif
+endif
+
+##@ General
+
+rearrange_list = $(wordlist 2,$(words $(1)),$(1)) $(firstword $(1))
+
+help: ## display this help
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9_.]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(call rearrange_list, $(MAKEFILE_LIST))
+.PHONY: help
+
+##@ Development
+
+install: ## installs project with dev dependencies using ~/.venv virtual environment
+	@echo "* installing dependencies..."
+	$(PYTHON) -m pip install ".[dev]"
+	@echo "* installation done"
+.PHONY: install
+
+clean: ## cleans temporary files and directories
+	@echo "* cleaning temporary files and directories..."
+	@echo "  - Removing test logs (.logs/)..."
+	@rm -rf .logs
+	@echo "  - Removing HTML coverage report (.htmlcov/)..."
+	@rm -rf .htmlcov
+	@echo "  - Removing coverage data (.coverage)..."
+	@rm -f .coverage
+	@echo "  - Removing build artifacts (*.egg-info, .dist/, .build/, dist/, build/)..."
+	@rm -rf *.egg-info .dist .build dist build
+	@echo "  - Removing Python cache directories (__pycache__/)..."
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@echo "  - Removing Python compiled files (*.pyc, *.pyo)..."
+	@find . -name "*.pyc" -delete 2>/dev/null || true
+	@find . -name "*.pyo" -delete 2>/dev/null || true
+	@echo "* cleanup complete - all temporary files and build artifacts removed"
+.PHONY: clean
+
+test: ## runs test suite
+	@echo "* running tests..."
+	$(PYTHON) -m unittest discover tests
+	@echo "* tests done"
+.PHONY: test
+
+fmt: ## formats the code
+	@echo "* running formatter..."
+	@$(PYTHON) -m black .
+	@echo "* formatter done"
+.PHONY: fmt
+
+lint: ## lints the code
+	@echo "* running linter..."
+	@$(PYTHON) -m ruff check .
+	@echo "* linter done"
+.PHONY: lint
+
+##@ Application
+
+run: ## runs the application
+	@echo "* running application..."
+	@$(PYTHON) -m {{PROJECT_NAME}}
+.PHONY: run

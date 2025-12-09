@@ -1,0 +1,12 @@
+# Docker Compose override for Python 3.13
+# Usage: docker compose -f docker-compose.yml -f docker-compose.override.py3.13.yml up
+
+services:
+  cicd-test:
+    build:
+      args:
+        PYTHON_VERSION: "3.13"
+    image: infra-test:py3.13
+    environment:
+      - PYTHON_VERSION=3.13
+      - COVERAGE_FILE=/workspace/.deploy-coverage/.coverage.3.13

@@ -1,0 +1,159 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "appinfra"
+version = "0.1.0"
+description = "Infrastructure framework for Python applications"
+authors = [
+    {name = "serendip-ml (github.com/serendip-ml)"}
+]
+requires-python = ">=3.11"
+dependencies = [
+    "sqlalchemy>=2.0.0,<3.0.0",
+    "sqlalchemy-utils>=0.42.0,<1.0.0",
+    "psycopg2-binary>=2.9.0,<3.0.0",
+    "PyYAML>=6.0,<7.0",
+    "requests>=2.32.0,<3.0.0",
+    "urllib3>=2.0.0,<3.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/serendip-ml/appinfra"
+Repository = "https://github.com/serendip-ml/appinfra"
+Issues = "https://github.com/serendip-ml/appinfra/issues"
+
+[project.optional-dependencies]
+dev = [
+    "coverage>=7.0.0,<8.0.0",
+    "ruff>=0.1.0,<1.0.0",
+    "mypy>=1.0.0,<2.0.0",
+    "pytest>=7.0.0,<10.0.0",
+    "pytest-asyncio>=0.21.0,<2.0.0",
+    "pytest-cov>=4.0.0,<8.0.0",
+    "pytest-xdist>=3.0.0,<4.0.0",
+    "hypothesis>=6.0.0,<7.0.0",
+]
+validation = [
+    "pydantic>=2.0.0,<3.0.0",
+]
+docs = [
+    "mkdocs>=1.5.3,<2.0.0",
+    "mkdocs-material>=9.5.0,<10.0.0",
+    "mkdocstrings[python]>=0.24.0,<1.0.0",
+    "mkdocs-autorefs>=0.5.0,<1.0.0",
+]
+fastapi = [
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+]
+
+[project.scripts]
+appinfra = "appinfra.cli.cli:main"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["appinfra"]
+
+[tool.ruff.lint.per-file-ignores]
+"examples/**/*.py" = [
+    "E402",  # Module import not at top (examples modify sys.path)
+    "F841",  # Unused variables (demonstration code)
+    "F821",  # Undefined names (examples may use forward references)
+]
+"tests/**/*.py" = [
+    "N806",  # Variable name should be lowercase (Mock classes in tests)
+    "N802",  # Function name should be lowercase (HTTP methods like do_GET)
+    "F841",  # Local variable assigned but unused (test setup)
+    "E731",  # Lambda assignment (test helpers)
+    "E402",  # Module import not at top (tests modify sys.path)
+]
+"appinfra/**/__init__.py" = [
+    "F401",  # Imported but unused (re-exports)
+    "F403",  # Wildcard import (convenience imports)
+    "F405",  # May be undefined from star imports (re-exports)
+]
+"appinfra/log/formatters.py" = ["N802"]  # formatTime overrides logging.Formatter
+"appinfra/log/logger.py" = ["N802"]  # _makeRecord, findCaller override logging.Logger
+"appinfra/log/__init__.py" = ["E402"]  # ColorManager import after level definitions
+"appinfra/log/config.py" = ["F821"]  # Forward reference to logging module
+"appinfra/log/callback.py" = ["F821"]  # Forward reference to Logger
+"appinfra/app/server/base.py" = ["N802"]  # server_do_GET/POST/PUT/DELETE (HTTP methods)
+"appinfra/app/factory.py" = ["N805", "F821"]  # Static method + forward references
+"appinfra/log/factory.py" = ["N805"]  # Static method with non-self first param
+"appinfra/app/builder/plugin.py" = ["F821"]  # Forward reference to AppBuilder
+"appinfra/app/tools/base.py" = ["F821"]  # Forward references to Tool/ToolGroup
+"appinfra/app/tools/group.py" = ["F821"]  # Forward reference to Tool
+"appinfra/app/tools/registry.py" = ["F821"]  # Forward reference to Tool
+"appinfra/config/schemas.py" = ["N815"]  # Pydantic fields match logging.handlers naming
+"appinfra/db/db.py" = ["N818"]  # Exception naming convention (historical)
+"appinfra/cli/cli.py" = ["E402"]  # sys.path modification before imports (script mode)
+"examples/06_advanced/tcp_server.py" = ["N802"]  # do_GET HTTP method
+"appinfra/app/fastapi/**/*.py" = ["F821"]  # Forward references for TYPE_CHECKING imports
+"appinfra/app/fastapi/plugin.py" = ["F821"]  # Forward reference to AppBuilder, App
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+exclude = ["tests/", "scripts/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --tb=short"
+pythonpath = ["."]
+markers = [
+    "property: property-based tests using Hypothesis",
+]
+
+[tool.coverage.run]
+source = ["appinfra"]
+omit = ["*/test/*", "*/tests/*", "*_test.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+
+[tool.coverage.html]
+directory = ".htmlcov"
+
+[tool.coverage.json]
+output = ".coverage.json"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["appinfra*"]
+exclude = ["tests*", "scripts*", "etc*"]
+
+[tool.setuptools.package-data]
+appinfra = ["docs/**/*.md", "docs/LICENSE", "examples/**/*.py", "examples/**/*.md", "examples/**/*.yaml", "cli/tools/scaffold/*.in"]

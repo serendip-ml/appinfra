@@ -1,0 +1,179 @@
+# Makefile.pg - PostgreSQL Management Targets
+#
+# Provides: pg.server.up, pg.server.down, pg.info, pg.clean, pg, etc.
+# Requires: areyousure (from Makefile.utils)
+#
+# Configuration variables (set in Makefile before include):
+#   INFRA_PG_CONFIG     - Path to pg.yaml config (default: derived from Makefile location)
+#   INFRA_PG_CONFIG_KEY - Key in YAML for postgres config (default: pgserver)
+#   INFRA_PG_DATABASES  - Space-separated list of databases to manage (default: empty)
+#   INFRA_PG_HOST       - PostgreSQL host (default: 127.0.0.1)
+#   INFRA_PG_USER       - PostgreSQL user (default: postgres)
+
+# Flag to indicate Postgres Makefile is loaded
+PG_INCLUDED := true
+
+# Path to this Makefile's directory
+pg_local := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+
+# Configuration with backward compatibility
+INFRA_PG_CONFIG ?= $(if $(pg_docker_cfg),$(pg_docker_cfg),$(pg_local)/../etc/pg.yaml)
+INFRA_PG_CONFIG_KEY ?= $(if $(pg_docker_key),$(pg_docker_key),pgserver)
+INFRA_PG_DATABASES ?= $(pg_databases)
+INFRA_PG_HOST ?= 127.0.0.1
+INFRA_PG_USER ?= postgres
+
+# Legacy aliases for backward compatibility
+pg_docker_cfg := $(INFRA_PG_CONFIG)
+pg_docker_key := $(INFRA_PG_CONFIG_KEY)
+pg_databases := $(INFRA_PG_DATABASES)
+
+# Derived values (from YAML config)
+PG_DOCKER_YAML := $(pg_local)/../docker/pg/docker-compose.yaml
+PG_DOCKER_IMAGE := $(shell cat $(INFRA_PG_CONFIG) | $(pg_local)/../yaml2json.sh | jq -r '."$(INFRA_PG_CONFIG_KEY)".name')
+PG_VERSION := $(shell cat $(INFRA_PG_CONFIG) | $(pg_local)/../yaml2json.sh | jq -r '."$(INFRA_PG_CONFIG_KEY)".version')
+PG_PORT := $(shell cat $(INFRA_PG_CONFIG) | $(pg_local)/../yaml2json.sh | jq -r '."$(INFRA_PG_CONFIG_KEY)".port')
+PG_PORT_R := $(shell cat $(INFRA_PG_CONFIG) | $(pg_local)/../yaml2json.sh | jq -r '."$(INFRA_PG_CONFIG_KEY)".port_r')
+PG_HOST := $(INFRA_PG_HOST)
+PG_USER := $(INFRA_PG_USER)
+
+# Convenience commands
+PSQL := PAGER='less -S' psql -h $(PG_HOST) -p $(PG_PORT) -U $(PG_USER)
+PSQL_STANDBY := PAGER='less -S' psql -h $(PG_HOST) -p $(PG_PORT_R) -U $(PG_USER)
+
+# Docker compose commands
+# PORT_R is needed even in single mode for docker-compose file parsing
+PG_DOCKER_CMD_SINGLE := VERSION=$(PG_VERSION) NAME=$(PG_DOCKER_IMAGE) PORT=$(PG_PORT) PORT_R=$(PG_PORT_R) docker compose -p $(PG_DOCKER_IMAGE) -f $(PG_DOCKER_YAML) --profile single
+PG_DOCKER_CMD_REPL := VERSION=$(PG_VERSION) NAME=$(PG_DOCKER_IMAGE) PORT=$(PG_PORT) PORT_R=$(PG_PORT_R) docker compose -p $(PG_DOCKER_IMAGE) -f $(PG_DOCKER_YAML) --profile replication
+
+##@ Postgres
+
+# =============================================================================
+# Single Instance Mode (default)
+# =============================================================================
+
+pg.server.up: ## starts postgres server (single instance)
+	@# Stop replication mode if running (port conflict)
+	@if docker ps --format '{{.Names}}' | grep -q "$(PG_DOCKER_IMAGE)-primary"; then \
+		echo "Stopping replication mode..."; \
+		$(PG_DOCKER_CMD_REPL) down; \
+		echo "Starting single instance..."; \
+	fi
+	@$(PG_DOCKER_CMD_SINGLE) up -d
+.PHONY: pg.server.up
+
+pg.server.down: areyousure ## stops postgres server (auto-detects mode)
+	@if docker ps --format '{{.Names}}' | grep -q "$(PG_DOCKER_IMAGE)-primary"; then \
+		$(PG_DOCKER_CMD_REPL) down; \
+	else \
+		$(PG_DOCKER_CMD_SINGLE) down; \
+	fi
+.PHONY: pg.server.down
+
+pg.server.reboot: areyousure ## restarts postgres server (auto-detects mode)
+	@if docker ps --format '{{.Names}}' | grep -q "$(PG_DOCKER_IMAGE)-primary"; then \
+		$(PG_DOCKER_CMD_REPL) down; \
+		$(PG_DOCKER_CMD_REPL) up -d; \
+	else \
+		$(PG_DOCKER_CMD_SINGLE) down; \
+		$(PG_DOCKER_CMD_SINGLE) up -d; \
+	fi
+.PHONY: pg.server.reboot
+
+pg.server.logs: ## tails postgres server logs (auto-detects mode)
+	@if docker ps --format '{{.Names}}' | grep -q "$(PG_DOCKER_IMAGE)-primary"; then \
+		$(PG_DOCKER_CMD_REPL) logs -f; \
+	else \
+		$(PG_DOCKER_CMD_SINGLE) logs -f; \
+	fi
+.PHONY: pg.server.logs
+
+pg.server.clean: areyousure ## removes all postgres containers, volumes, images, and networks (WARNING: deletes all data)
+	@$(MAKE) pg.server.clean.internal
+.PHONY: pg.server.clean
+
+pg.server.clean.internal:: # Internal: cleanup without confirmation (used by clean.full)
+	@echo "Stopping all PostgreSQL containers..."
+	@docker ps -a --filter "name=$(PG_DOCKER_IMAGE)" --format "{{.Names}}" | xargs -r docker stop 2>/dev/null || true
+	@docker ps -a --filter "name=$(PG_DOCKER_IMAGE)" --format "{{.Names}}" | xargs -r docker rm 2>/dev/null || true
+	@echo "Removing PostgreSQL volumes..."
+	@docker volume ls --filter "name=infra-pg" --format "{{.Name}}" | xargs -r docker volume rm 2>/dev/null || true
+	@echo "Removing PostgreSQL networks..."
+	@docker network ls --filter "name=$(PG_DOCKER_IMAGE)" --format "{{.Name}}" | xargs -r docker network rm 2>/dev/null || true
+	@echo "Removing PostgreSQL images (force)..."
+	@docker images --filter "reference=postgres:$(PG_VERSION)" --format "{{.ID}}" | xargs -r docker rmi -f 2>/dev/null || true
+	@echo "PostgreSQL cleanup complete (containers, volumes, networks, and images removed)"
+.PHONY: pg.server.clean.internal
+
+# =============================================================================
+# Replication Mode (primary + standby)
+# =============================================================================
+
+pg.server.up.repl: ## starts postgres replication (primary + standby)
+	@# Stop single instance if running (port conflict)
+	@if docker ps --format '{{.Names}}' | grep -q "^$(PG_DOCKER_IMAGE)$$"; then \
+		echo "Stopping single instance..."; \
+		$(PG_DOCKER_CMD_SINGLE) down; \
+		echo "Starting PostgreSQL replication mode..."; \
+		echo "  Primary:  port $(PG_PORT)"; \
+		echo "  Standby:  port $(PG_PORT_R) (read-only replica)"; \
+	fi
+	@$(PG_DOCKER_CMD_REPL) up -d
+.PHONY: pg.server.up.repl
+
+
+# =============================================================================
+# Database Operations (work with both single and replication modes)
+# =============================================================================
+
+pg.info: ## comprehensive server and database information
+	@$(pg_local)/../pg-info.sh "$(PG_DOCKER_IMAGE)" "$(PG_VERSION)" "$(PG_HOST)" "$(PG_PORT)" "$(PG_PORT_R)" "$(PG_USER)"
+.PHONY: pg.info
+
+pg.info.short: ## short status summary
+	@$(pg_local)/../pg-info.sh --short "$(PG_DOCKER_IMAGE)" "$(PG_VERSION)" "$(PG_HOST)" "$(PG_PORT)" "$(PG_PORT_R)" "$(PG_USER)"
+.PHONY: pg.info.short
+
+pg.clean:: areyousure ## cleans all databases
+ifeq ($(INFRA_PG_DATABASES),)
+	@echo "no databases configured"
+else
+	@echo "* cleaning pg databases..."
+	@for db in $(INFRA_PG_DATABASES); do \
+		exists=`$(PSQL) -XtAc "SELECT 1 FROM pg_database WHERE datname='$${db}'"`; \
+		if [ "$${exists}" = "1" ]; then \
+			echo "  * dropping db $${db}..."; \
+			$(PSQL) -c "DROP DATABASE $${db} WITH (FORCE)" 2>/dev/null; \
+		else \
+			echo "  * database $${db} not found"; \
+		fi; \
+	done
+	@echo "* done cleaning pg databases"
+endif
+.PHONY: pg.clean
+
+pg.do_clean: areyousure
+	@if [[ -z $(pg_databases) ]]; then \
+		echo "no databases configured"; \
+	fi
+	@echo "* cleaning pg databases..."
+	-$(PSQL) -c "DROP DATABASE proxy WITH (FORCE)" 2>/dev/null
+	@echo "* done cleaning pg databases"
+.PHONY: pg.do_clean
+
+pg: ## connects to postgres db (primary)
+	@$(pg_local)/../pg-info.sh --short "$(PG_DOCKER_IMAGE)" "$(PG_VERSION)" "$(PG_HOST)" "$(PG_PORT)" "$(PG_PORT_R)" "$(PG_USER)"
+	@echo ""
+	$(PSQL)
+.PHONY: pg
+
+pg.standby: ## connects to standby postgres db (replication mode only)
+	@$(pg_local)/../pg-info.sh --short "$(PG_DOCKER_IMAGE)" "$(PG_VERSION)" "$(PG_HOST)" "$(PG_PORT)" "$(PG_PORT_R)" "$(PG_USER)"
+	@echo ""
+	@echo "Connecting to standby server (read-only)..."
+	$(PSQL_STANDBY)
+.PHONY: pg.standby
+
+pg.top: ## pgtop for primary server
+	pg_top -h $(PG_HOST) -p $(PG_PORT) -U $(PG_USER)
+.PHONY: pg.top

@@ -1,0 +1,9 @@
+# Included config with paths that should resolve relative to THIS file
+postgres:
+  cert_file: ./pg_certs/server.crt  # Should resolve relative to includes/ directory
+  key_file: ./pg_certs/server.key
+  ca_file: ../ca/root.crt  # Should resolve relative to includes/ directory
+
+mysql:
+  socket: ./mysql.sock
+  config: ../mysql/my.cnf

@@ -1,0 +1,5 @@
+# Main database configuration
+# Includes connection and pool settings from separate files
+
+connection: !include './connection.yaml'
+pool: !include './pool.yaml'

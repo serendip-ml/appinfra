@@ -1,0 +1,4 @@
+# Logging config (included by 04_multiple_main.yaml)
+
+level: debug
+colors: true

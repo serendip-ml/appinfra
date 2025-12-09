@@ -1,0 +1,46 @@
+# {{PROJECT_NAME}} - Framework-based Makefile
+#
+# This Makefile includes modular components from the infra framework.
+# Generated with infra scaffold tool using --makefile-style=framework
+
+# Configuration
+INFRA_DEV_PKG_NAME := {{PROJECT_NAME}}
+
+# Auto-detect infra framework location (override by setting INFRA_ROOT env var or in Makefile)
+INFRA_ROOT ?=
+
+# Check common submodule location
+ifeq ($(INFRA_ROOT),)
+  ifneq (,$(wildcard ./submodules/infra/scripts/make/Makefile.env))
+    INFRA_ROOT := ./submodules/infra
+  endif
+endif
+
+# Auto-detect via Python import
+_BOOTSTRAP_PYTHON := $(or $(PYTHON),$(wildcard $(HOME)/.venv/bin/python),python3)
+
+ifeq ($(INFRA_ROOT),)
+  INFRA_ROOT := $(shell $(_BOOTSTRAP_PYTHON) -c "import appinfra; from pathlib import Path; print(Path(appinfra.__file__).parent.parent)" 2>/dev/null || echo "")
+endif
+
+ifeq ($(INFRA_ROOT),)
+  $(error Cannot locate infra. Set INFRA_ROOT=/path/to/infra at top of Makefile or install appinfra package)
+endif
+
+# Include framework Makefiles (Makefile.env handles Python detection)
+include $(INFRA_ROOT)/scripts/make/Makefile.env
+include $(INFRA_ROOT)/scripts/make/Makefile.help
+include $(INFRA_ROOT)/scripts/make/Makefile.utils
+include $(INFRA_ROOT)/scripts/make/Makefile.clean
+include $(INFRA_ROOT)/scripts/make/Makefile.dev
+include $(INFRA_ROOT)/scripts/make/Makefile.pytest
+# Uncomment if using PostgreSQL:
+# pg_docker_cfg := etc/pg.yaml
+# include $(INFRA_ROOT)/scripts/make/Makefile.pg
+
+##@ Application
+
+run:: ## runs the application
+	@echo "* running application..."
+	@$(PYTHON) -m {{PROJECT_NAME}}
+.PHONY: run

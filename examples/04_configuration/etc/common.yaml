@@ -1,0 +1,4 @@
+# Common configuration shared across all environments
+
+app_name: myapp
+version: 1.0.0

@@ -1,0 +1,8 @@
+# Multiple Includes Example
+# One file can include multiple other files
+
+app_name: myapp
+database: !include './04_multiple_database.yaml'
+cache: !include './04_multiple_cache.yaml'
+logging: !include './04_multiple_logging.yaml'
+debug: true
