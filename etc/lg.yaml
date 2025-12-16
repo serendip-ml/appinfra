@@ -46,7 +46,7 @@ logging:
 
     console_json:
       type: console              # Handler type (console, file, database, rotating_file, timed_rotating_file)
-      enabled: true              # Enable this handler
+      enabled: false             # Enable this handler
       level: info                # More restrictive than global - keeps WARNING level
       format: json               # Format: text, json
       stream: stderr             # Output stream: stdout, stderr

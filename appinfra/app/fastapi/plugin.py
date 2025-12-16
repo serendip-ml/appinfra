@@ -71,7 +71,7 @@ class ServeTool(Tool):
             return 0
         except KeyboardInterrupt:
             if self.lg:
-                self.lg.info("Server interrupted by user")
+                self.lg.info("server interrupted by user")
             self._server.stop()
             return 130  # Standard exit code for SIGINT
         except Exception as e:
@@ -152,5 +152,5 @@ class ServerPlugin(Plugin):
         Called during app shutdown phase.
         """
         if self._server.is_running:
-            logger.info("Stopping server during app cleanup")
+            logger.info("stopping server during app cleanup")
             self._server.stop()

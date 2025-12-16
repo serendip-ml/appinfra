@@ -17,19 +17,31 @@ This guide will help you get up and running with the Infra framework quickly.
 git clone https://github.com/your-username/infra.git
 cd infra
 
-# Install dependencies
+# Install dependencies (dev environment)
 make setup
 
-# Or install with pip (self-contained)
-pip install .
+# Or install base package only
+make install
 
-# Install with optional dependencies
-pip install ".[dev]"           # Development tools
-pip install ".[validation]"    # Pydantic validation
-pip install ".[docs]"          # Documentation tools
+# Install with optional extras
+make install INFRA_DEV_INSTALL_EXTRAS=ui           # Rich terminal UI
+make install INFRA_DEV_INSTALL_EXTRAS=ui,fastapi   # Multiple extras
+make install INFRA_DEV_INSTALL_EXTRAS=dev          # All dev dependencies
 
 # For development (editable mode - changes reflect without reinstall)
-pip install -e .
+make install.e
+make install.e INFRA_DEV_INSTALL_EXTRAS=ui,dev     # Editable with extras
+```
+
+**Available extras:** `dev`, `validation`, `docs`, `fastapi`, `hotreload`, `ui`
+
+Alternatively, install directly with pip:
+
+```bash
+pip install .                  # Base package
+pip install ".[dev]"           # Development tools
+pip install ".[ui]"            # Rich terminal UI
+pip install -e ".[dev,ui]"     # Editable with multiple extras
 ```
 
 ## Quick Examples

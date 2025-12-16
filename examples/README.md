@@ -16,7 +16,7 @@ with a clear learning progression.
 make setup
 
 # Run any example with venv
-python examples/01_basics/hello_world.py
+~/.venv/bin/python examples/01_basics/hello_world.py
 
 # Or activate venv first
 source ~/.venv/bin/activate
@@ -75,7 +75,7 @@ All examples use the virtual environment at `~/.venv`.
 
 **Method 1: Direct execution**
 ```bash
-python examples/01_basics/hello_world.py
+~/.venv/bin/python examples/01_basics/hello_world.py
 ```
 
 **Method 2: Activate venv first**
@@ -171,7 +171,7 @@ make pg
 cd /path/to/appinfra
 
 # Run from project root
-python examples/01_basics/hello_world.py
+~/.venv/bin/python examples/01_basics/hello_world.py
 ```
 
 ## Contributing Examples

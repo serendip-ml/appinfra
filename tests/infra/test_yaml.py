@@ -1178,3 +1178,396 @@ home: !path ~/
 """
         data = load(StringIO(yaml_content))
         assert data["home"] == str(Path.home())
+
+
+# =============================================================================
+# Document-Level Include Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestDocumentLevelIncludes:
+    """Test document-level !include directive functionality."""
+
+    def test_document_level_include_basic(self, tmp_path):
+        """Test basic document-level include."""
+        # Create base config
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text(
+            """
+logging:
+  level: INFO
+server:
+  port: 8080
+"""
+        )
+
+        # Create main config with document-level include
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """!include "./base.yaml"
+
+name: app
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # Should have content from both files
+        assert data["name"] == "app"
+        assert data["logging"]["level"] == "INFO"
+        assert data["server"]["port"] == 8080
+
+    def test_document_level_include_override(self, tmp_path):
+        """Test that main document overrides included content."""
+        # Create base config
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text(
+            """
+server:
+  host: localhost
+  port: 8080
+"""
+        )
+
+        # Create main config that overrides some values
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """!include "./base.yaml"
+
+server:
+  host: "0.0.0.0"
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # Main document value should override
+        assert data["server"]["host"] == "0.0.0.0"
+        # Base value should still be present
+        assert data["server"]["port"] == 8080
+
+    def test_document_level_include_multiple(self, tmp_path):
+        """Test multiple document-level includes."""
+        # Create first base config
+        base1_file = tmp_path / "base1.yaml"
+        base1_file.write_text(
+            """
+logging:
+  level: INFO
+"""
+        )
+
+        # Create second base config
+        base2_file = tmp_path / "base2.yaml"
+        base2_file.write_text(
+            """
+database:
+  host: localhost
+"""
+        )
+
+        # Create main config with multiple includes
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """!include "./base1.yaml"
+!include "./base2.yaml"
+
+name: app
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # Should have content from all files
+        assert data["name"] == "app"
+        assert data["logging"]["level"] == "INFO"
+        assert data["database"]["host"] == "localhost"
+
+    def test_document_level_include_with_section_anchor(self, tmp_path):
+        """Test document-level include with section anchor."""
+        # Create base config with multiple sections
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text(
+            """
+production:
+  server:
+    host: prod.example.com
+    port: 443
+development:
+  server:
+    host: localhost
+    port: 8080
+"""
+        )
+
+        # Create main config that includes only production section
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """!include "./base.yaml#production"
+
+name: app
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # Should only have production content
+        assert data["name"] == "app"
+        assert data["server"]["host"] == "prod.example.com"
+        assert data["server"]["port"] == 443
+        # Should NOT have development content
+        assert "development" not in data
+        assert "production" not in data
+
+    def test_document_level_include_only(self, tmp_path):
+        """Test document with only document-level include (no other content)."""
+        # Create base config
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text(
+            """
+name: base_app
+version: "1.0"
+"""
+        )
+
+        # Create main config with only an include
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text('!include "./base.yaml"\n')
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        assert data["name"] == "base_app"
+        assert data["version"] == "1.0"
+
+    def test_document_level_include_quoted_paths(self, tmp_path):
+        """Test document-level include with various quote styles."""
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text("value: 42\n")
+
+        # Test double quotes
+        main_file1 = tmp_path / "main1.yaml"
+        main_file1.write_text('!include "./base.yaml"\n')
+        with open(main_file1) as f:
+            data1 = load(f, current_file=main_file1)
+        assert data1["value"] == 42
+
+        # Test single quotes
+        main_file2 = tmp_path / "main2.yaml"
+        main_file2.write_text("!include './base.yaml'\n")
+        with open(main_file2) as f:
+            data2 = load(f, current_file=main_file2)
+        assert data2["value"] == 42
+
+        # Test unquoted
+        main_file3 = tmp_path / "main3.yaml"
+        main_file3.write_text("!include ./base.yaml\n")
+        with open(main_file3) as f:
+            data3 = load(f, current_file=main_file3)
+        assert data3["value"] == 42
+
+    def test_document_level_include_with_comment(self, tmp_path):
+        """Test document-level include with trailing comment."""
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text("value: 42\n")
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """!include "./base.yaml"  # Load base config
+
+name: app
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        assert data["value"] == 42
+        assert data["name"] == "app"
+
+    def test_document_level_include_deep_merge(self, tmp_path):
+        """Test deep merge behavior with nested structures."""
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text(
+            """
+server:
+  http:
+    host: localhost
+    port: 8080
+  https:
+    enabled: false
+    port: 443
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """!include "./base.yaml"
+
+server:
+  http:
+    port: 9000
+  https:
+    enabled: true
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # Deep merge should preserve unmodified nested keys
+        assert data["server"]["http"]["host"] == "localhost"  # From base
+        assert data["server"]["http"]["port"] == 9000  # Overridden
+        assert data["server"]["https"]["enabled"] is True  # Overridden
+        assert data["server"]["https"]["port"] == 443  # From base
+
+    def test_document_level_include_circular_detection(self, tmp_path):
+        """Test circular include detection with document-level includes."""
+        # Create circular reference
+        file_a = tmp_path / "a.yaml"
+        file_b = tmp_path / "b.yaml"
+
+        file_a.write_text('!include "./b.yaml"\nfrom_a: true\n')
+        file_b.write_text('!include "./a.yaml"\nfrom_b: true\n')
+
+        with open(file_a) as f:
+            with pytest.raises(yaml.YAMLError, match="Circular include detected"):
+                load(f, current_file=file_a)
+
+    def test_document_level_include_security(self, tmp_path):
+        """Test that document-level includes respect project_root."""
+        # Create project structure
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+
+        outside_file = tmp_path / "outside.yaml"
+        outside_file.write_text("secret: password\n")
+
+        main_file = project_root / "main.yaml"
+        main_file.write_text('!include "../outside.yaml"\n')
+
+        with open(main_file) as f:
+            with pytest.raises(yaml.YAMLError, match="Security.*outside project root"):
+                load(f, current_file=main_file, project_root=project_root)
+
+    def test_document_level_include_source_tracking(self, tmp_path):
+        """Test source tracking with document-level includes."""
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text(
+            """
+logging:
+  level: INFO
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """!include "./base.yaml"
+
+name: app
+"""
+        )
+
+        with open(main_file) as f:
+            data, source_map = load(f, current_file=main_file, track_sources=True)
+
+        assert data["name"] == "app"
+        assert data["logging"]["level"] == "INFO"
+
+        # Main file entries should point to main_file
+        assert source_map.get("name") == main_file
+
+    def test_document_level_include_nonexistent_file(self, tmp_path):
+        """Test error handling for non-existent document-level include."""
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text('!include "./nonexistent.yaml"\n')
+
+        with open(main_file) as f:
+            with pytest.raises(yaml.YAMLError, match="Include file not found"):
+                load(f, current_file=main_file)
+
+    def test_document_level_include_without_context(self, tmp_path):
+        """Test that relative document-level includes fail without file context."""
+        yaml_content = '!include "./base.yaml"\n\nname: app\n'
+
+        with pytest.raises(
+            yaml.YAMLError, match="Cannot resolve relative include path"
+        ):
+            load(StringIO(yaml_content))
+
+    def test_document_level_include_preserves_key_level_includes(self, tmp_path):
+        """Test that key-level includes still work alongside document-level includes."""
+        # Create base config
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text("shared: base_value\n")
+
+        # Create database config (for key-level include)
+        db_file = tmp_path / "db.yaml"
+        db_file.write_text(
+            """
+host: localhost
+port: 5432
+"""
+        )
+
+        # Create main config with both types of includes
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """!include "./base.yaml"
+
+name: app
+database: !include "./db.yaml"
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        assert data["shared"] == "base_value"  # From document-level include
+        assert data["name"] == "app"  # From main document
+        assert data["database"]["host"] == "localhost"  # From key-level include
+        assert data["database"]["port"] == 5432
+
+    def test_document_level_include_nested_files(self, tmp_path):
+        """Test document-level includes in nested files."""
+        # Create a chain: main -> mid -> base
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text("from_base: true\n")
+
+        mid_file = tmp_path / "mid.yaml"
+        mid_file.write_text('!include "./base.yaml"\n\nfrom_mid: true\n')
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text('!include "./mid.yaml"\n\nfrom_main: true\n')
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        assert data["from_base"] is True
+        assert data["from_mid"] is True
+        assert data["from_main"] is True
+
+    def test_indented_include_not_document_level(self, tmp_path):
+        """Test that indented !include is NOT treated as document-level."""
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text("value: 42\n")
+
+        # This should NOT be treated as document-level because it's indented
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """
+name: app
+  # This is indented, not document level
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # Should just parse normally without treating indented content specially
+        assert data["name"] == "app"

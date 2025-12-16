@@ -1,0 +1,59 @@
+"""Etc path discovery tool."""
+
+import sys
+from importlib.resources import files
+from typing import Any
+
+from appinfra.app.tools import Tool, ToolConfig
+from appinfra.app.tracing.traceable import Traceable
+
+
+class EtcPathTool(Tool):
+    """Print the path to the etc directory."""
+
+    def __init__(self, parent: Traceable | None = None):
+        """Initialize the etc-path tool.
+
+        Args:
+            parent: Optional parent tool or application.
+        """
+        config = ToolConfig(
+            name="etc-path",
+            help_text="Print path to etc directory",
+            description="Outputs the filesystem path to the etc directory for configuration files",
+        )
+        super().__init__(parent, config)
+
+    def add_args(self, parser: Any) -> None:
+        """Add command-line arguments."""
+        parser.add_argument(
+            "--local",
+            action="store_true",
+            help="Find local project etc directory instead of package etc",
+        )
+
+    def run(self, local: bool = False, **kwargs: Any) -> int:
+        """Print the etc directory path.
+
+        Args:
+            local: If True, find local project etc directory.
+
+        Returns:
+            Exit code (0 for success, 1 for error).
+        """
+        # Check both direct arg and parsed args (framework passes args via self.args)
+        try:
+            use_local = local or getattr(self.args, "local", False)
+        except Exception:
+            use_local = local
+        if use_local:
+            from appinfra.app.core.config import resolve_etc_dir
+
+            try:
+                print(resolve_etc_dir())
+            except FileNotFoundError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                return 1
+        else:
+            print(files("appinfra") / "etc")
+        return 0

@@ -41,12 +41,6 @@ def create_application():
         )
         .done()
         .tools.with_cmd("args", show_args, help_text="Show parsed arguments")
-        # Add custom arguments
-        .advanced.with_argument("-q", action="store_true", help="quiet")
-        .done()
-        .advanced.with_argument(
-            "--name", type=str, default="World", help="Name to greet"
-        )
         .done()
         .build()
     )

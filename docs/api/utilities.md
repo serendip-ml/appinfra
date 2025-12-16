@@ -188,9 +188,20 @@ with open("config.yaml") as f:
 **`!include`** - Include other YAML files:
 
 ```yaml
+# Key-level include (as a value)
 database: !include "./database.yaml"           # Include entire file
 settings: !include "config.yaml#app.settings"  # Include specific section
+
+# Document-level include (merge at root)
+!include "./base.yaml"
+
+app_name: myapp
+server:
+  port: 8080
 ```
+
+Document-level includes (at column 0) merge included content with the main document. The included
+file provides defaults; main document content overrides. Nested includes are supported.
 
 **`!secret`** - Mark sensitive values (warns if not using env var syntax):
 

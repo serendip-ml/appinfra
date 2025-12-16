@@ -208,6 +208,81 @@ class LoggingConfigurer:
             manager.disable_runtime_updates()
         return self
 
+    def with_hot_reload(
+        self,
+        enabled: bool = True,
+        config_path: str | None = None,
+        section: str = "logging",
+        debounce_ms: int = 500,
+    ) -> "LoggingConfigurer":
+        """
+        Enable hot-reload of logging configuration from config file.
+
+        When enabled, changes to the config file are automatically detected
+        and applied to all existing loggers without restart. Supports reloading:
+        - Log levels
+        - Display options (colors, location, location_color, micros)
+        - Topic-based level rules
+
+        Note:
+            Requires watchdog package. Install with: pip install appinfra[hotreload]
+
+        Args:
+            enabled: Whether to enable hot-reload (default: True)
+            config_path: Path to config file. If None, uses app's config path.
+            section: Config section containing logging config (default: "logging")
+            debounce_ms: Milliseconds to wait before applying changes (default: 500)
+
+        Returns:
+            Self for method chaining
+
+        Example:
+            app = (AppBuilder("myapp")
+                .config("etc/app.yaml")
+                .logging
+                    .with_hot_reload(True)  # Watch app's config file
+                    .done()
+                .build())
+
+            # Or with explicit config path:
+            app = (AppBuilder("myapp")
+                .logging
+                    .with_hot_reload(True, config_path="etc/logging.yaml")
+                    .done()
+                .build())
+
+        Raises:
+            ImportError: If watchdog is not installed
+            ValueError: If config_path not provided and app config not set
+        """
+        from ..app import HotReloadConfig
+
+        if not enabled:
+            self._app_builder._hot_reload_config = None
+            return self
+
+        # Determine config path
+        resolved_path = config_path
+        if resolved_path is None:
+            if (
+                hasattr(self._app_builder, "_config_path")
+                and self._app_builder._config_path
+            ):
+                resolved_path = self._app_builder._config_path
+            else:
+                raise ValueError(
+                    "config_path required when app config not set. "
+                    "Either call .config() first or provide config_path explicitly."
+                )
+
+        self._app_builder._hot_reload_config = HotReloadConfig(
+            enabled=True,
+            config_path=resolved_path,
+            section=section,
+            debounce_ms=debounce_ms,
+        )
+        return self
+
     def done(self) -> "AppBuilder":
         """
         Finish logging configuration and return to main builder.

@@ -24,6 +24,7 @@ Log Level Control:
 """
 
 import logging
+import sys
 import warnings
 from typing import Optional, Union
 
@@ -244,7 +245,7 @@ def capture_all_loggers(
     config = LogConfig.from_params(level, location, micros, colors=colors)
 
     # Create handler with appinfra formatter
-    handler = logging.StreamHandler()
+    handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(LogFormatter(config))
     handler.setLevel(numeric_level)
 

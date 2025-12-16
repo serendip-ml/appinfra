@@ -17,7 +17,7 @@ PG_INCLUDED := true
 pg_local := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 
 # Configuration with backward compatibility
-INFRA_PG_CONFIG ?= $(if $(pg_docker_cfg),$(pg_docker_cfg),$(pg_local)/../etc/pg.yaml)
+INFRA_PG_CONFIG ?= $(if $(pg_docker_cfg),$(pg_docker_cfg),$(pg_local)/../../etc/pg.yaml)
 INFRA_PG_CONFIG_KEY ?= $(if $(pg_docker_key),$(pg_docker_key),pgserver)
 INFRA_PG_DATABASES ?= $(pg_databases)
 INFRA_PG_HOST ?= 127.0.0.1

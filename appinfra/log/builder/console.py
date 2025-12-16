@@ -6,6 +6,7 @@ for console-only logging with various formatting options.
 """
 
 import logging
+import sys
 from typing import Any
 
 from ..config import LogConfig
@@ -26,7 +27,7 @@ class ConsoleHandlerConfig(HandlerConfig):
         **kwargs: Any,
     ):
         super().__init__(level)
-        self.stream = stream
+        self.stream = stream if stream is not None else sys.stdout
         self.format = format
 
         # Extract format-specific options (those starting with "format_")

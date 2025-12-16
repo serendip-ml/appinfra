@@ -424,6 +424,92 @@ class TestMethodChaining:
 # =============================================================================
 
 
+# =============================================================================
+# Test with_hot_reload
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestWithHotReload:
+    """Test with_hot_reload method (lines 216-284)."""
+
+    def test_enables_hot_reload_with_config_path(self):
+        """Test with_hot_reload enables hot-reload with explicit config path."""
+        from appinfra.app.builder.app import HotReloadConfig
+
+        app_builder = Mock()
+        app_builder._hot_reload_config = None
+        configurer = LoggingConfigurer(app_builder)
+
+        configurer.with_hot_reload(True, config_path="/etc/app.yaml")
+
+        assert app_builder._hot_reload_config is not None
+        assert isinstance(app_builder._hot_reload_config, HotReloadConfig)
+        assert app_builder._hot_reload_config.enabled is True
+        assert app_builder._hot_reload_config.config_path == "/etc/app.yaml"
+
+    def test_disables_hot_reload(self):
+        """Test with_hot_reload can disable hot-reload."""
+        from appinfra.app.builder.app import HotReloadConfig
+
+        app_builder = Mock()
+        app_builder._hot_reload_config = HotReloadConfig(
+            enabled=True, config_path="/old.yaml"
+        )
+        configurer = LoggingConfigurer(app_builder)
+
+        configurer.with_hot_reload(False)
+
+        assert app_builder._hot_reload_config is None
+
+    def test_uses_app_config_path_as_fallback(self):
+        """Test with_hot_reload uses app's config path when not specified."""
+
+        app_builder = Mock()
+        app_builder._hot_reload_config = None
+        app_builder._config_path = "/app/config.yaml"
+        configurer = LoggingConfigurer(app_builder)
+
+        configurer.with_hot_reload(True)
+
+        assert app_builder._hot_reload_config is not None
+        assert app_builder._hot_reload_config.config_path == "/app/config.yaml"
+
+    def test_raises_when_no_config_path_available(self):
+        """Test with_hot_reload raises when no config path available."""
+        app_builder = Mock()
+        app_builder._hot_reload_config = None
+        app_builder._config_path = None
+        configurer = LoggingConfigurer(app_builder)
+
+        with pytest.raises(ValueError, match="config_path required"):
+            configurer.with_hot_reload(True)
+
+    def test_custom_section_and_debounce(self):
+        """Test with_hot_reload with custom section and debounce."""
+
+        app_builder = Mock()
+        app_builder._hot_reload_config = None
+        configurer = LoggingConfigurer(app_builder)
+
+        configurer.with_hot_reload(
+            True, config_path="/etc/app.yaml", section="app.logging", debounce_ms=1000
+        )
+
+        assert app_builder._hot_reload_config.section == "app.logging"
+        assert app_builder._hot_reload_config.debounce_ms == 1000
+
+    def test_returns_self_for_chaining(self):
+        """Test with_hot_reload returns self."""
+        app_builder = Mock()
+        app_builder._hot_reload_config = None
+        configurer = LoggingConfigurer(app_builder)
+
+        result = configurer.with_hot_reload(True, config_path="/etc/app.yaml")
+
+        assert result is configurer
+
+
 @pytest.mark.integration
 class TestLoggingConfigurerIntegration:
     """Test LoggingConfigurer integration with real AppBuilder."""

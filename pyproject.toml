@@ -41,12 +41,19 @@ validation = [
 docs = [
     "mkdocs>=1.5.3,<2.0.0",
     "mkdocs-material>=9.5.0,<10.0.0",
-    "mkdocstrings[python]>=0.24.0,<1.0.0",
-    "mkdocs-autorefs>=0.5.0,<1.0.0",
+    "mkdocstrings[python]>=1.0.0,<2.0.0",
+    "mkdocs-autorefs>=1.4.0,<2.0.0",
 ]
 fastapi = [
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
+]
+hotreload = [
+    "watchdog>=3.0.0,<5.0.0",
+]
+ui = [
+    "rich>=13.0.0,<14.0.0",
+    "questionary>=2.0.0,<3.0.0",
 ]
 
 [project.scripts]
@@ -156,4 +163,17 @@ include = ["appinfra*"]
 exclude = ["tests*", "scripts*", "etc*"]
 
 [tool.setuptools.package-data]
-appinfra = ["docs/**/*.md", "docs/LICENSE", "examples/**/*.py", "examples/**/*.md", "examples/**/*.yaml", "cli/tools/scaffold/*.in"]
+appinfra = [
+    "docs/**/*.md",
+    "docs/LICENSE",
+    "examples/**/*.py",
+    "examples/**/*.md",
+    "examples/**/*.yaml",
+    "cli/tools/scaffold/*.in",
+    "scripts/make/*",
+    "scripts/*.sh",
+    "scripts/*.py",
+    "scripts/docker/**/*",
+    "etc/*.yaml",
+    "etc/README.md",
+]

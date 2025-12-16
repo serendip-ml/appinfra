@@ -8,32 +8,32 @@ to customize and extend framework targets without modifying framework files.
 The framework uses a consistent naming convention for configuration variables:
 `INFRA_<MODULE>_<VAR>`.
 
-### Quick Start for Submodule Users
+### Quick Start
 
 ```makefile
-# Minimal setup using the framework as a submodule
-infra := path/to/infra
+# Recommended: pip install appinfra, then use scripts-path
+infra := $(shell appinfra scripts-path)
 
 # Set your configuration
 INFRA_DEV_PKG_NAME := myproject
 INFRA_DEV_CQ_STRICT := true
 
 # Include what you need (selective inclusion)
-include $(infra)/scripts/make/Makefile.config
-include $(infra)/scripts/make/Makefile.env
-include $(infra)/scripts/make/Makefile.help
-include $(infra)/scripts/make/Makefile.utils
-include $(infra)/scripts/make/Makefile.dev
-include $(infra)/scripts/make/Makefile.pytest
-include $(infra)/scripts/make/Makefile.clean
+include $(infra)/make/Makefile.config
+include $(infra)/make/Makefile.env
+include $(infra)/make/Makefile.help
+include $(infra)/make/Makefile.utils
+include $(infra)/make/Makefile.dev
+include $(infra)/make/Makefile.pytest
+include $(infra)/make/Makefile.clean
 ```
 
 Or include everything:
 
 ```makefile
-infra := path/to/infra
+infra := $(shell appinfra scripts-path)
 INFRA_DEV_PKG_NAME := myproject
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 ```
 
 ### Configuration Overrides
@@ -65,7 +65,7 @@ framework uses `?=` for all configuration variables, so precedence works as expe
 
 # Example 2: Makefile variable before include
 INFRA_DEV_PKG_NAME := myproject
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 
 # Example 3: Fallback to default
 # If nothing sets INFRA_DEV_PKG_NAME, uses "appinfra"
@@ -189,7 +189,7 @@ is run.
 
 ```makefile
 # Your app's Makefile
-include path/to/infra/scripts/make/Makefile.clean
+include $(infra)/make/Makefile.clean
 
 clean::
 	@echo "Cleaning app-specific files..."
@@ -204,7 +204,7 @@ execute.
 
 ```makefile
 # Your app's Makefile
-include path/to/infra/scripts/make/Makefile.pytest
+include $(infra)/make/Makefile.pytest
 
 test.integration::
 	@echo "Running app-specific integration tests..."
@@ -218,7 +218,7 @@ run.
 
 ```makefile
 # Your app's Makefile
-include path/to/infra/scripts/make/Makefile.dev
+include $(infra)/make/Makefile.dev
 
 lint::
 	@echo "Running app-specific linting..."
@@ -244,13 +244,13 @@ make test PYTHON=python3.12 PYTEST_ARGS="-v -x --pdb"
 
 ```makefile
 # Your app's Makefile
+infra := $(shell appinfra scripts-path)
 
 # Override before including framework
 PYTHON = /usr/local/bin/python3.12
 
 # Include framework
-framework_root := path/to/infra
-include $(framework_root)/scripts/make/Makefile.pytest
+include $(infra)/make/Makefile.pytest
 
 # Now all framework targets use your Python version
 ```
@@ -322,6 +322,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 | `INFRA_DEV_PKG_NAME` | `appinfra` | Package name for install, type, coverage |
 | `INFRA_DEV_CQ_STRICT` | `false` | Code quality: `true`=30-line, `false`=50-line |
 | `INFRA_DEV_PROJECT_ROOT` | `$(CURDIR)` | Project root for check.sh |
+| `INFRA_DEV_INSTALL_EXTRAS` | (empty) | Optional extras for install (e.g., `ui,fastapi`) |
 | `INFRA_DRY_RUN` | `0` | Set to `1` to preview commands without executing |
 
 **Testing (PYTEST):**
@@ -380,21 +381,21 @@ Here's a complete example of an app extending the framework:
 # Example app Makefile
 
 # Configuration (before includes)
+infra := $(shell appinfra scripts-path)
 INFRA_DEV_PKG_NAME := myapp
 INFRA_DEV_CQ_STRICT := true
 INFRA_DISABLE_TARGETS := release  # Hide release target
 
 # Include framework Makefiles (selectively)
-infra := ../../infra
-include $(infra)/scripts/make/Makefile.config
-include $(infra)/scripts/make/Makefile.env
-include $(infra)/scripts/make/Makefile.help
-include $(infra)/scripts/make/Makefile.utils
-include $(infra)/scripts/make/Makefile.dev
-include $(infra)/scripts/make/Makefile.pytest
-include $(infra)/scripts/make/Makefile.docs
-include $(infra)/scripts/make/Makefile.pg
-include $(infra)/scripts/make/Makefile.clean
+include $(infra)/make/Makefile.config
+include $(infra)/make/Makefile.env
+include $(infra)/make/Makefile.help
+include $(infra)/make/Makefile.utils
+include $(infra)/make/Makefile.dev
+include $(infra)/make/Makefile.pytest
+include $(infra)/make/Makefile.docs
+include $(infra)/make/Makefile.pg
+include $(infra)/make/Makefile.clean
 
 ##@ App-Specific
 
@@ -439,8 +440,9 @@ to your project's `tests/` directory:
 
 ```makefile
 # Your project's Makefile
+infra := $(shell appinfra scripts-path)
 PYTHON = ~/.venv/bin/python
-include infra/scripts/make/Makefile.pytest
+include $(infra)/make/Makefile.pytest
 
 # Now you can run:
 # make test.unit        - runs tests in YOUR_PROJECT/tests/
@@ -457,44 +459,39 @@ Override this for your project:
 
 ```makefile
 # Your project's Makefile
+infra := $(shell appinfra scripts-path)
 INFRA_DEV_PKG_NAME := myproject
 # INFRA_PYTEST_COVERAGE_PKG inherits from INFRA_DEV_PKG_NAME automatically
 
-include infra/scripts/make/Makefile.config
-include infra/scripts/make/Makefile.env
-include infra/scripts/make/Makefile.pytest
+include $(infra)/make/Makefile.config
+include $(infra)/make/Makefile.env
+include $(infra)/make/Makefile.pytest
 
 # Now make test.coverage measures YOUR project's coverage
 ```
 
-### Testing Submodules
+### Testing with Submodules
 
-If you use infra as a submodule and want to test both your code AND the submodule:
+If you use infra as a submodule (prefer pip install for most cases), you can test both your
+code and the submodule:
 
 ```makefile
-# Your project's Makefile
+# Your project's Makefile (submodule approach)
+infra := submodules/infra
 INFRA_DEV_PKG_NAME := myproject
 
-include infra/scripts/make/Makefile.config
-include infra/scripts/make/Makefile.env
-include infra/scripts/make/Makefile.pytest
-
-# Test your own code (uses relative paths)
-test.unit::
-	@echo "Running additional project-specific tests..."
-	./scripts/custom-tests.sh
+include $(infra)/scripts/make/Makefile.config
+include $(infra)/scripts/make/Makefile.env
+include $(infra)/scripts/make/Makefile.pytest
 
 # Test the infra submodule
 .PHONY: test.infra
 test.infra:  ## Test the infra submodule
 	@echo "Testing infra submodule..."
-	$(MAKE) -C infra test.all
-
-# Test everything
-.PHONY: test.all.with-deps
-test.all.with-deps: test.all test.infra  ## Test project + dependencies
-	@echo "All tests (including dependencies) passed"
+	$(MAKE) -C $(infra) test.all
 ```
+
+Note: With pip install, there's no submodule to test - appinfra is just a dependency.
 
 ### How It Works
 
@@ -509,46 +506,39 @@ test.all.with-deps: test.all test.infra  ## Test project + dependencies
 - ✅ Clean separation of concerns
 - ✅ No configuration needed for basic usage
 
-### Example: Framework Using Infra as Submodule
+### Example: Framework Using pip-installed appinfra
 
 ```
 MyFramework/
   ├── Makefile
-  ├── myframework/          ← Your code
-  ├── tests/
-  │   ├── unit/            ← Your unit tests
-  │   └── integration/     ← Your integration tests
-  └── infra/  (submodule)
-      ├── infra/           ← Infra's code
-      └── tests/           ← Infra's tests
+  ├── pyproject.toml       ← includes appinfra dependency
+  ├── myframework/         ← Your code
+  └── tests/
+      ├── unit/            ← Your unit tests
+      └── integration/     ← Your integration tests
 ```
 
 ```makefile
 # MyFramework/Makefile
+infra := $(shell appinfra scripts-path)
 INFRA_DEV_PKG_NAME := myframework
 
-include infra/scripts/make/Makefile.config
-include infra/scripts/make/Makefile.env
-include infra/scripts/make/Makefile.help
-include infra/scripts/make/Makefile.utils
-include infra/scripts/make/Makefile.pytest
-include infra/scripts/make/Makefile.clean
+include $(infra)/make/Makefile.config
+include $(infra)/make/Makefile.env
+include $(infra)/make/Makefile.help
+include $(infra)/make/Makefile.utils
+include $(infra)/make/Makefile.pytest
+include $(infra)/make/Makefile.clean
 
 # Extend test targets if needed
 test.unit::
 	@echo "Running framework-specific validation..."
 	./scripts/validate-framework.sh
-
-# Test both framework and infra
-.PHONY: test.full
-test.full: test.all test.infra
 ```
 
 When you run:
 - `make test.unit` → Runs tests in `MyFramework/tests/` ✓
 - `make test.coverage` → Measures coverage for `myframework` package ✓
-- `make test.infra` → Tests infra submodule ✓
-- `make test.full` → Tests everything ✓
 
 ## Best Practices
 
@@ -558,14 +548,14 @@ Only include the framework Makefiles you actually need:
 
 ```makefile
 # Good - include only what you use
-infra := path/to/infra
-include $(infra)/scripts/make/Makefile.config  # Always include first
-include $(infra)/scripts/make/Makefile.env
-include $(infra)/scripts/make/Makefile.pytest
-include $(infra)/scripts/make/Makefile.clean
+infra := $(shell appinfra scripts-path)
+include $(infra)/make/Makefile.config  # Always include first
+include $(infra)/make/Makefile.env
+include $(infra)/make/Makefile.pytest
+include $(infra)/make/Makefile.clean
 
 # Alternative - include everything
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 ```
 
 ### 2. Clear Section Markers
@@ -650,7 +640,8 @@ clean::  # OK
 
 ```makefile
 # Correct order
-include framework/Makefile.clean  # Framework first
+infra := $(shell appinfra scripts-path)
+include $(infra)/make/Makefile.clean  # Framework first
 
 clean::  # Your extension second
 	rm -rf .app-cache
@@ -664,12 +655,12 @@ clean::  # Your extension second
 
 ```makefile
 # Wrong
-include $(infra)/scripts/make/Makefile.config
+include $(infra)/make/Makefile.config
 INFRA_DEV_PKG_NAME := myproject  # Too late
 
 # Correct
 INFRA_DEV_PKG_NAME := myproject  # Before include
-include $(infra)/scripts/make/Makefile.config
+include $(infra)/make/Makefile.config
 ```
 
 ## Using the Scaffold Tool
@@ -891,7 +882,7 @@ If you start with a standalone Makefile and want to upgrade:
 
 ## See Also
 
-- [Framework Integration Guide](framework-integration.md) - Submodule integration and troubleshooting
+- [Framework Integration Guide](framework-integration.md) - Integration methods and troubleshooting
 - [Getting Started Guide](../getting-started.md)
 - [Test Naming Standards](test-naming-standards.md)
 - [PostgreSQL Test Helper](pg-test-helper.md)

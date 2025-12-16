@@ -157,6 +157,12 @@ class ToolGroup:
         args = self._parent.trace_attr("args")
         cmd = getattr(args, self._cmd_var, None)
 
+        # No subcommand provided - show help
+        if cmd is None:
+            if self._parent.arg_prs:
+                self._parent.arg_prs.print_help()
+            return 0
+
         if cmd in self._funcs:
             self.lg.debug("running cmd", extra={"cmd": cmd})
             return cast(int, self._funcs[cmd]())

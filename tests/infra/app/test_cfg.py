@@ -793,6 +793,90 @@ class TestValidation:
 
 
 # =============================================================================
+# Test Source File Tracking
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestSourceFileTracking:
+    """Test get_source_files() functionality for config file tracking."""
+
+    def test_get_source_files_returns_main_file(self, tmp_path):
+        """Test get_source_files returns the main config file."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("app:\n  name: test")
+        config = Config(str(config_file))
+
+        source_files = config.get_source_files()
+
+        assert config_file.resolve() in source_files
+        assert len(source_files) == 1
+
+    def test_get_source_files_includes_included_files(self, tmp_path):
+        """Test get_source_files includes files loaded via !include."""
+        # Create included file
+        db_file = tmp_path / "database.yaml"
+        db_file.write_text("host: localhost\nport: 5432")
+
+        # Create main config with include
+        main_file = tmp_path / "config.yaml"
+        main_file.write_text('database: !include "./database.yaml"\napp:\n  name: test')
+
+        config = Config(str(main_file))
+        source_files = config.get_source_files()
+
+        assert main_file.resolve() in source_files
+        assert db_file.resolve() in source_files
+        assert len(source_files) == 2
+
+    def test_get_source_files_includes_nested_includes(self, tmp_path):
+        """Test get_source_files includes nested includes."""
+        # Create nested include chain: main -> logging -> handlers
+        handlers_file = tmp_path / "handlers.yaml"
+        handlers_file.write_text("console:\n  level: INFO")
+
+        logging_file = tmp_path / "logging.yaml"
+        logging_file.write_text('level: DEBUG\nhandlers: !include "./handlers.yaml"')
+
+        main_file = tmp_path / "config.yaml"
+        main_file.write_text('logging: !include "./logging.yaml"\napp: test')
+
+        config = Config(str(main_file))
+        source_files = config.get_source_files()
+
+        assert main_file.resolve() in source_files
+        assert logging_file.resolve() in source_files
+        assert handlers_file.resolve() in source_files
+        assert len(source_files) == 3
+
+    def test_get_source_files_with_document_level_include(self, tmp_path):
+        """Test get_source_files works with document-level includes."""
+        # Create base config
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text("shared:\n  setting: value")
+
+        # Create main config with document-level include
+        main_file = tmp_path / "config.yaml"
+        main_file.write_text('!include "./base.yaml"\n\napp:\n  name: test')
+
+        config = Config(str(main_file))
+        source_files = config.get_source_files()
+
+        assert main_file.resolve() in source_files
+        assert base_file.resolve() in source_files
+
+    def test_get_source_files_returns_set(self, tmp_path):
+        """Test get_source_files returns a set type."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("app: test")
+        config = Config(str(config_file))
+
+        source_files = config.get_source_files()
+
+        assert isinstance(source_files, set)
+
+
+# =============================================================================
 # Test Integration Scenarios
 # =============================================================================
 

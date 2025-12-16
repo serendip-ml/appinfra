@@ -90,12 +90,18 @@ import unittest
 from pathlib import Path
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 import sqlalchemy
 
-from tests.helpers.pg.helper import PGTestCaseHelper
+try:
+    from tests.helpers.pg.helper import PGTestCaseHelper
+except ImportError:
+    print("This example requires test infrastructure (tests.helpers.pg.helper).")
+    print("Please run from within the development environment with tests installed,")
+    print("or run: pip install -e .[dev]")
+    sys.exit(0)
 
 
 class TestPGHelperCustomConfig(PGTestCaseHelper):

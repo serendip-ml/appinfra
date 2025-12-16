@@ -48,9 +48,6 @@ def create_application() -> App:
         # Add tool
         .tools.with_tool(demo_tool)
         .done()
-        # Add custom arguments
-        .advanced.with_argument("-q", action="store_true", help="quiet")
-        .done()
         .build()
     )
 

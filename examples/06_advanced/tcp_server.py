@@ -13,15 +13,15 @@ import appinfra
 from appinfra.log import LogConfig, LoggerFactory
 
 
-class Syn(
-    appinfra.time.Ticker, appinfra.time.TickerHandler, appinfra.net.HTTPRequestHandler
-):
+class Syn(appinfra.time.TickerHandler, appinfra.net.HTTPRequestHandler):
+    """Syncer that implements TickerHandler and HTTPRequestHandler."""
+
     def __init__(self, lg):
         self._lg = lg
         self._last_t = time.monotonic()
         self._lock = None
         self._msg = None
-        super().__init__(self, secs=1)
+        self._ticker = None
 
     def start(self):
         """Start the ticker - required by TCPServer interface."""
@@ -33,11 +33,9 @@ class Syn(
             self._lock = threading.Lock()
             self._msg = {"last_t": time.monotonic()}
 
-        # Start the ticker in a separate thread
-        import threading
-
-        self._ticker_thread = threading.Thread(target=self.run, daemon=True)
-        self._ticker_thread.start()
+        # Create and start the ticker with this handler
+        self._ticker = appinfra.time.Ticker(self._lg, self, secs=1)
+        self._ticker.start()
         self._lg.info("syn ticker started")
 
     def ticker_start(self, manager=None):

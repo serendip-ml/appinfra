@@ -1,6 +1,8 @@
 # Infrastructure Configuration Guide
 
-This directory contains the configuration files for the Infra framework. The main configuration file is `infra.yaml`, which defines settings for logging, databases, servers, and other infrastructure components.
+This directory contains the configuration files for the Infra framework. The main configuration file
+is `infra.yaml`, which defines settings for logging, databases, servers, and other infrastructure
+components.
 
 ## Configuration File Structure
 
@@ -195,7 +197,8 @@ test:
 
 ### 5. Database Logging Configuration
 
-Controls database logging behavior including critical error handling. Critical flush parameters are configured in a `critical_flush` section within the database handler.
+Controls database logging behavior including critical error handling. Critical flush parameters are
+configured in a `critical_flush` section within the database handler.
 
 ```yaml
 logging:
@@ -218,12 +221,16 @@ logging:
         fallback_to_console: true    # If DB flush fails, log to console
 ```
 
-**Critical Flush Feature**: When enabled, log records containing exception information or specified trigger fields in the `extra` dictionary will be immediately flushed to the database, bypassing the normal batching mechanism. This ensures critical error information is preserved even during application crashes.
+**Critical Flush Feature**: When enabled, log records containing exception information or specified
+trigger fields in the `extra` dictionary will be immediately flushed to the database, bypassing the
+normal batching mechanism. This ensures critical error information is preserved even during
+application crashes.
 
 
 ## Runtime Logging Overrides
 
-You can override logging settings during runtime by uncommenting and modifying the section in `etc/infra.yaml`:
+You can override logging settings during runtime by uncommenting and modifying the section in
+`etc/infra.yaml`:
 
 ```yaml
 # Runtime Logging Overrides (Global)
@@ -268,7 +275,8 @@ dbs:
 
 ## File Inclusion with !include
 
-The configuration supports including external YAML files using the `!include` tag. This allows you to:
+The configuration supports including external YAML files using the `!include` tag. This allows you
+to:
 - **Modularize configuration** - Split large configs into manageable files
 - **Reuse common settings** - Share configuration across multiple files
 - **Organize by environment** - Separate dev/staging/prod configs
@@ -276,6 +284,7 @@ The configuration supports including external YAML files using the `!include` ta
 
 ### Basic Usage
 
+**Key-level includes** - include content as a value:
 ```yaml
 # main.yaml
 database: !include './database.yaml'
@@ -289,6 +298,29 @@ host: localhost
 port: 5432
 user: postgres
 ```
+
+**Document-level includes** - merge content at document root:
+```yaml
+# main.yaml
+!include "./base.yaml"
+
+app_name: myapp
+server:
+  port: 8080
+```
+
+```yaml
+# base.yaml
+logging:
+  level: info
+server:
+  host: localhost
+```
+
+Result: The included content provides defaults, and the main document overrides. The final config
+has `logging.level: info`, `server.host: localhost`, `server.port: 8080`, and `app_name: myapp`.
+
+Document-level includes must be at column 0 (no indentation) and appear before other content.
 
 ### Path Resolution
 
@@ -365,7 +397,8 @@ test:
   url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/test"
 ```
 
-**Note:** Variable substitution happens after all includes are resolved, so variables work across file boundaries.
+**Note:** Variable substitution happens after all includes are resolved, so variables work across
+file boundaries.
 
 ### Advanced Examples
 

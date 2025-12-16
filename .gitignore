@@ -26,4 +26,3 @@ build/
 
 # Local Makefile overrides (custom PYTHON path, etc.)
 Makefile.local
-.claude/settings.local.json

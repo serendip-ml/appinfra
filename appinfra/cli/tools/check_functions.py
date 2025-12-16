@@ -3,6 +3,11 @@ Function size analysis tool for code quality enforcement.
 
 Analyzes Python source files to identify functions exceeding size limits,
 supporting the project's 20-30 line function size guideline.
+
+Exit Codes:
+    0: No violations found
+    1: Violations found (in strict mode)
+    42: Violations found but non-strict mode (warning)
 """
 
 import argparse
@@ -13,6 +18,9 @@ from pathlib import Path
 from typing import Any
 
 from appinfra.app.tools import Tool, ToolConfig
+
+# Exit code for "warnings but ok" - violations found in non-strict mode
+EXIT_CODE_WARNING = 42
 
 
 @dataclass
@@ -485,6 +493,23 @@ class CheckFunctionsTool(Tool):
                 extra={"violations": violation_count, "limit": limit},
             )
 
+    def _get_exit_code(self, violations: list[FunctionInfo], strict: bool) -> int:
+        """Determine exit code based on violation severity and strict mode."""
+        if not violations:
+            return 0
+
+        if strict:
+            return 1
+
+        # Non-strict: fail on high-severity, warn on moderate-only
+        has_critical = any(v.code_lines > 80 for v in violations)
+        has_high = any(50 < v.code_lines <= 80 for v in violations)
+
+        if has_critical or has_high:
+            return 1  # Fail on high-severity even in non-strict
+
+        return EXIT_CODE_WARNING  # Only moderate violations
+
     def run(self, **kwargs: Any) -> int:
         """
         Execute the function size checker.
@@ -514,7 +539,7 @@ class CheckFunctionsTool(Tool):
         )
         self._log_summary(len(all_violations), limit)
 
-        return 1 if self.args.strict and len(all_violations) > 0 else 0
+        return self._get_exit_code(all_violations, self.args.strict)
 
     def _collect_python_files(
         self, paths: list[str], exclude_patterns: list[str], include_tests: bool

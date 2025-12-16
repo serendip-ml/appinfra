@@ -7,7 +7,6 @@ import sys
 project_root = str(pathlib.Path(__file__).resolve().parents[2])
 sys.path.append(project_root) if project_root not in sys.path else None
 
-import appinfra.app
 from appinfra.app.builder.app import AppBuilder
 from appinfra.app.builder.tool import ToolBuilder
 
@@ -41,15 +40,15 @@ def _create_tool_builders():
     first_tool = (
         ToolBuilder("first")
         .with_help("First tool")
-        .with_alias("1")
-        .advanced.with_argument("-d", action="store_true", help="x switch")
+        .with_alias("f1")
+        .with_argument("-d", action="store_true", help="x switch")
         .with_run_function(first_handler)
     )
     status_tool = (
         ToolBuilder("status")
         .with_help("status tool")
         .with_alias("s")
-        .advanced.with_argument("-x", action="store_true", help="x flag")
+        .with_argument("-x", action="store_true", help="x flag")
         .with_run_function(status_handler)
     )
     info_tool = (
@@ -61,8 +60,8 @@ def _create_tool_builders():
     second_tool = (
         ToolBuilder("second")
         .with_help("Second tool")
-        .with_alias("2")
-        .advanced.with_argument("-y", action="store_true", help="y switch")
+        .with_alias("s2")
+        .with_argument("-y", action="store_true", help="y switch")
         .with_run_function(second_handler)
     )
 
@@ -77,21 +76,17 @@ def create_application():
     app_builder = (
         AppBuilder("main_with_group")
         .with_description("Example application with tools using AppBuilder")
-        .logging.with_config_builder(
-            appinfra.app.LoggingConfigBuilder().with_level("info").with_location(1)
-        )
+        .logging.with_level("info")
+        .with_location(1)
+        .done()
     )
 
     # Add all tools
     for tool in tools:
-        app_builder = app_builder.tools.with_tool_builder(tool)
+        app_builder = app_builder.tools.with_tool_builder(tool).done()
 
     # Finalize and build
-    app = (
-        app_builder.advanced.with_argument("-q", action="store_true", help="quiet")
-        .done()
-        .build()
-    )
+    app = app_builder.build()
 
     return app
 

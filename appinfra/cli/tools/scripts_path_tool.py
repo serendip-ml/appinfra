@@ -1,0 +1,34 @@
+"""Scripts path discovery tool."""
+
+from importlib.resources import files
+from typing import Any
+
+from appinfra.app.tools import Tool, ToolConfig
+from appinfra.app.tracing.traceable import Traceable
+
+
+class ScriptsPathTool(Tool):
+    """Print the path to the installed scripts directory."""
+
+    def __init__(self, parent: Traceable | None = None):
+        """Initialize the scripts-path tool.
+
+        Args:
+            parent: Optional parent tool or application.
+        """
+        config = ToolConfig(
+            name="scripts-path",
+            help_text="Print path to installed scripts directory",
+            description="Outputs the filesystem path to the scripts directory for Makefile integration",
+        )
+        super().__init__(parent, config)
+
+    def run(self, **kwargs: Any) -> int:
+        """Print the scripts directory path.
+
+        Returns:
+            Exit code (0 for success).
+        """
+        scripts_dir = files("appinfra") / "scripts"
+        print(scripts_dir)
+        return 0

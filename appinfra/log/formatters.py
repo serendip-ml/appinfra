@@ -15,8 +15,12 @@ from typing import Any, cast
 
 from .colors import ColorManager
 from .config import LogConfig
+from .config_holder import LogConfigHolder
 from .constants import LogConstants
 from .exceptions import FormatterError
+
+# Type alias for config parameter that can be either LogConfig or LogConfigHolder
+ConfigLike = LogConfig | LogConfigHolder
 
 # Pattern to match ANSI escape sequences
 _ANSI_PATTERN = re.compile(r"\x1b\[[0-9;]*m")
@@ -236,17 +240,25 @@ class PreFormatter(logging.Formatter):
 class FieldFormatter:
     """Handles individual field formatting with colors and brackets."""
 
-    def __init__(self, config: LogConfig):
+    def __init__(self, config: ConfigLike):
         """
         Initialize field formatter.
 
         Args:
-            config: Formatter configuration
+            config: Formatter configuration (LogConfig or LogConfigHolder)
         """
-        self._config = config
+        if isinstance(config, LogConfigHolder):
+            self._holder = config
+        else:
+            self._holder = LogConfigHolder(config)
         # Performance optimization: cache formatted strings for repeated values
-        self._format_cache: dict[Any, str] = {}  # Cache for simple value formatting
+        self._format_cache: dict[Any, str] = {}
         self._max_cache_size = 1000  # Prevent unbounded cache growth
+
+    @property
+    def _config(self) -> LogConfig:
+        """Get current config (supports hot-reload via holder)."""
+        return self._holder.config
 
     def format_field(
         self, value: Any, col: str, bold: str, name: str = "", quote: bool = False
@@ -330,20 +342,28 @@ class FieldFormatter:
 class LocationRenderer:
     """Handles file location display in log messages."""
 
-    def __init__(self, config: LogConfig):
+    def __init__(self, config: ConfigLike):
         """
         Initialize location renderer.
 
         Args:
-            config: Formatter configuration
+            config: Formatter configuration (LogConfig or LogConfigHolder)
         """
-        self._config = config
-        # Determine location color: use configured color or default to BLACK
-        self._location_color = (
-            config.location_color
-            if config.location_color is not None
-            else ColorManager.BLACK
-        )
+        if isinstance(config, LogConfigHolder):
+            self._holder = config
+        else:
+            self._holder = LogConfigHolder(config)
+
+    @property
+    def _config(self) -> LogConfig:
+        """Get current config (supports hot-reload via holder)."""
+        return self._holder.config
+
+    @property
+    def _location_color(self) -> str:
+        """Get location color (property for backward compatibility and testing)."""
+        location_color = self._config.location_color
+        return location_color if location_color is not None else ColorManager.BLACK
 
     def render_location(self, record: logging.LogRecord) -> str:
         """
@@ -359,7 +379,7 @@ class LocationRenderer:
             return ""
 
         fmt = ""
-        # Use configurable color instead of hardcoded BLACK
+        # Use configurable color - read fresh from config for hot-reload
         fmt += ColorManager.RESET + self._location_color + "m"
 
         # Use __infra__pathnames if available (multi-location trace from appinfra logger)
@@ -393,21 +413,34 @@ class LogFormatter(logging.Formatter):
     - Exception traceback rendering
     - File location display
     - Process and logger name information
+
+    Supports hot-reload when initialized with a LogConfigHolder.
     """
 
-    def __init__(self, config: LogConfig):
+    def __init__(self, config: ConfigLike):
         """
         Initialize the log formatter.
 
         Args:
-            config: Logger configuration
+            config: Logger configuration (LogConfig or LogConfigHolder).
+                    Use LogConfigHolder to enable hot-reload support.
         """
-        self._config = config
-        self._field_formatter = FieldFormatter(config)
-        self._location_renderer = LocationRenderer(config)
+        if isinstance(config, LogConfigHolder):
+            self._holder = config
+        else:
+            self._holder = LogConfigHolder(config)
+
+        # Share the holder with sub-formatters for synchronized hot-reload
+        self._field_formatter = FieldFormatter(self._holder)
+        self._location_renderer = LocationRenderer(self._holder)
 
         fmt = LogConstants.DEFAULT_FORMAT
         self._pre_formatter = PreFormatter(fmt, self._config.micros)
+
+    @property
+    def _config(self) -> LogConfig:
+        """Get current config (supports hot-reload via holder)."""
+        return self._holder.config
 
     def format(self, record: logging.LogRecord) -> str:
         """

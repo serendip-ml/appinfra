@@ -53,7 +53,11 @@ CLEAR=$'\033[K'
 CHECK_PENDING="[ ] "
 CHECK_RUNNING="[...]"
 CHECK_SUCCESS="[✓] "
+CHECK_WARNING="[⚠] "
 CHECK_FAILURE="[✗] "
+
+# Exit code for "warnings but ok" from cq tool (violations in non-strict mode)
+EXIT_CODE_WARNING=42
 
 PYTHON="${PYTHON:-~/.venv/bin/python}"
 PKG_NAME="${INFRA_DEV_PKG_NAME:-appinfra}"
@@ -87,16 +91,18 @@ if [ -n "$EXAMPLES_DIR" ]; then
     CHECKS+=("Type checking (examples)|type|${PYTHON} -m mypy ${EXAMPLES_DIR}/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports|")
 fi
 
-# Build CQ command based on strictness setting
+# Build CQ command and label based on strictness setting
 if [ "$CQ_STRICT" = "true" ]; then
     CQ_CMD="${PYTHON} -m appinfra.cli.cli -l error cq cf --strict"
+    CQ_LABEL="Function size check (strict)"
 else
     CQ_CMD="${PYTHON} -m appinfra.cli.cli -l error cq cf"
+    CQ_LABEL="Function size check (non-strict)"
 fi
 
 # Add remaining checks
 CHECKS+=(
-    "Function size check|cq.strict|${CQ_CMD}|"
+    "${CQ_LABEL}|cq.strict|${CQ_CMD}|"
     "Test suite|test.all|SPECIAL|test.v"
 )
 
@@ -159,7 +165,7 @@ trap handle_interrupt INT TERM
 update_line() {
     local line_num=$1 status=$2 name=$3 extra=$4
     {
-        flock -x 200
+        command -v flock &>/dev/null && flock -x 200
         local lines_up=$((TOTAL_LINES - line_num))
         [ $lines_up -gt 0 ] && printf "\033[${lines_up}A"
         printf "\r%b%s %s%b\n" "$CLEAR" "$status" "$name" "$extra"
@@ -201,6 +207,11 @@ check_coverage_threshold() {
 record_failure() {
     local name="$1" make_target="$2" fix_target="$3" logfile="$4" extra="${5:-}"
     echo "$name|$make_target|$fix_target|$logfile|$extra" >> "${STATUS_DIR}/failures"
+}
+
+record_warning() {
+    local name="$1" count="${2:-}"
+    echo "$name|$count" >> "${STATUS_DIR}/warnings"
 }
 
 # Unified check runner - handles both main checks and subchecks
@@ -256,6 +267,19 @@ run_check() {
         5)  # No tests collected
             update_line "$line_num" "${GRAY}${CHECK_PENDING}${RESET}" "${prefix}${name}" " ${GRAY}(no tests)${RESET}"
             rm -f "$tmpfile"
+            ;;
+        42)  # Warning: violations found but non-strict mode (EXIT_CODE_WARNING)
+            # Extract violation count from output if available
+            local warning_count=$(grep -oP '(?<=Violations found: )\d+|(?<=Violations: )\d+' "$tmpfile" 2>/dev/null | head -1)
+            if [ -n "$warning_count" ]; then
+                update_line "$line_num" "${YELLOW}${CHECK_WARNING}${RESET}" "${prefix}${name}" " ${GRAY}(${warning_count} violations, run make cq)${RESET}"
+                record_warning "$name" "$warning_count"
+            else
+                update_line "$line_num" "${YELLOW}${CHECK_WARNING}${RESET}" "${prefix}${name}" " ${GRAY}(run make cq)${RESET}"
+                record_warning "$name"
+            fi
+            rm -f "$tmpfile"
+            # Return 0 - warnings don't fail the build in non-strict mode
             ;;
         *)  # Failure
             update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" ""
@@ -409,6 +433,7 @@ run_raw() {
 
     local start_time=$(date +%s.%N)
     local failed=false
+    local has_warnings=false
 
     local subchecks=()
     [ "$SUMMARY" = true ] && subchecks=("${TEST_SUBCHECKS[@]}") || subchecks=("${TEST_SUBCHECKS_RAW[@]}")
@@ -436,8 +461,15 @@ run_raw() {
                 echo ""
             done
         else
-            if eval "$cmd"; then
+            local cmd_exit_code=0
+            eval "$cmd" || cmd_exit_code=$?
+
+            if [ $cmd_exit_code -eq 0 ]; then
                 echo "${GREEN}✓${RESET} $name passed"
+            elif [ $cmd_exit_code -eq 42 ]; then  # EXIT_CODE_WARNING
+                echo "${YELLOW}⚠${RESET} $name (warnings, run make cq)"
+                has_warnings=true
+                # Don't fail on warnings in non-strict mode
             else
                 echo "${RED}✗${RESET} $name failed"
                 [ -n "$fix_target" ] && echo "  To fix: make $fix_target"
@@ -453,6 +485,8 @@ run_raw() {
     if [ "$failed" = true ]; then
         echo "${RED}✗ Some checks failed${RESET} ${GRAY}in ${elapsed}s${RESET}"
         exit 1
+    elif [ "$has_warnings" = true ]; then
+        echo "${YELLOW}⚠ All checks passed with warnings${RESET} ${GRAY}in ${elapsed}s${RESET}"
     else
         echo "${GREEN}✓ All checks passed${RESET} ${GRAY}in ${elapsed}s${RESET}"
     fi
@@ -520,7 +554,13 @@ main() {
         display_failures
         exit 1
     else
-        echo -e "${GREEN}✓ All checks passed${RESET} ${GRAY}in ${elapsed}s${RESET}"
+        # Check for warnings
+        if [ -f "${STATUS_DIR}/warnings" ]; then
+            local warning_count=$(wc -l < "${STATUS_DIR}/warnings")
+            echo -e "${YELLOW}⚠ All checks passed with ${warning_count} warning(s)${RESET} ${GRAY}in ${elapsed}s${RESET}"
+        else
+            echo -e "${GREEN}✓ All checks passed${RESET} ${GRAY}in ${elapsed}s${RESET}"
+        fi
     fi
 }
 

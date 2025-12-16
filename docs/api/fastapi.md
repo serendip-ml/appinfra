@@ -240,6 +240,148 @@ async def stream_handler(request: Request):
     return StreamingResponse(generate())
 ```
 
+## IPC Pattern Guide
+
+Complete guide to implementing the subprocess IPC pattern.
+
+### Message Protocol
+
+Request and response messages **must have an `id` attribute** for routing:
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class WorkRequest:
+    id: str          # Required: unique identifier for routing
+    prompt: str      # Your data fields
+    max_tokens: int
+
+@dataclass
+class WorkResponse:
+    id: str          # Required: must match request.id
+    result: str      # Your data fields
+    error: str | None = None
+
+# For streaming responses
+@dataclass
+class StreamChunk:
+    id: str          # Required: must match request.id
+    data: str
+    is_final: bool   # Required: True on last chunk
+```
+
+The `id` field is how IPCChannel routes responses back to the correct waiting handler. Without it,
+responses are logged as warnings and discarded.
+
+### Handler Pattern
+
+Handlers access IPCChannel via `request.app.state.ipc_channel`:
+
+```python
+from uuid import uuid4
+from fastapi import APIRouter, Request, HTTPException
+
+router = APIRouter()
+
+@router.post("/generate")
+async def generate(body: GenerateRequest, request: Request):
+    ipc = request.app.state.ipc_channel
+
+    # Create request with unique ID
+    req_id = str(uuid4())
+    work_request = WorkRequest(id=req_id, prompt=body.prompt, max_tokens=body.max_tokens)
+
+    # Submit and wait for response
+    response = await ipc.submit(req_id, work_request, timeout=60.0)
+
+    if response.error:
+        raise HTTPException(status_code=500, detail=response.error)
+    return {"result": response.result}
+```
+
+For streaming responses:
+
+```python
+from fastapi.responses import StreamingResponse
+
+@router.post("/stream")
+async def stream(body: GenerateRequest, request: Request):
+    ipc = request.app.state.ipc_channel
+    req_id = str(uuid4())
+    work_request = WorkRequest(id=req_id, prompt=body.prompt, max_tokens=body.max_tokens)
+
+    async def generate():
+        async for chunk in ipc.submit_streaming(req_id, work_request):
+            yield chunk.data
+            if chunk.is_final:
+                break
+
+    return StreamingResponse(generate(), media_type="text/plain")
+```
+
+### Main Process Loop
+
+The main process reads requests, processes them, and sends responses:
+
+```python
+import multiprocessing as mp
+from queue import Empty
+
+def run_worker(request_q: mp.Queue, response_q: mp.Queue):
+    """Main process worker loop."""
+    while True:
+        try:
+            request = request_q.get(timeout=0.1)
+        except Empty:
+            continue
+
+        # Process the request (your logic here)
+        try:
+            result = do_inference(request.prompt, request.max_tokens)
+            response = WorkResponse(id=request.id, result=result)
+        except Exception as e:
+            response = WorkResponse(id=request.id, result="", error=str(e))
+
+        # Response id MUST match request.id for routing
+        response_q.put(response)
+```
+
+### Complete Example
+
+```python
+import multiprocessing as mp
+from appinfra.app.fastapi import ServerBuilder
+
+# Create IPC queues
+request_q: mp.Queue = mp.Queue()
+response_q: mp.Queue = mp.Queue()
+
+# Build server with IPC
+server = (ServerBuilder("worker-api")
+    .with_port(8000)
+    .subprocess
+        .with_ipc(request_q, response_q)
+        .with_response_timeout(60.0)
+        .with_auto_restart(enabled=True)
+        .done()
+    .routes
+        .with_router(router)  # Router with /generate, /stream endpoints
+        .done()
+    .build())
+
+# Start server subprocess (non-blocking)
+proc = server.start_subprocess()
+
+# Main process handles compute-intensive work
+try:
+    run_worker(request_q, response_q)
+finally:
+    server.stop()
+```
+
+See `examples/07_fastapi/fastapi_server.py` for a complete working implementation.
+
 ## Configuration Classes
 
 ### ApiConfig

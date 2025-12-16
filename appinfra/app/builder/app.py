@@ -278,6 +278,20 @@ class LoggingConfig:
     location_color: str | None = None
 
 
+@dataclass
+class HotReloadConfig:
+    """Configuration for hot-reload of logging settings.
+
+    When enabled, changes to the config file are automatically detected
+    and applied to all existing loggers without restart.
+    """
+
+    enabled: bool = False
+    config_path: str | None = None
+    section: str = "logging"
+    debounce_ms: int = 500
+
+
 class AppBuilder:
     """
     Fluent builder for constructing CLI applications.
@@ -286,17 +300,24 @@ class AppBuilder:
     middleware, configuration, and lifecycle management.
     """
 
-    def __init__(self, name: str | None = None):
-        """
-        Initialize the application builder.
+    # Default standard args configuration
+    _DEFAULT_STANDARD_ARGS: dict[str, bool] = {
+        "etc_dir": True,
+        "log_level": True,
+        "log_location": True,
+        "log_micros": True,
+        "log_topic": True,
+        "quiet": True,
+    }
 
-        Args:
-            name: Application name (optional)
-        """
+    def __init__(self, name: str | None = None):
+        """Initialize the application builder."""
         self._name: str | None = name
         self._config: Config | DotDict | None = None
+        self._config_path: str | None = None  # Track config file path for hot-reload
         self._server_config: ServerConfig | None = None
         self._logging_config: LoggingConfig | None = None
+        self._hot_reload_config: HotReloadConfig | None = None
         self._tools: list[Tool] = []
         self._commands: list[Command] = []
         self._middleware: list[Middleware] = []
@@ -307,21 +328,8 @@ class AppBuilder:
         self._description: str | None = None
         self._version: str | None = None
         self._main_cls: type | None = None
-        self._auto_load_config: bool = (
-            True  # Auto-load config from --etc-dir by default
-        )
-
-        # Standard args control (default: all enabled)
-        self._standard_args: dict[str, bool] = {
-            "etc_dir": True,
-            "log_level": True,
-            "log_location": True,
-            "log_micros": True,
-            "log_topic": True,
-            "quiet": True,
-        }
-
-        # Decorator API support
+        self._auto_load_config: bool = True  # Auto-load from --etc-dir by default
+        self._standard_args: dict[str, bool] = self._DEFAULT_STANDARD_ARGS.copy()
         self._decorators: DecoratorAPI = DecoratorAPI(self)
 
     def with_name(self, name: str) -> "AppBuilder":
@@ -339,9 +347,36 @@ class AppBuilder:
         self._version = version
         return self
 
+    def config(self, path: str) -> "AppBuilder":
+        """
+        Load configuration from a YAML file.
+
+        This method loads configuration and tracks the file path for hot-reload support.
+
+        Args:
+            path: Path to configuration YAML file
+
+        Returns:
+            Self for method chaining
+
+        Example:
+            app = (AppBuilder("myapp")
+                .config("etc/app.yaml")
+                .logging
+                    .with_hot_reload(True)  # Can now use default path
+                    .done()
+                .build())
+        """
+        self._config = Config(path)
+        self._config_path = path
+        return self
+
     def with_config(self, config: Config | DotDict) -> "AppBuilder":
         """Set the application configuration."""
         self._config = config
+        # Track path if Config has it
+        if hasattr(config, "_config_path"):
+            self._config_path = config._config_path
         return self
 
     def with_config_builder(self, builder: ConfigBuilder) -> "AppBuilder":

@@ -195,7 +195,7 @@ class LoggingBuilder(LoggingBuilderInterface):
         Add a console handler.
 
         Args:
-            stream: Output stream (defaults to stderr)
+            stream: Output stream (defaults to stdout)
             level: Handler level (defaults to logger level)
 
         Returns:

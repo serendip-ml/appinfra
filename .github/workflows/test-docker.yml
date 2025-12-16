@@ -47,7 +47,7 @@ jobs:
         run: |
           docker compose -f docker-compose.yml \
                         -f docker-compose.override.py${{ matrix.python-version }}.yml \
-                        up --abort-on-container-exit --exit-code-from app
+                        up --abort-on-container-exit --exit-code-from cicd-test
 
       - name: Generate coverage report (Python 3.12 only)
         if: matrix.python-version == '3.12'
@@ -55,7 +55,7 @@ jobs:
         run: |
           docker compose -f docker-compose.yml \
                         -f docker-compose.override.py3.12.yml \
-                        run --rm app make test.coverage.xml
+                        run --rm cicd-test make test.coverage.xml
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'

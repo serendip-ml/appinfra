@@ -80,6 +80,18 @@ head -20 LICENSE
 - If file is empty or binary, that's a critical issue
 - If file doesn't exist, that's a blocker
 
+### CHANGELOG File
+```bash
+# Check CHANGELOG.md exists and read first 30 lines
+ls -la CHANGELOG.md
+head -30 CHANGELOG.md
+```
+- **IMPORTANT:** Actually READ this file before claiming it's missing
+- Verify the file exists before making claims about its absence
+- Check it contains actual changelog entries (versions, dates, changes)
+- Common formats: Keep a Changelog, conventional commits
+- If file doesn't exist, note it as a documentation gap (not a blocker)
+
 ### Test Files Location
 ```bash
 # Check for tests in standard locations

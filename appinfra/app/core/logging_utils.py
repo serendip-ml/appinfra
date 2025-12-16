@@ -75,7 +75,9 @@ def _extract_config_value(
     """
     if args_dict and arg_key in args_dict:
         return args_dict[arg_key]
-    return getattr(infra_config.logging, config_key, default)
+    if hasattr(infra_config, "logging"):
+        return getattr(infra_config.logging, config_key, default)
+    return default
 
 
 def _build_config_overrides(
@@ -177,7 +179,7 @@ def _add_default_console_handler(
     global_level: int,
 ) -> None:
     """Add default console handler when no handlers are configured."""
-    logger.info("No handlers configured - creating default console handler")
+    logger.trace("no handlers configured - creating default console handler")  # type: ignore[attr-defined]
 
     # Build default handler config
     default_config = {
@@ -198,7 +200,7 @@ def _add_default_console_handler(
     default_handler_config = list(registry.iter_enabled_handlers())[-1]
     actual_handler = default_handler_config.create_handler(log_config)
     logger.addHandler(actual_handler)
-    logger.info("Added default console handler using global config values")
+    logger.trace("added default console handler using global config values")  # type: ignore[attr-defined]
 
 
 def _extract_topics_dict(topics_attr: Any) -> dict:
@@ -260,6 +262,22 @@ def _load_topic_levels(config: Any, args_dict: dict | None) -> None:
         manager.set_default_level(config.logging.level)
 
 
+def _resolve_log_level(level: str | int) -> int:
+    """Resolve log level to integer, handling both string and int inputs."""
+    if isinstance(level, int):
+        return level
+    return getattr(logging, level.upper(), logging.INFO)
+
+
+def _load_handlers_from_config(config: Any, registry: HandlerRegistry) -> None:
+    """Load handlers from config into registry if handlers section exists."""
+    if not hasattr(config, "logging"):
+        return
+    handlers = getattr(config.logging, "handlers", None)
+    if handlers and hasattr(handlers, "items"):
+        registry.load_from_config(handlers)
+
+
 def setup_logging_from_config(
     config: Any,
     args: Any = None,
@@ -295,13 +313,10 @@ def setup_logging_from_config(
     # Load topic-based level rules BEFORE creating loggers
     _load_topic_levels(config, args_dict)
 
-    # Create handler registry
-    global_level = getattr(logging, config_overrides["level"].upper(), logging.INFO)
+    # Create handler registry and load handlers from config
+    global_level = _resolve_log_level(config_overrides["level"])
     registry = HandlerRegistry(global_level)
-
-    # Load handlers from configuration
-    handlers = getattr(config.logging, "handlers", [])
-    registry.load_from_config(handlers)
+    _load_handlers_from_config(config, registry)
 
     # Create logger without default handlers
     logger, log_config = _create_logger_without_default_handlers(config_overrides)

@@ -10,7 +10,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from ... import time
-from ...log import LogConfig, LoggerFactory
+from ...log import LoggerFactory
+from ...log.handler_factory import HandlerRegistry
 from ..errors import LifecycleError
 from ..tools.base import Tool
 
@@ -33,6 +34,7 @@ class LifecycleManager:
         self._lifecycle_logger: Logger | None = (
             None  # Derived logger for lifecycle messages at /infra/app/lifecycle
         )
+        self._handler_registry: HandlerRegistry | None = None
         self._start_time: float | None = None
 
         # Component registrations for shutdown
@@ -52,20 +54,14 @@ class LifecycleManager:
 
     def _setup_loggers(self, config: Any) -> None:
         """Create and configure logger hierarchy."""
-        log_level, log_location, log_micros, log_location_color = (
-            self._extract_logging_config(config)
-        )
-        log_location_color = self._resolve_color_name(log_location_color)
+        from typing import cast
 
-        log_config = LogConfig.from_params(
-            log_level,
-            location=log_location,
-            micros=log_micros,
-            location_color=log_location_color,
-        )
+        from .logging_utils import setup_logging_from_config
 
-        # Create root logger at / for user tools
-        self._logger = LoggerFactory.create("/", log_config)
+        # Use setup_logging_from_config to properly handle handlers config
+        logger, self._handler_registry = setup_logging_from_config(config)
+        self._logger = cast("Logger", logger)
+
         self._logger.debug(
             "*** start ***", extra={"prog_args": " ".join(sys.argv), "cwd": os.getcwd()}
         )
@@ -91,58 +87,8 @@ class LifecycleManager:
 
         self._create_shutdown_manager(config)
 
-    def _extract_logging_config(self, config: Any) -> tuple[Any, Any, bool, Any]:
-        """
-        Extract logging configuration from config object.
-
-        Returns:
-            Tuple of (log_level, log_location, log_micros, log_location_color)
-        """
-        # Check if we're in a test environment and use test logging level if so
-        if os.getenv("INFRA_TEST_LOGGING_LEVEL") is not None:
-            log_level = os.getenv("INFRA_TEST_LOGGING_LEVEL")
-        else:
-            log_level = (
-                getattr(config.logging, "level", "info")
-                if hasattr(config, "logging")
-                else "info"
-            )
-
-        log_location = (
-            getattr(config.logging, "location", 0) if hasattr(config, "logging") else 0
-        )
-        log_micros = (
-            getattr(config.logging, "micros", False)
-            if hasattr(config, "logging")
-            else False
-        )
-        log_location_color = (
-            getattr(config.logging, "location_color", None)
-            if hasattr(config, "logging")
-            else None
-        )
-
-        return log_level, log_location, log_micros, log_location_color
-
-    def _resolve_color_name(self, color_value: Any) -> Any:
-        """
-        Convert color name to ANSI code if it's a string.
-
-        Args:
-            color_value: Color value (string name or ANSI code)
-
-        Returns:
-            Resolved ANSI code or original value
-        """
-        if isinstance(color_value, str):
-            from appinfra.log.colors import ColorManager
-
-            resolved_color = ColorManager.from_name(color_value)
-            if resolved_color is not None:
-                return resolved_color
-            # If from_name returns None, keep the original string
-            # (might be a direct ANSI code for backwards compatibility)
-        return color_value
+        # Start hot-reload watcher if configured
+        self._start_hot_reload_watcher(config)
 
     def _create_shutdown_manager(self, config: Any) -> None:
         """Create and register shutdown manager."""
@@ -156,6 +102,91 @@ class LifecycleManager:
             start_time=self._start_time,
         )
         self._shutdown_manager.register_signal_handlers()
+
+    def _get_hot_reload_config(self, config: Any) -> Any | None:
+        """Extract hot-reload config from logging section if enabled."""
+        if not hasattr(config, "logging"):
+            return None
+
+        hot_reload_config = getattr(config.logging, "hot_reload", None)
+        if hot_reload_config is None:
+            return None
+
+        enabled = getattr(hot_reload_config, "enabled", False)
+        return hot_reload_config if enabled else None
+
+    def _resolve_hot_reload_config_path(self, hot_reload_config: Any) -> str | None:
+        """Resolve config path from hot_reload config or application."""
+        config_path = getattr(hot_reload_config, "config_path", None)
+        if config_path is None and hasattr(self.application, "_config_path"):
+            config_path = self.application._config_path
+        return config_path
+
+    def _start_hot_reload_watcher(self, config: Any) -> None:
+        """Start config file watcher if hot-reload is enabled."""
+        hot_reload_config = self._get_hot_reload_config(config)
+        if hot_reload_config is None:
+            return
+
+        config_path = self._resolve_hot_reload_config_path(hot_reload_config)
+        if config_path is None:
+            if self._lifecycle_logger:
+                self._lifecycle_logger.warning(
+                    "hot-reload enabled but no config path available"
+                )
+            return
+
+        self._configure_and_start_watcher(hot_reload_config, config_path)
+
+    def _configure_and_start_watcher(
+        self, hot_reload_config: Any, config_path: str
+    ) -> None:
+        """Configure and start the hot-reload watcher."""
+        try:
+            from appinfra.log.watcher import LogConfigWatcher
+
+            section = getattr(hot_reload_config, "section", "logging")
+            debounce_ms = getattr(hot_reload_config, "debounce_ms", 500)
+
+            watcher = LogConfigWatcher.get_instance()
+            watcher.configure(config_path, section=section, debounce_ms=debounce_ms)
+            watcher.start()
+
+            if self._lifecycle_logger:
+                self._lifecycle_logger.debug(
+                    "hot-reload watcher started",
+                    extra={"config_path": str(config_path)},
+                )
+        except ImportError:
+            if self._lifecycle_logger:
+                self._lifecycle_logger.warning(
+                    "hot-reload enabled but watchdog not installed. "
+                    "Install with: pip install appinfra[hotreload]"
+                )
+        except Exception as e:
+            if self._lifecycle_logger:
+                self._lifecycle_logger.error(
+                    "failed to start hot-reload watcher", extra={"exception": e}
+                )
+
+    def _stop_hot_reload_watcher(self) -> None:
+        """Stop config file watcher if running."""
+        try:
+            from appinfra.log.watcher import LogConfigWatcher
+
+            watcher = LogConfigWatcher.get_instance()
+            if watcher.is_running():
+                watcher.stop()
+                if self._lifecycle_logger:
+                    self._lifecycle_logger.debug("hot-reload watcher stopped")
+        except ImportError:
+            pass  # watchdog not installed, nothing to stop
+        except Exception as e:
+            if self._lifecycle_logger:
+                self._lifecycle_logger.error(
+                    "failed to stop hot-reload watcher",
+                    extra={"exception": e},
+                )
 
     def setup_tool(self, tool: Tool, **kwargs: Any) -> None:
         """Set up a tool for execution."""
@@ -244,6 +275,9 @@ class LifecycleManager:
         assert self._lifecycle_logger is not None  # Set during initialization
 
         self._lifecycle_logger.debug("shutting down...")
+
+        # Stop hot-reload watcher first (not in a timed phase)
+        self._stop_hot_reload_watcher()
 
         # Execute shutdown phases
         self._execute_phase("hooks", self._shutdown_hooks)

@@ -40,7 +40,7 @@ COPY appinfra/__init__.py ./appinfra/
 # This allows the Makefile PYTHON variable to work correctly
 RUN python -m venv /root/.venv && \
     /root/.venv/bin/pip install --upgrade pip setuptools wheel && \
-    /root/.venv/bin/pip install ".[dev,validation]"
+    /root/.venv/bin/pip install ".[dev,validation,docs,fastapi,hotreload,ui]"
 
 # Add venv to PATH so python/pip commands use the venv
 ENV PATH="/root/.venv/bin:$PATH"
@@ -67,6 +67,8 @@ COPY tests/ ./tests/
 COPY Makefile ./
 COPY scripts/ ./scripts/
 COPY etc/ ./etc/
+# Copy docs to appinfra/docs/ (symlink doesn't work in Docker COPY)
+COPY docs/ ./appinfra/docs/
 
 # Create output directories and caches with proper ownership
 # Important: Create cache directories before switching to testuser

@@ -104,7 +104,7 @@ class TestDateConversionFunctions:
         result = date_from_str("2025-12-05")
 
         assert result.year == 2025
-        assert result.month == 1
+        assert result.month == 12
         assert result.day == 5
 
     def test_date_to_str_formats_correctly(self):

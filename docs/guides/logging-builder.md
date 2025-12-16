@@ -46,8 +46,7 @@ from appinfra.log import ConsoleLoggingBuilder
 logger = (
     ConsoleLoggingBuilder("my_app")
     .with_level("info")
-    .with_colors(True)
-    .stdout()                      # Use stdout instead of stderr
+    .with_colors(True)             # stdout is the default; use .stderr() if needed
     .build()
 )
 ```

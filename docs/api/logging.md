@@ -228,7 +228,51 @@ def on_error(record):
 CallbackRegistry.register("error", my_callback)
 ```
 
+## Hot-Reload Configuration
+
+Automatically reload logging settings when config files change:
+
+```python
+from appinfra.app.builder import AppBuilder
+
+app = (
+    AppBuilder("my-service")
+    .config("etc/config.yaml")
+    .logging()
+        .with_hot_reload(True)  # Enable hot-reload
+        .done()
+    .build()
+)
+```
+
+Or via YAML:
+
+```yaml
+logging:
+  level: info
+  location: 1
+  hot_reload:
+    enabled: true
+    debounce_ms: 500
+```
+
+**What can be hot-reloaded:**
+- Log levels (global and topic-based)
+- Display options (location, micros, colors, location_color)
+
+**What cannot be hot-reloaded:**
+- File handlers and paths (requires restart)
+
+**Requirements:**
+
+```bash
+pip install appinfra[hotreload]  # Installs watchdog
+```
+
+See [Hot-Reload Logging Guide](../guides/hot-reload-logging.md) for full documentation.
+
 ## See Also
 
 - [Logging Builder Guide](../guides/logging-builder.md) - Comprehensive guide
 - [Config-Based Logging](../guides/config-based-logging.md) - YAML configuration
+- [Hot-Reload Logging](../guides/hot-reload-logging.md) - Dynamic config reloading

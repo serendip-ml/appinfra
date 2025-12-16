@@ -177,6 +177,7 @@ class Config(DotDict):
 
         fname_path = Path(fname).resolve()
         _check_file_size(fname_path)
+        self._config_path = fname_path  # Store for get_source_files()
 
         # Determine project root from config file location for security checks.
         # This allows appinfra to work correctly when used as a submodule,
@@ -186,6 +187,7 @@ class Config(DotDict):
         config_data, source_map = _load_yaml_with_includes(
             fname_path, self._merge_strategy, project_root=proj_root
         )
+        self._source_map = source_map  # Store for get_source_files()
         if not self._resolve_paths:
             source_map = {}
 
@@ -580,6 +582,23 @@ class Config(DotDict):
         except ImportError:
             # Config schemas module not available
             return True
+
+    def get_source_files(self) -> set[Path]:
+        """
+        Return all files that contributed to this config (main file + includes).
+
+        Useful for file watchers that need to monitor all config files for changes,
+        including files loaded via !include directives.
+
+        Returns:
+            Set of resolved Path objects for all source files
+        """
+        files: set[Path] = set()
+        if hasattr(self, "_config_path") and self._config_path:
+            files.add(self._config_path)
+        if hasattr(self, "_source_map") and self._source_map:
+            files.update(p.resolve() for p in self._source_map.values() if p)
+        return files
 
 
 # Project path utilities

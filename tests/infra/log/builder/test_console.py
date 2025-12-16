@@ -34,9 +34,11 @@ class TestConsoleHandlerConfig:
 
     def test_default_initialization(self):
         """Test ConsoleHandlerConfig with default settings."""
+        import sys
+
         config = ConsoleHandlerConfig()
 
-        assert config.stream is None
+        assert config.stream is sys.stdout
         assert config.level is None
         assert config.format == "text"
         assert config.format_options == {}

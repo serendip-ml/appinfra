@@ -186,7 +186,7 @@ class IPCChannel:
         if self._poll_task is not None:
             return
         self._poll_task = asyncio.create_task(self._poll_responses())
-        logger.info("Started IPC response polling task")
+        logger.info("started IPC response polling task")
 
     async def stop_polling(self) -> None:
         """
@@ -217,7 +217,7 @@ class IPCChannel:
             await queue.put(None)
         self.pending_streams.clear()
 
-        logger.info("Stopped IPC response polling task")
+        logger.info("stopped IPC response polling task")
 
     async def _read_queue_item(self, loop: asyncio.AbstractEventLoop) -> Any | None:
         """Read item from response queue without blocking event loop."""

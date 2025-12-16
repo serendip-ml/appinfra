@@ -36,7 +36,7 @@ def _extract_scaffold_arguments(args: Any) -> tuple[str, str, bool, bool, bool, 
 
 def _log_next_steps(lg: Any, name: str, project_path: Path) -> None:
     """Log next steps after project creation."""
-    lg.info("Project created successfully!", extra={"path": str(project_path)})
+    lg.info("project created successfully!", extra={"path": str(project_path)})
     lg.info("\nNext steps:")
     lg.info(f"  cd {name}")
     lg.info(f"  ~/.venv/bin/python -m {name}")
@@ -179,7 +179,7 @@ class ScaffoldTool(Tool):
         (project_path / "tests").mkdir(parents=True)
         (project_path / project_path.name).mkdir(parents=True)
 
-        self.lg.debug("Created directory structure")  # type: ignore[union-attr]
+        self.lg.debug("created directory structure")  # type: ignore[union-attr]
 
     def _config_logging_section(self, with_logging_db: bool) -> list[str]:
         """Generate logging configuration section."""
@@ -491,4 +491,4 @@ class ScaffoldTool(Tool):
         self._generate_pyproject(project_path, name)
         self._generate_gitignore(project_path)
         self._generate_makefile(project_path, name)
-        self.lg.debug("Generated supporting files")  # type: ignore[union-attr]
+        self.lg.debug("generated supporting files")  # type: ignore[union-attr]

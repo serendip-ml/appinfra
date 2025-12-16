@@ -119,6 +119,42 @@ class TestInitialize:
 
         assert manager._logger is not None
 
+    def test_initialize_respects_handler_stream_config(self):
+        """Test that stream config from handlers is respected."""
+        import sys
+
+        app = Mock()
+        manager = LifecycleManager(app)
+        config = DotDict(
+            logging=DotDict(
+                level="info",
+                handlers=DotDict(console=DotDict(type="console", stream="stdout")),
+            )
+        )
+
+        manager.initialize(config)
+
+        # Verify handler uses stdout, not stderr
+        assert manager._logger is not None
+        assert len(manager._logger.handlers) >= 1
+        handler = manager._logger.handlers[0]
+        assert handler.stream is sys.stdout
+
+    def test_initialize_creates_handler_registry(self):
+        """Test that handler registry is created during initialization."""
+        app = Mock()
+        manager = LifecycleManager(app)
+        config = DotDict(
+            logging=DotDict(
+                level="info",
+                handlers=DotDict(console=DotDict(type="console", stream="stdout")),
+            )
+        )
+
+        manager.initialize(config)
+
+        assert manager._handler_registry is not None
+
 
 # =============================================================================
 # Test Setup Tool

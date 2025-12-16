@@ -17,6 +17,16 @@ import yaml  # type: ignore[import-untyped]
 # Pattern for environment variable references: ${VAR_NAME}
 ENV_VAR_PATTERN = re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$")
 
+# Pattern for document-level !include directives (at column 0)
+# Matches: !include "./path.yaml" or !include './path.yaml' or !include path.yaml
+# Optionally with section anchor: !include "./path.yaml#section"
+# Optionally with trailing comment: !include "./path.yaml"  # comment
+DOCUMENT_INCLUDE_PATTERN = re.compile(
+    r"^!include\s+"
+    r'(?:"([^"]+)"|\'([^\']+)\'|(\S+?))'  # Quoted or unquoted path
+    r"\s*(?:#.*)?$"  # Optional trailing comment
+)
+
 
 class SecretLiteralWarning(UserWarning):
     """Warning emitted when a !secret tagged value appears to be a literal instead of env var."""
@@ -42,6 +52,142 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
         else:
             result[key] = value
     return result
+
+
+def _preprocess_document_includes(content: str) -> tuple[str, list[str]]:
+    """
+    Extract document-level !include directives from YAML content.
+
+    Document-level includes are !include tags at column 0 (no indentation)
+    that should be merged with the rest of the document. This preprocessing
+    step is necessary because YAML parses !include as a tagged scalar, which
+    cannot coexist with other root-level content without a document separator.
+
+    Args:
+        content: Raw YAML content
+
+    Returns:
+        Tuple of (remaining_content, list_of_include_paths)
+
+    Example:
+        Input:
+            !include "./base.yaml"
+
+            name: app
+            server:
+              port: 8080
+
+        Output:
+            ('\\nname: app\\nserver:\\n  port: 8080', ['./base.yaml'])
+    """
+    lines = content.splitlines(keepends=True)
+    include_paths: list[str] = []
+    remaining_lines: list[str] = []
+
+    for line in lines:
+        # Only check non-indented lines (document level)
+        stripped = line.lstrip()
+        if line == stripped:  # No leading whitespace = document level
+            match = DOCUMENT_INCLUDE_PATTERN.match(line.rstrip())
+            if match:
+                # Extract path from whichever group matched (double-quoted, single-quoted, or unquoted)
+                path = match.group(1) or match.group(2) or match.group(3)
+                if path:
+                    include_paths.append(path)
+                continue  # Don't add this line to remaining content
+
+        remaining_lines.append(line)
+
+    return "".join(remaining_lines), include_paths
+
+
+def _resolve_include_path_standalone(
+    include_path_str: str,
+    current_file: Path | None,
+) -> Path:
+    """
+    Resolve include path to absolute path (standalone version for preprocessing).
+
+    Args:
+        include_path_str: Path string from !include directive
+        current_file: Path to current file (for relative path resolution)
+
+    Returns:
+        Resolved absolute path
+
+    Raises:
+        yaml.YAMLError: If relative path cannot be resolved
+    """
+    include_path = Path(include_path_str)
+
+    if not include_path.is_absolute():
+        if current_file is None:
+            raise yaml.YAMLError(
+                f"Cannot resolve relative include path '{include_path_str}' "
+                "without a current file context"
+            )
+        return (current_file.parent / include_path).resolve()
+
+    return include_path.resolve()
+
+
+def _check_circular_include(include_path: Path, include_chain: set[Path]) -> None:
+    """Raise error if circular include detected."""
+    if include_path in include_chain:
+        chain_str = " -> ".join(str(f) for f in include_chain)
+        raise yaml.YAMLError(
+            f"Circular include detected: {chain_str} -> {include_path}"
+        )
+
+
+def _check_include_depth(
+    include_path: Path, include_chain: set[Path], max_depth: int
+) -> None:
+    """Raise error if include depth exceeds maximum."""
+    if len(include_chain) + 1 > max_depth:
+        chain_str = " -> ".join(str(f) for f in include_chain)
+        msg = (
+            f"Include depth exceeds maximum of {max_depth}. "
+            f"This could indicate a deeply nested include or recursive include pattern. "
+            f"Include chain: {chain_str} -> {include_path}"
+        )
+        raise yaml.YAMLError(msg)
+
+
+def _check_file_exists(include_path: Path) -> None:
+    """Raise error if include file doesn't exist."""
+    try:
+        if not include_path.exists():
+            raise yaml.YAMLError(f"Include file not found: {include_path}")
+    except (PermissionError, OSError) as e:
+        raise yaml.YAMLError(f"Include file not found: {include_path}") from e
+
+
+def _check_project_root(include_path: Path, project_root: Path | None) -> None:
+    """Raise error if path is outside project root."""
+    if project_root is None:
+        return
+    try:
+        include_path.relative_to(project_root)
+    except (ValueError, TypeError) as e:
+        msg = (
+            f"Security: Include path '{include_path}' is outside project root "
+            f"'{project_root}'. This could be a path traversal attack."
+        )
+        raise yaml.YAMLError(msg) from e
+
+
+def _validate_include_standalone(
+    include_path: Path,
+    include_chain: set[Path],
+    project_root: Path | None,
+    max_include_depth: int,
+) -> None:
+    """Validate include path for circular dependencies, existence, and security."""
+    _check_circular_include(include_path, include_chain)
+    _check_include_depth(include_path, include_chain, max_include_depth)
+    _check_file_exists(include_path)
+    _check_project_root(include_path, project_root)
 
 
 class Loader(yaml.SafeLoader):
@@ -519,6 +665,305 @@ Loader.add_constructor("!secret", Loader.secret_constructor)
 Loader.add_constructor("!path", Loader.path_constructor)
 
 
+def _extract_section_data(
+    data: Any,
+    section_path: str,
+    include_path: Path,
+) -> Any:
+    """
+    Extract a specific section from data using dot-notation path.
+
+    Args:
+        data: Data to extract from
+        section_path: Dot-separated path (e.g., "server.http")
+        include_path: Path to included file (for error messages)
+
+    Returns:
+        Data at the specified section path
+
+    Raises:
+        yaml.YAMLError: If section path is invalid or not found
+    """
+    current = data
+    parts = section_path.split(".")
+
+    for i, part in enumerate(parts):
+        if not isinstance(current, dict):
+            traversed = ".".join(parts[:i])
+            msg = (
+                f"Cannot navigate to '{section_path}': "
+                f"'{traversed}' is not a mapping (got {type(current).__name__})"
+            )
+            raise yaml.YAMLError(msg)
+        if part not in current:
+            msg = (
+                f"Section '{section_path}' not found in included file '{include_path}'. "
+                f"Available keys at this level: {list(current.keys())}"
+            )
+            raise yaml.YAMLError(msg)
+        current = current[part]
+
+    return current
+
+
+def _filter_source_map_for_section(
+    source_map: dict[str, Path | None],
+    section_path: str,
+) -> dict[str, Path | None]:
+    """
+    Filter source map to only include keys under the section path.
+
+    Args:
+        source_map: Original source map
+        section_path: Section path that was extracted
+
+    Returns:
+        Filtered source map with section prefix removed from keys
+    """
+    prefix = section_path + "."
+    filtered_map: dict[str, Path | None] = {}
+
+    for key, source in source_map.items():
+        if key.startswith(prefix):
+            new_key = key[len(prefix) :]
+            filtered_map[new_key] = source
+        elif key == section_path:
+            filtered_map[""] = source
+
+    return filtered_map
+
+
+def _load_document_include(
+    include_spec: str,
+    current_file: Path | None,
+    include_chain: set[Path],
+    merge_strategy: str,
+    track_sources: bool,
+    project_root: Path | None,
+    max_include_depth: int,
+) -> tuple[Any, dict[str, Path | None]]:
+    """
+    Load a document-level include file with section extraction support.
+
+    Args:
+        include_spec: Include path, optionally with section anchor (e.g., "file.yaml#section")
+        current_file: Path to current file (for relative path resolution)
+        include_chain: Set of files in current include chain
+        merge_strategy: Strategy for merging includes
+        track_sources: If True, track source files
+        project_root: Optional project root for security validation
+        max_include_depth: Maximum allowed include depth
+
+    Returns:
+        Tuple of (data, source_map)
+    """
+    # Parse include path and optional section anchor
+    include_path_str, section_path = (
+        include_spec.split("#", 1) if "#" in include_spec else (include_spec, "")
+    )
+
+    # Resolve and validate path
+    resolved_project_root = project_root.resolve() if project_root else None
+    include_path = _resolve_include_path_standalone(include_path_str, current_file)
+    _validate_include_standalone(
+        include_path, include_chain, resolved_project_root, max_include_depth
+    )
+
+    # Load the included file recursively
+    data, source_map = _load_include_file(
+        include_path,
+        include_chain,
+        merge_strategy,
+        track_sources,
+        project_root,
+        max_include_depth,
+    )
+
+    # Extract section if specified
+    if section_path and data is not None:
+        data = _extract_section_data(data, section_path, include_path)
+        if track_sources:
+            source_map = _filter_source_map_for_section(source_map, section_path)
+
+    return data, source_map
+
+
+def _load_include_file(
+    include_path: Path,
+    include_chain: set[Path],
+    merge_strategy: str,
+    track_sources: bool,
+    project_root: Path | None,
+    max_include_depth: int,
+) -> tuple[Any, dict[str, Path | None]]:
+    """
+    Load an included YAML file.
+
+    Args:
+        include_path: Resolved path to the included file
+        include_chain: Current include chain for circular detection
+        merge_strategy: Strategy for merging includes
+        track_sources: If True, track source files
+        project_root: Optional project root for security validation
+        max_include_depth: Maximum allowed include depth
+
+    Returns:
+        Tuple of (data, source_map)
+    """
+    new_chain = include_chain | {include_path}
+    with open(include_path) as f:
+        result = load(
+            f,
+            current_file=include_path,
+            merge_strategy=merge_strategy,
+            track_sources=track_sources,
+            project_root=project_root,
+            max_include_depth=max_include_depth,
+            _include_chain=new_chain,
+        )
+
+    if track_sources:
+        return result  # type: ignore[return-value]
+    return result, {}
+
+
+def _merge_document_includes(
+    doc_include_paths: list[str],
+    current_file: Path | None,
+    include_chain: set[Path],
+    merge_strategy: str,
+    track_sources: bool,
+    project_root: Path | None,
+    max_include_depth: int,
+) -> tuple[dict[str, Any] | None, dict[str, Path | None]]:
+    """
+    Load and merge all document-level includes.
+
+    Args:
+        doc_include_paths: List of include paths from preprocessing
+        current_file: Path to current file for relative path resolution
+        include_chain: Current include chain for circular detection
+        merge_strategy: Strategy for merging includes
+        track_sources: If True, track source files
+        project_root: Optional project root for security validation
+        max_include_depth: Maximum allowed include depth
+
+    Returns:
+        Tuple of (merged_data, merged_source_map)
+    """
+    merged_data: dict[str, Any] | None = None
+    merged_source_map: dict[str, Path | None] = {}
+
+    for include_spec in doc_include_paths:
+        include_data, include_source_map = _load_document_include(
+            include_spec,
+            current_file,
+            include_chain,
+            merge_strategy,
+            track_sources,
+            project_root,
+            max_include_depth,
+        )
+
+        if include_data is not None:
+            if merged_data is None:
+                merged_data = include_data if isinstance(include_data, dict) else {}
+            elif isinstance(include_data, dict):
+                merged_data = deep_merge(merged_data, include_data)
+
+            if track_sources:
+                merged_source_map.update(include_source_map)
+
+    return merged_data, merged_source_map
+
+
+def _parse_yaml_content(
+    content: str,
+    current_file: Path | None,
+    include_chain: set[Path],
+    merge_strategy: str,
+    track_sources: bool,
+    project_root: Path | None,
+    max_include_depth: int,
+) -> tuple[Any, dict[str, Path | None]]:
+    """
+    Parse YAML content using the Loader.
+
+    Args:
+        content: YAML content string to parse
+        current_file: Path to current file for relative path resolution
+        include_chain: Current include chain for circular detection
+        merge_strategy: Strategy for merging includes
+        track_sources: If True, track source files
+        project_root: Optional project root for security validation
+        max_include_depth: Maximum allowed include depth
+
+    Returns:
+        Tuple of (data, source_map)
+    """
+    from io import StringIO
+
+    loader = Loader(
+        StringIO(content),
+        current_file=current_file,
+        include_chain=include_chain,
+        merge_strategy=merge_strategy,
+        track_sources=track_sources,
+        project_root=project_root.resolve() if project_root else None,
+        max_include_depth=max_include_depth,
+    )
+    try:
+        data = loader.get_single_data()
+        source_map = loader.source_map if track_sources else {}
+        return data, source_map
+    finally:
+        loader.dispose()
+
+
+def _merge_data_and_sources(
+    merged_data: dict[str, Any] | None,
+    main_data: Any,
+    merged_source_map: dict[str, Path | None],
+    main_source_map: dict[str, Path | None],
+) -> tuple[Any, dict[str, Path | None]]:
+    """
+    Merge document-level includes with main document data.
+
+    Document-level includes provide defaults; main document overrides.
+
+    Args:
+        merged_data: Data merged from document-level includes
+        main_data: Data from the main document
+        merged_source_map: Source map from document-level includes
+        main_source_map: Source map from main document
+
+    Returns:
+        Tuple of (final_data, final_source_map)
+    """
+    if merged_data is not None and main_data is not None:
+        if isinstance(main_data, dict):
+            final_data = deep_merge(merged_data, main_data)
+        else:
+            final_data = main_data  # Non-dict takes full precedence
+    elif merged_data is not None:
+        final_data = merged_data
+    else:
+        final_data = main_data
+
+    final_source_map = {**merged_source_map, **main_source_map}
+    return final_data, final_source_map
+
+
+def _init_include_chain(
+    current_file: Path | None, _include_chain: set[Path] | None
+) -> set[Path]:
+    """Initialize include chain, adding current file if provided."""
+    chain = _include_chain if _include_chain is not None else set()
+    if current_file is not None:
+        chain = chain | {current_file.resolve()}
+    return chain
+
+
 def load(
     stream: Any,
     current_file: Path | None = None,
@@ -526,49 +971,47 @@ def load(
     track_sources: bool = False,
     project_root: Path | None = None,
     max_include_depth: int = 10,
+    _include_chain: set[Path] | None = None,
 ) -> Any | tuple[Any, dict[str, Path | None]]:
     """
     Load YAML with include support and optional source tracking.
 
+    Supports key-level includes (`database: !include "db.yaml"`) and document-level
+    includes (`!include "./base.yaml"` at line start). Document-level includes provide
+    defaults; main document content overrides.
+
     Args:
         stream: File object or string to load YAML from
-        current_file: Path to the current file (for relative includes)
-        merge_strategy: Strategy for merging includes - "replace" or "merge"
-        track_sources: If True, return source file map for path resolution
-        project_root: Optional project root to restrict includes (prevents path traversal attacks)
-        max_include_depth: Maximum allowed depth for nested includes (default: 10)
-
-    Returns:
-        If track_sources is True: Tuple of (data, source_map)
-        If track_sources is False: Just the data (for backward compatibility)
-
-    Example:
-        # Without source tracking (backward compatible)
-        with open('config.yaml') as f:
-            config = yaml_load(f, current_file=Path('config.yaml'))
-
-        # With source tracking and security
-        with open('config.yaml') as f:
-            config, source_map = yaml_load(
-                f,
-                current_file=Path('config.yaml'),
-                track_sources=True,
-                project_root=Path('/path/to/project')
-            )
+        current_file: Path to current file (for relative includes)
+        merge_strategy: Strategy for merging - "replace" or "merge"
+        track_sources: If True, return (data, source_map) tuple
+        project_root: Restrict includes to this directory
+        max_include_depth: Max nested include depth (default: 10)
     """
-    loader = Loader(
-        stream,
-        current_file=current_file,
-        merge_strategy=merge_strategy,
-        track_sources=track_sources,
-        project_root=project_root,
-        max_include_depth=max_include_depth,
+    include_chain = _init_include_chain(current_file, _include_chain)
+    content = stream.read() if hasattr(stream, "read") else str(stream)
+    remaining_content, doc_include_paths = _preprocess_document_includes(content)
+
+    merged_data, merged_source_map = _merge_document_includes(
+        doc_include_paths,
+        current_file,
+        include_chain,
+        merge_strategy,
+        track_sources,
+        project_root,
+        max_include_depth,
     )
-    try:
-        data = loader.get_single_data()
-        if track_sources:
-            return data, loader.source_map
-        # For backward compatibility, return just data when not tracking sources
-        return data
-    finally:
-        loader.dispose()
+    main_data, main_source_map = _parse_yaml_content(
+        remaining_content,
+        current_file,
+        include_chain,
+        merge_strategy,
+        track_sources,
+        project_root,
+        max_include_depth,
+    )
+    final_data, final_source_map = _merge_data_and_sources(
+        merged_data, main_data, merged_source_map, main_source_map
+    )
+
+    return (final_data, final_source_map) if track_sources else final_data

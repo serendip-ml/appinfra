@@ -18,6 +18,7 @@ appinfra docs find <text>        # Search documentation for text
 
 - [Logging Builder](guides/logging-builder.md) - Fluent API for logging configuration
 - [Config-Based Logging](guides/config-based-logging.md) - YAML-based logging setup
+- [Hot-Reload Logging](guides/hot-reload-logging.md) - Dynamic config reloading without restart
 - [Environment Variables](guides/environment-variables.md) - Override config with env vars
 - [PostgreSQL Test Helper](guides/pg-test-helper.md) - Testing with PostgreSQL
 - [Makefile Customization](guides/makefile-customization.md) - Extending framework Makefiles

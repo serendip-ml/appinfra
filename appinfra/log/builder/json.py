@@ -7,6 +7,7 @@ extending the base LoggingBuilder with JSON-specific functionality.
 
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Self
 
@@ -461,7 +462,7 @@ class JSONLoggingBuilder(LoggingBuilder):
 
     def _add_regular_console_handler(self, logger: Logger, config: LogConfig) -> None:
         """Add regular (non-JSON) console handler."""
-        console_handler = logging.StreamHandler()
+        console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(config.level)
 
         from ..formatters import LogFormatter
@@ -474,7 +475,7 @@ class JSONLoggingBuilder(LoggingBuilder):
         self, logger: Logger, config: LogConfig, json_formatter: JSONFormatter
     ) -> None:
         """Add JSON console handler."""
-        json_console_handler = logging.StreamHandler()
+        json_console_handler = logging.StreamHandler(sys.stdout)
         json_console_handler.setLevel(config.level)
         json_console_handler.setFormatter(json_formatter)
         logger.addHandler(json_console_handler)

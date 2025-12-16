@@ -646,6 +646,71 @@ class DocsSecurityTool(Tool):
         return 0
 
 
+class DocsGenerateTool(Tool):
+    """Generate CLI reference documentation from tool definitions."""
+
+    def __init__(
+        self, parent: Traceable | None = None, out: OutputWriter | None = None
+    ):
+        config = ToolConfig(
+            name="generate",
+            aliases=["gen"],
+            help_text="Generate CLI reference documentation from tool definitions",
+        )
+        super().__init__(parent, config)
+        self.out = out if out is not None else ConsoleOutput()
+
+    def add_args(self, parser: Any) -> None:
+        """Add arguments for the generate command."""
+        parser.add_argument(
+            "-o",
+            "--output",
+            help="Output file path (default: print to stdout)",
+        )
+        parser.add_argument(
+            "--title",
+            default="CLI Reference",
+            help="Documentation title",
+        )
+        parser.add_argument(
+            "--no-examples",
+            action="store_true",
+            help="Exclude examples from documentation",
+        )
+        parser.add_argument(
+            "--no-aliases",
+            action="store_true",
+            help="Exclude command aliases",
+        )
+
+    def _write_output(self, markdown: str, output_path: str | None) -> None:
+        """Write markdown to file or stdout."""
+        if output_path:
+            output_file = Path(output_path)
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_text(markdown)
+            self.out.write(f"Documentation written to: {output_path}")
+        else:
+            self.out.write(markdown)
+
+    def run(self, **kwargs: Any) -> int:
+        """Generate documentation from the current app's tools."""
+        from appinfra.app.docs import DocsGenerator
+
+        generator = DocsGenerator(
+            title=getattr(self.args, "title", "CLI Reference"),
+            include_examples=not getattr(self.args, "no_examples", False),
+            include_aliases=not getattr(self.args, "no_aliases", False),
+        )
+        try:
+            markdown = generator.generate_all(self.app)
+        except Exception:
+            self.out.write("Error: Could not access application instance.")
+            return 1
+        self._write_output(markdown, getattr(self.args, "output", None))
+        return 0
+
+
 class DocsTool(Tool):
     """
     Browse appinfra documentation and examples.
@@ -683,6 +748,7 @@ class DocsTool(Tool):
         self.add_tool(DocsListTool(self, out=self.out))
         self.add_tool(DocsShowTool(self, out=self.out))
         self.add_tool(DocsFindTool(self, out=self.out))
+        self.add_tool(DocsGenerateTool(self, out=self.out))
         self.add_tool(DocsLicenseTool(self, out=self.out))
         self.add_tool(DocsSecurityTool(self, out=self.out))
 

@@ -111,6 +111,35 @@ class TestSubprocessManager:
         manager._state.restart_count = 5
         assert manager._should_restart() is False
 
+    def test_handle_process_exit_clean_shutdown(self):
+        """Test _handle_process_exit with exit code 0 (clean shutdown)."""
+        manager = SubprocessManager(target=lambda: None)
+        result = manager._handle_process_exit(exit_code=0)
+        assert result is False  # Don't restart on clean exit
+
+    def test_handle_process_exit_crash_with_restart(self):
+        """Test _handle_process_exit with crash and restart available."""
+        manager = SubprocessManager(
+            target=lambda: None,
+            max_restarts=5,
+            restart_delay=0.01,
+        )
+        manager._state.restart_count = 0
+
+        with patch.object(manager, "_do_restart") as mock_restart:
+            result = manager._handle_process_exit(exit_code=1)
+
+        assert result is True  # Continue monitoring after restart
+        mock_restart.assert_called_once()
+
+    def test_handle_process_exit_crash_max_restarts_exceeded(self):
+        """Test _handle_process_exit when max restarts exceeded."""
+        manager = SubprocessManager(target=lambda: None, max_restarts=3)
+        manager._state.restart_count = 3  # Already at limit
+
+        result = manager._handle_process_exit(exit_code=1)
+        assert result is False  # Stop monitoring, max restarts exceeded
+
 
 @pytest.mark.unit
 class TestSubprocessManagerGracefulShutdown:

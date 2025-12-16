@@ -272,13 +272,13 @@ class TestIntegrationScenarios:
         """Test complete workflow of combining dates."""
         # Individual important dates
         individual_dates = [
-            datetime.date(2025, 12, 1),  # New Year
+            datetime.date(2025, 12, 15),  # Mid-month
             datetime.date(2025, 12, 25),  # Christmas
         ]
 
         # Date ranges
         ranges = [
-            (datetime.date(2025, 12, 1), datetime.date(2025, 12, 7)),  # Week in June
+            (datetime.date(2025, 12, 1), datetime.date(2025, 12, 7)),  # First week
         ]
 
         all_dates = dates_from_lists(individual_dates, ranges, strings=False)

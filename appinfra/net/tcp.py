@@ -37,7 +37,7 @@ Example Usage:
             super().__init__(self, secs=5)  # Tick every 5 seconds
 
         def ticker_tick(self):
-            self._lg.info("Background task executed")
+            self._lg.info("background task executed")
 
         def do_GET(self, instance):
             instance.send_response(200)
@@ -125,7 +125,7 @@ def _start_ticker_process(
     handler.ticker_start(manager)
     proc = multiprocessing.Process(target=ticker.run_started, args=(manager,))
     proc.start()
-    lg.debug("Ticker process started")
+    lg.debug("ticker process started")
     return proc
 
 
@@ -133,7 +133,7 @@ def _start_ticker_in_process(handler: Any, lg: Any) -> None:
     """Start ticker in single-process mode if handler supports it."""
     if handler is not None and isinstance(handler, Ticker):
         handler.start()
-        lg.debug("Ticker started in single-process mode")
+        lg.debug("ticker started in single-process mode")
 
 
 def _run_http_server_with_cleanup(
@@ -170,7 +170,7 @@ def _cleanup_ticker_process(proc: multiprocessing.Process | None, lg: Any) -> No
         proc.terminate()
         proc.join(timeout=5)
         if proc.is_alive():
-            lg.warning("Ticker process did not terminate gracefully")
+            lg.warning("ticker process did not terminate gracefully")
             proc.kill()
     except Exception as e:
         lg.error(f"Error terminating ticker process: {e}")
@@ -259,7 +259,7 @@ class Server:
                 return self._run_multiprocessing()
             return self._run_in_process()
         except Exception as e:
-            self._lg.error("Server run failed", extra={"exception": e})
+            self._lg.error("server run failed", extra={"exception": e})
             raise ServerStartupError(f"Server run failed: {e}") from e
 
     def _start_multiprocessing_components(
@@ -306,7 +306,7 @@ class Server:
                 _cleanup_ticker_process(proc, self._lg)
 
         except Exception as e:
-            self._lg.error("Multiprocessing server run failed", extra={"exception": e})
+            self._lg.error("multiprocessing server run failed", extra={"exception": e})
             raise ServerStartupError(f"Multiprocessing server run failed: {e}") from e
         finally:
             _cleanup_ticker_process(proc, self._lg)
@@ -341,11 +341,11 @@ class Server:
                     self._lg, self._handler, "0.0.0.0", self._port, mode="in_process"
                 )
             except Exception as e:
-                self._lg.error("Failed to start HTTP server", extra={"exception": e})
+                self._lg.error("failed to start HTTP server", extra={"exception": e})
                 raise ServerStartupError(f"HTTP server startup failed: {e}") from e
 
         except Exception as e:
-            self._lg.error("Single-process server run failed", extra={"exception": e})
+            self._lg.error("single-process server run failed", extra={"exception": e})
             raise ServerStartupError(f"Single-process server run failed: {e}") from e
 
         return 0

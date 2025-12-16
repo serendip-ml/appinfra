@@ -11,6 +11,7 @@ The Infra framework is organized into several major modules, each providing spec
 | [Application Framework](app.md) | Core application classes, lifecycle management, and tool framework |
 | [AppBuilder](app-builder.md) | Fluent API for constructing CLI applications with builders |
 | [Logging System](logging.md) | Advanced logging with structured output, builders, and handlers |
+| [UI Components](ui.md) | Rich terminal output, progress bars, spinners, and prompts |
 | [Database Layer](database.md) | PostgreSQL interface with connection pooling and query monitoring |
 | [Time & Scheduling](time.md) | Periodic execution, scheduling, and time utilities |
 | [Utilities](utilities.md) | Core utilities (DotDict, Config, rate limiting, etc.) |
@@ -39,6 +40,7 @@ appinfra/
 │   └── decorators/  # Decorator-based API
 ├── log/              # Logging system
 │   └── builder/     # Logging builders
+├── ui/               # Terminal UI components
 ├── db/               # Database layer
 │   └── pg/          # PostgreSQL implementation
 ├── time/             # Time and scheduling
@@ -60,6 +62,10 @@ appinfra/
 - [`LoggingBuilder`](logging.md#appinfra.log.builder.LoggingBuilder) - Main logging builder
 - [`Logger`](logging.md#appinfra.log.Logger) - Logger class with custom formatting
 - [`LoggerFactory`](logging.md#appinfra.log.LoggerFactory) - Factory for creating loggers
+
+**UI:**
+- [`ProgressLogger`](ui.md#progresslogger) - Spinner/progress bar with logging coordination
+- [`console`](ui.md#console) - Rich console for styled output
 
 **Database:**
 - [`PG`](database.md#appinfra.db.pg.PG) - PostgreSQL database interface
@@ -131,6 +137,7 @@ def get(self, path: str, default: Any = None) -> Any:
 
 ### Logging & Monitoring
 - [Logging System](logging.md) - Advanced logging
+- [UI Components](ui.md) - Progress bars, spinners, prompts
 
 ### Utilities & Helpers
 - [Time & Scheduling](time.md) - Periodic execution

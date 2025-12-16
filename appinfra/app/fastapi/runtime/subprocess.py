@@ -165,37 +165,38 @@ class SubprocessManager:
         return proc
 
     def _monitor_loop(self) -> None:
-        """
-        Monitor subprocess and restart on crash.
-
-        Runs in background thread, watches for unexpected process exit.
-        """
+        """Monitor subprocess and restart on crash."""
         while not self._state.stop_requested:
             proc = self._state.process
             if proc is None:
                 break
 
-            # Wait for process to exit (with timeout to check stop_requested)
             proc.join(timeout=1.0)
 
             if proc.is_alive():
-                continue  # Still running, keep monitoring
-
+                continue
             if self._state.stop_requested:
-                break  # Intentional shutdown, don't restart
-
-            # Process crashed - check restart policy
-            exit_code = proc.exitcode
-            logger.warning(
-                f"Subprocess exited unexpectedly "
-                f"(code={exit_code}, restarts={self._state.restart_count})"
-            )
-
-            if self._should_restart():
-                self._do_restart()
-            else:
-                logger.error(f"Max restarts exceeded ({self._max_restarts}), giving up")
                 break
+            if not self._handle_process_exit(proc.exitcode):
+                break
+
+    def _handle_process_exit(self, exit_code: int | None) -> bool:
+        """Handle subprocess exit, return True to continue monitoring (restart)."""
+        # Exit code 0 = clean shutdown (e.g., SIGINT), don't restart
+        if exit_code == 0:
+            logger.info("subprocess exited cleanly (code=0), not restarting")
+            return False
+
+        logger.warning(
+            f"Subprocess crashed (code={exit_code}, restarts={self._state.restart_count})"
+        )
+
+        if self._should_restart():
+            self._do_restart()
+            return True
+
+        logger.error(f"Max restarts exceeded ({self._max_restarts}), giving up")
+        return False
 
     def _should_restart(self) -> bool:
         """Check if restart should be attempted."""
@@ -226,7 +227,7 @@ class SubprocessManager:
 
         This pattern ensures cleanup even if the process is hung.
         """
-        logger.debug("Stopping subprocess...")
+        logger.debug("stopping subprocess...")
 
         # Send SIGTERM
         proc.terminate()
@@ -243,4 +244,4 @@ class SubprocessManager:
             proc.kill()
             proc.join()
 
-        logger.info("Subprocess stopped")
+        logger.info("subprocess stopped")

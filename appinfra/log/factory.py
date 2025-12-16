@@ -7,6 +7,7 @@ configuration and proper setup of handlers and formatters.
 
 import collections
 import logging
+import sys
 from typing import Any
 
 from .callback import CallbackRegistry
@@ -67,11 +68,22 @@ class LoggerFactory:
 
     @staticmethod
     def _setup_console_handler(config: LogConfig) -> logging.Handler:
-        """Set up and return console handler with formatter."""
-        handler = logging.StreamHandler()
+        """Set up and return console handler with formatter.
+
+        Creates handler with LogConfigHolder for hot-reload support.
+        The holder is registered with the global registry, enabling
+        automatic config updates when files change.
+        """
+        from .config_registry import LogConfigRegistry
+
+        handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(config.level)
 
-        formatter = LogFormatter(config)
+        # Create holder through registry for hot-reload support
+        registry = LogConfigRegistry.get_instance()
+        holder = registry.create_holder(config)
+
+        formatter = LogFormatter(holder)
         handler.setFormatter(formatter)
 
         return handler

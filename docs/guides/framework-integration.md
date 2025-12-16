@@ -1,25 +1,69 @@
 # Framework Integration Guide
 
-This guide explains how to integrate the appinfra Makefile framework into downstream projects,
-particularly when using appinfra as a Git submodule.
+This guide explains how to integrate the appinfra Makefile framework into downstream projects.
+
+## Installation Methods
+
+### Recommended: pip install
+
+Install appinfra as a package and use the `scripts-path` command to locate the Makefile framework:
+
+```bash
+pip install appinfra
+```
+
+```makefile
+# Makefile - using pip-installed appinfra
+infra := $(shell appinfra scripts-path)
+
+# Configure your project
+INFRA_DEV_PKG_NAME := myproject
+
+# Include framework
+include $(infra)/make/Makefile.all
+```
+
+This is the recommended approach because:
+- No submodule management overhead
+- Version controlled via `requirements.txt` or `pyproject.toml`
+- Works with standard Python packaging workflows
+
+### Alternative: Git Submodule
+
+Submodules are supported but **should rarely be needed**. Use only if you need to modify the
+framework itself or work offline without pip access.
+
+```bash
+git submodule add <repo-url> submodules/infra
+```
+
+```makefile
+# Makefile - using submodule
+infra := submodules/infra
+
+INFRA_DEV_PKG_NAME := myproject
+include $(infra)/scripts/make/Makefile.all
+```
+
+Note: With submodules, the path is `$(infra)/scripts/make/` vs `$(infra)/make/` with pip install.
 
 ## Quick Start
 
 ```makefile
-# Minimal submodule integration
-infra := submodules/infra
+# Recommended setup (pip install)
+infra := $(shell appinfra scripts-path)
 
 # Configure your project
 INFRA_DEV_PKG_NAME := myproject
 
 # Include framework (config must be first)
-include $(infra)/scripts/make/Makefile.config
-include $(infra)/scripts/make/Makefile.env
-include $(infra)/scripts/make/Makefile.help
-include $(infra)/scripts/make/Makefile.utils
-include $(infra)/scripts/make/Makefile.dev
-include $(infra)/scripts/make/Makefile.pytest
-include $(infra)/scripts/make/Makefile.clean
+include $(infra)/make/Makefile.config
+include $(infra)/make/Makefile.env
+include $(infra)/make/Makefile.help
+include $(infra)/make/Makefile.utils
+include $(infra)/make/Makefile.dev
+include $(infra)/make/Makefile.pytest
+include $(infra)/make/Makefile.clean
 ```
 
 ## Include Order
@@ -28,26 +72,26 @@ include $(infra)/scripts/make/Makefile.clean
 
 ```makefile
 # 1. REQUIRED FIRST - Handles config loading and deprecation
-include $(infra)/scripts/make/Makefile.config
+include $(infra)/make/Makefile.config
 
 # 2. Core modules (order matters)
-include $(infra)/scripts/make/Makefile.env      # Python detection
-include $(infra)/scripts/make/Makefile.help     # Help system
-include $(infra)/scripts/make/Makefile.utils    # Utilities (areyousure, etc.)
+include $(infra)/make/Makefile.env      # Python detection
+include $(infra)/make/Makefile.help     # Help system
+include $(infra)/make/Makefile.utils    # Utilities (areyousure, etc.)
 
 # 3. Feature modules (order flexible)
-include $(infra)/scripts/make/Makefile.dev      # Requires: env, utils
-include $(infra)/scripts/make/Makefile.pytest   # Requires: env
-include $(infra)/scripts/make/Makefile.docs     # Requires: env
-include $(infra)/scripts/make/Makefile.pg       # Requires: env, utils
-include $(infra)/scripts/make/Makefile.cicd     # Standalone
-include $(infra)/scripts/make/Makefile.clean    # Requires: utils
+include $(infra)/make/Makefile.dev      # Requires: env, utils
+include $(infra)/make/Makefile.pytest   # Requires: env
+include $(infra)/make/Makefile.docs     # Requires: env
+include $(infra)/make/Makefile.pg       # Requires: env, utils
+include $(infra)/make/Makefile.cicd     # Standalone
+include $(infra)/make/Makefile.clean    # Requires: utils
 ```
 
 Or use `Makefile.all` to include everything in the correct order:
 
 ```makefile
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 ```
 
 ## Variable Precedence
@@ -64,7 +108,7 @@ Variables are resolved in this order (highest to lowest priority):
 ```makefile
 # In Makefile (before include)
 INFRA_DEV_PKG_NAME := myproject
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 
 # Or via environment variable (for CI/testing)
 # INFRA_DEV_PKG_NAME=myproject make test.coverage
@@ -76,16 +120,17 @@ include $(infra)/scripts/make/Makefile.all
 
 ```makefile
 # Makefile
+infra := $(shell appinfra scripts-path)
 INFRA_DEV_PKG_NAME := myproject
 
-infra := submodules/infra
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 ```
 
 ### Full Configuration
 
 ```makefile
 # Makefile
+infra := $(shell appinfra scripts-path)
 INFRA_DEV_PKG_NAME := myproject
 INFRA_DEV_CQ_STRICT := true
 INFRA_PYTEST_TESTS_DIR := tests
@@ -94,8 +139,7 @@ INFRA_DOCS_CONFIG := etc/mkdocs.yaml
 # Hide unused features
 INFRA_DISABLE_GROUPS := pg. cicd.
 
-infra := submodules/infra
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 ```
 
 ## Extending Targets
@@ -103,7 +147,7 @@ include $(infra)/scripts/make/Makefile.all
 Use double-colon rules (`::`) to extend framework targets:
 
 ```makefile
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 
 # Extend cleanup
 clean::
@@ -150,12 +194,12 @@ test categories implemented yet.
 
 ```makefile
 # Wrong - too late
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 INFRA_DEV_PKG_NAME := myproject
 
 # Correct - before include
 INFRA_DEV_PKG_NAME := myproject
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 ```
 
 ### Include Order Errors
@@ -164,11 +208,11 @@ include $(infra)/scripts/make/Makefile.all
 
 ```makefile
 # Wrong - dev requires env and utils
-include $(infra)/scripts/make/Makefile.dev
-include $(infra)/scripts/make/Makefile.env
+include $(infra)/make/Makefile.dev
+include $(infra)/make/Makefile.env
 
 # Correct - use Makefile.all or follow documented order
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 ```
 
 ### check.sh Uses Wrong Package Name
@@ -177,13 +221,12 @@ include $(infra)/scripts/make/Makefile.all
 
 **Solution:** Always use `make check`, which exports the correct variables.
 
-## Example: Complete Submodule Integration
+## Example: Complete Integration
 
 ```
 myproject/
 ├── Makefile
-├── submodules/
-│   └── infra/  (git submodule)
+├── pyproject.toml      # includes appinfra as dependency
 ├── myproject/
 │   └── __init__.py
 └── tests/
@@ -192,16 +235,25 @@ myproject/
 
 ```makefile
 # Makefile
+infra := $(shell appinfra scripts-path)
 INFRA_DEV_PKG_NAME := myproject
 INFRA_DISABLE_GROUPS := pg. cicd.
 
-infra := submodules/infra
-include $(infra)/scripts/make/Makefile.all
+include $(infra)/make/Makefile.all
 
 ##@ Application
 
 run:  ## Run the application
 	@$(PYTHON) -m myproject
+```
+
+pyproject.toml:
+```toml
+[project]
+name = "myproject"
+dependencies = [
+    "appinfra",
+]
 ```
 
 ## See Also

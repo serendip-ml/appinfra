@@ -31,7 +31,7 @@ class FirstTool(Tool):
 
     def __init__(self, parent=None):
         config = ToolConfig(
-            name="first", aliases=["1"], help_text="First tool with subcommands"
+            name="first", aliases=["f1"], help_text="First tool with subcommands"
         )
         super().__init__(parent, config)
         # Use framework's add_tool method with default subcommand
@@ -61,7 +61,7 @@ class SecondTool(Tool):
     """Second tool implementation."""
 
     def __init__(self, parent=None):
-        config = ToolConfig(name="second", aliases=["2"], help_text="Second tool")
+        config = ToolConfig(name="second", aliases=["s2"], help_text="Second tool")
         super().__init__(parent, config)
 
     def add_args(self, parser):
@@ -91,8 +91,6 @@ def create_application():
         .tools.with_tool(first_tool)
         .done()
         .tools.with_tool(second_tool)
-        # Add custom arguments
-        .advanced.with_argument("-q", action="store_true", help="quiet")
         .done()
         .build()
     )

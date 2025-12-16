@@ -123,9 +123,9 @@ class TestCaptureAllLoggers:
 
         # Check output contains expected format elements
         captured = capsys.readouterr()
-        assert "Test message" in captured.err
+        assert "Test message" in captured.out
         # appinfra format includes process ID in brackets
-        assert "[" in captured.err
+        assert "[" in captured.out
 
     def test_colors_parameter(self):
         """Test that colors parameter is passed to formatter."""
@@ -260,9 +260,9 @@ class TestCaptureLogger:
         logger.info("Test message from pre-captured logger")
 
         captured = capsys.readouterr()
-        assert "Test message from pre-captured logger" in captured.err
+        assert "Test message from pre-captured logger" in captured.out
         # appinfra format includes brackets
-        assert "[" in captured.err
+        assert "[" in captured.out
 
     def test_capture_logger_child_propagates(self):
         """Test that child loggers of captured parent propagate correctly."""

@@ -38,7 +38,7 @@ project_root = str(pathlib.Path(__file__).resolve().parents[2])
 sys.path.append(project_root) if project_root not in sys.path else None
 
 from appinfra.log import LogConfig, Logger, LoggerFactory
-from appinfra.log.callbacks import CallbackRegistry
+from appinfra.log.callback import CallbackRegistry
 
 
 def demo_boolean_false_disabled_logging():

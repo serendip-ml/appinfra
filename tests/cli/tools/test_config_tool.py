@@ -541,3 +541,110 @@ class TestConfigToolIntegration:
         result = tool.run()
 
         assert result == 1
+
+    def test_default_config_path_when_none(self, tmp_path, monkeypatch):
+        """Test that default config path is used when config_file is None."""
+        # Change to a temp directory so etc/infra.yaml doesn't exist
+        monkeypatch.chdir(tmp_path)
+
+        tool = ConfigTool()
+        tool._parsed_args = Mock(config_file=None, no_env=True)
+        tool._logger = Mock()
+
+        # Should try to load etc/infra.yaml which won't exist in tmp_path
+        result = tool._load_config()
+
+        # Should return None because file doesn't exist, and log error
+        assert result is None
+        tool._logger.error.assert_called_once()
+        assert "etc/infra.yaml" in str(tool._logger.error.call_args)
+
+    def test_load_config_generic_exception(self, tmp_path, monkeypatch):
+        """Test that generic exceptions during config load are handled."""
+        tool = ConfigTool()
+        config_file = tmp_path / "test.yaml"
+        config_file.write_text("valid: yaml\n")
+
+        tool._parsed_args = Mock(config_file=str(config_file), no_env=False)
+        tool._logger = Mock()
+
+        # Patch Config to raise a generic exception (not YAMLError)
+        from appinfra.cli.tools import config_tool
+
+        original_config = config_tool.Config
+
+        class FailingConfig:
+            def __init__(self, *args, **kwargs):
+                raise RuntimeError("Simulated generic error")
+
+        monkeypatch.setattr(config_tool, "Config", FailingConfig)
+
+        result = tool._load_config()
+
+        assert result is None
+        tool._logger.error.assert_called_once()
+        assert "Failed to load config" in str(tool._logger.error.call_args)
+
+    def test_format_output_json(self):
+        """Test _format_output selects JSON formatter."""
+        tool = ConfigTool()
+        tool._parsed_args = Mock(format="json")
+        data = {"key": "value"}
+
+        result = tool._format_output(data)
+
+        assert '"key": "value"' in result
+
+    def test_format_output_flat(self):
+        """Test _format_output selects flat formatter."""
+        tool = ConfigTool()
+        tool._parsed_args = Mock(format="flat")
+        data = {"key": "value"}
+
+        result = tool._format_output(data)
+
+        assert "key=value" in result
+
+    def test_format_output_yaml_default(self):
+        """Test _format_output defaults to YAML formatter."""
+        tool = ConfigTool()
+        tool._parsed_args = Mock(format="yaml")
+        data = {"key": "value"}
+
+        result = tool._format_output(data)
+
+        assert "key: value" in result
+
+    def test_format_list_value_complex_objects(self):
+        """Test _format_list_value falls back to JSON for complex objects."""
+        tool = ConfigTool()
+        # List with complex objects (dicts)
+        complex_list = [{"a": 1}, {"b": 2}]
+
+        result = tool._format_list_value(complex_list)
+
+        # Should be JSON format, not comma-separated
+        assert "[" in result
+        assert '"a":' in result or '"a": ' in result
+
+    def test_full_run_returns_1_on_section_filter_failure(self):
+        """Test run returns 1 when section filter fails."""
+        tool = ConfigTool()
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write("app:\n  name: test\n")
+            f.flush()
+
+            tool._parsed_args = Mock(
+                config_file=f.name,
+                format="yaml",
+                no_env=True,
+                section="nonexistent",
+            )
+            tool._logger = Mock()
+
+            result = tool.run()
+
+            assert result == 1
+
+        Path(f.name).unlink()

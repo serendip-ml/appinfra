@@ -15,12 +15,11 @@ What This Example Demonstrates:
 
 Running the Example:
     # From the infra project root
-    mkdir -p logs
     ~/.venv/bin/python examples/03_logging/logging_builder_example.py
 
 Expected Output:
     The console will show various logging configurations being set up and used.
-    Log files will be created in the logs/ directory with different configurations.
+    Log files will be created in the .logs/ directory with different configurations.
     JSON output will demonstrate structured logging capabilities.
 
 Key Features Demonstrated:
@@ -40,6 +39,9 @@ import os
 import pathlib
 import sys
 import time
+
+# Log directory for examples (hidden to keep project root clean)
+LOG_DIR = ".logs"
 
 # Add the project root to the path (examples/03_logging/file.py -> project root is 2 levels up)
 project_root = str(pathlib.Path(__file__).resolve().parents[2])
@@ -85,9 +87,9 @@ def _demo_multiple_handler_types():
         LoggingBuilder("demo.multiple")
         .with_level("debug")
         .with_console_handler()
-        .with_file_handler("logs/multiple_demo.log")
+        .with_file_handler(f"{LOG_DIR}/multiple_demo.log")
         .with_rotating_file_handler(
-            "logs/rotating_demo.log", max_bytes=1024 * 1024, backup_count=3
+            f"{LOG_DIR}/rotating_demo.log", max_bytes=1024 * 1024, backup_count=3
         )
         .build()
     )
@@ -105,7 +107,7 @@ def _demo_custom_configuration():
         .with_level("warning")
         .with_colors(False)
         .with_separator()
-        .with_file_handler("logs/custom_demo.log")
+        .with_file_handler(f"{LOG_DIR}/custom_demo.log")
         .with_extra(service="demo", version="1.0.0")
         .build()
     )
@@ -155,7 +157,9 @@ def _demo_basic_file_logging():
     """Demonstrate basic file logging."""
     print("\n1. Basic File Logging:")
     logger1 = (
-        FileLoggingBuilder("demo.file", "logs/file_demo.log").with_level("info").build()
+        FileLoggingBuilder("demo.file", f"{LOG_DIR}/file_demo.log")
+        .with_level("info")
+        .build()
     )
     logger1.info("File logging configured", extra={"example": "file_builder"})
     print("   -> Created file logger")
@@ -165,7 +169,7 @@ def _demo_file_rotation():
     """Demonstrate file rotation with size-based rollover."""
     print("\n2. File Rotation:")
     logger2 = (
-        FileLoggingBuilder("demo.rotation", "logs/rotation_demo.log")
+        FileLoggingBuilder("demo.rotation", f"{LOG_DIR}/rotation_demo.log")
         .with_level("debug")
         .with_rotation(max_bytes=1024 * 1024, backup_count=3)  # 1MB rotation
         .build()
@@ -177,13 +181,15 @@ def _demo_file_rotation():
 def _demo_time_based_rotation():
     """Demonstrate time-based file rotation (daily and hourly)."""
     print("\n3. Daily Rotation:")
-    logger3 = quick_daily_file_logger("demo.daily", "logs/daily_demo.log", "info", 7)
+    logger3 = quick_daily_file_logger(
+        "demo.daily", f"{LOG_DIR}/daily_demo.log", "info", 7
+    )
     logger3.info("Daily rotation configured", extra={"example": "daily_rotation"})
     print("   -> Created file logger with daily rotation")
 
     print("\n4. Hourly Rotation:")
     logger4 = (
-        FileLoggingBuilder("demo.hourly", "logs/hourly_demo.log")
+        FileLoggingBuilder("demo.hourly", f"{LOG_DIR}/hourly_demo.log")
         .with_level("info")
         .hourly_rotation(backup_count=24)
         .build()
@@ -207,7 +213,7 @@ def _demo_console_and_file_output():
         LoggingBuilder("demo.multiple")
         .with_level("info")
         .with_console_handler()
-        .with_file_handler("logs/multiple_demo.log")
+        .with_file_handler(f"{LOG_DIR}/multiple_demo.log")
         .build()
     )
     logger1.info("Multiple handlers configured", extra={"example": "multiple_handlers"})
@@ -221,9 +227,12 @@ def _demo_different_handler_levels():
         LoggingBuilder("demo.multiple_levels")
         .with_level("debug")
         .with_console_handler(level="info")
-        .with_file_handler("logs/multiple_info.log", level="info")
+        .with_file_handler(f"{LOG_DIR}/multiple_info.log", level="info")
         .with_rotating_file_handler(
-            "logs/multiple_debug.log", max_bytes=1024, backup_count=3, level="debug"
+            f"{LOG_DIR}/multiple_debug.log",
+            max_bytes=1024,
+            backup_count=3,
+            level="debug",
         )
         .build()
     )
@@ -235,7 +244,7 @@ def _demo_quick_multi_output():
     """Demonstrate quick multi-output setup."""
     print("\n3. Quick Setup:")
     logger3 = quick_console_and_file(
-        "demo.quick_multi", "logs/quick_multi_demo.log", "info"
+        "demo.quick_multi", f"{LOG_DIR}/quick_multi_demo.log", "info"
     )
     logger3.info("Quick multi-output setup", extra={"example": "quick_multi"})
     print("   -> Created logger with quick multi-output setup")
@@ -277,7 +286,7 @@ def _demo_json_file():
     logger = (
         JSONLoggingBuilder("demo.json_file")
         .with_level("debug")
-        .with_json_file("logs/json_demo.json")
+        .with_json_file(f"{LOG_DIR}/json_demo.json")
         .with_pretty_print(True)
         .build()
     )
@@ -301,7 +310,7 @@ def _demo_json_custom_fields():
     logger = (
         JSONLoggingBuilder("demo.json_custom")
         .with_level("info")
-        .with_json_file("logs/json_custom_demo.json")
+        .with_json_file(f"{LOG_DIR}/json_custom_demo.json")
         .with_custom_fields(
             {"service": "demo", "version": "1.0.0", "environment": "development"}
         )
@@ -324,7 +333,9 @@ def _demo_json_custom_fields():
 def _demo_json_both_outputs():
     """Demonstrate both console and JSON file output."""
     print("\n4. Both Console and JSON File:")
-    logger = quick_both_outputs("demo.json_both", "logs/json_both_demo.json", "info")
+    logger = quick_both_outputs(
+        "demo.json_both", f"{LOG_DIR}/json_both_demo.json", "info"
+    )
     logger.info(
         "Both console and JSON file configured",
         extra={
@@ -355,14 +366,14 @@ def _demo_quick_basic_loggers():
 
     print("\n2. Quick File Logger:")
     file_logger = quick_file_logger(
-        "demo.quick_file", "logs/quick_file_demo.log", "debug"
+        "demo.quick_file", f"{LOG_DIR}/quick_file_demo.log", "debug"
     )
     file_logger.debug("Quick file setup", extra={"example": "quick_file"})
     print("   -> Quick file logger created")
 
     print("\n3. Quick Both Logger:")
     both_logger = quick_both_logger(
-        "demo.quick_both", "logs/quick_both_demo.log", "info"
+        "demo.quick_both", f"{LOG_DIR}/quick_both_demo.log", "info"
     )
     both_logger.info("Quick both setup", extra={"example": "quick_both"})
     print("   -> Quick both logger created")
@@ -375,12 +386,12 @@ def _demo_quick_json_loggers():
     json_console.info("Quick JSON console", extra={"example": "quick_json_console"})
 
     json_file = quick_json_file(
-        "demo.quick_json_file", "logs/quick_json_demo.json", "debug"
+        "demo.quick_json_file", f"{LOG_DIR}/quick_json_demo.json", "debug"
     )
     json_file.debug("Quick JSON file", extra={"example": "quick_json_file"})
 
     json_both = quick_both_outputs(
-        "demo.quick_json_both", "logs/quick_json_both_demo.json", "info"
+        "demo.quick_json_both", f"{LOG_DIR}/quick_json_both_demo.json", "info"
     )
     json_both.info("Quick JSON both", extra={"example": "quick_json_both"})
     print("   -> Quick JSON loggers created")
@@ -403,10 +414,10 @@ def _demo_production_logging():
         .with_micros(True)
         .with_console_handler()
         .with_rotating_file_handler(
-            "logs/production.log", max_bytes=10 * 1024 * 1024, backup_count=10
+            f"{LOG_DIR}/production.log", max_bytes=10 * 1024 * 1024, backup_count=10
         )
         .with_timed_rotating_file_handler(
-            "logs/production_errors.log", when="midnight", backup_count=30
+            f"{LOG_DIR}/production_errors.log", when="midnight", backup_count=30
         )
         .build()
     )
@@ -431,7 +442,7 @@ def _demo_development_logging():
         .with_level("debug")
         .with_location(3)
         .with_micros(True)
-        .with_json_file("logs/development.json")
+        .with_json_file(f"{LOG_DIR}/development.json")
         .with_pretty_print(True)
         .with_custom_fields({"environment": "development", "debug_mode": True})
         .build()
@@ -456,7 +467,7 @@ def _create_microservice_logger(service, port):
     return (
         JSONLoggingBuilder(f"demo.microservice.{service}")
         .with_level("info")
-        .with_json_file(f"logs/service_{service}.json")
+        .with_json_file(f"{LOG_DIR}/service_{service}.json")
         .with_custom_fields(
             {
                 "service": service,
@@ -508,32 +519,32 @@ def demo_advanced_scenarios():
 def _get_log_files_to_cleanup():
     """Get list of log files created by demos."""
     return [
-        "logs/multiple_demo.log",
-        "logs/rotating_demo.log",
-        "logs/custom_demo.log",
-        "logs/file_demo.log",
-        "logs/rotation_demo.log",
-        "logs/daily_demo.log",
-        "logs/hourly_demo.log",
-        "logs/multi_demo.log",
-        "logs/multi_files1.log",
-        "logs/multi_files2.log",
-        "logs/multi_files3.log",
-        "logs/quick_multi_demo.log",
-        "logs/json_demo.json",
-        "logs/json_custom_demo.json",
-        "logs/json_both_demo.json",
-        "logs/quick_file_demo.log",
-        "logs/quick_both_demo.log",
-        "logs/quick_json_demo.json",
-        "logs/quick_json_both_demo.json",
-        "logs/production.log",
-        "logs/production_errors.log",
-        "logs/development.json",
-        "logs/service_auth.json",
-        "logs/service_api.json",
-        "logs/service_database.json",
-        "logs/service_cache.json",
+        f"{LOG_DIR}/multiple_demo.log",
+        f"{LOG_DIR}/rotating_demo.log",
+        f"{LOG_DIR}/custom_demo.log",
+        f"{LOG_DIR}/file_demo.log",
+        f"{LOG_DIR}/rotation_demo.log",
+        f"{LOG_DIR}/daily_demo.log",
+        f"{LOG_DIR}/hourly_demo.log",
+        f"{LOG_DIR}/multi_demo.log",
+        f"{LOG_DIR}/multi_files1.log",
+        f"{LOG_DIR}/multi_files2.log",
+        f"{LOG_DIR}/multi_files3.log",
+        f"{LOG_DIR}/quick_multi_demo.log",
+        f"{LOG_DIR}/json_demo.json",
+        f"{LOG_DIR}/json_custom_demo.json",
+        f"{LOG_DIR}/json_both_demo.json",
+        f"{LOG_DIR}/quick_file_demo.log",
+        f"{LOG_DIR}/quick_both_demo.log",
+        f"{LOG_DIR}/quick_json_demo.json",
+        f"{LOG_DIR}/quick_json_both_demo.json",
+        f"{LOG_DIR}/production.log",
+        f"{LOG_DIR}/production_errors.log",
+        f"{LOG_DIR}/development.json",
+        f"{LOG_DIR}/service_auth.json",
+        f"{LOG_DIR}/service_api.json",
+        f"{LOG_DIR}/service_database.json",
+        f"{LOG_DIR}/service_cache.json",
     ]
 
 
@@ -564,13 +575,13 @@ def _print_completion_summary():
     """Print demo completion summary."""
     print("\n=== Demo Complete ===")
     print("Various LoggingBuilder configurations have been demonstrated.")
-    print("Check the logs/ directory for generated log files.")
+    print(f"Check the {LOG_DIR}/ directory for generated log files.")
 
 
 def _display_json_examples():
     """Display JSON logging output examples."""
     print("\n=== JSON Output Examples ===")
-    json_file = "logs/json_demo.json"
+    json_file = f"{LOG_DIR}/json_demo.json"
     if os.path.exists(json_file):
         print(f"Sample JSON output from {json_file}:")
         with open(json_file) as f:
@@ -589,7 +600,7 @@ def main():
     print("=== LoggingBuilder Example ===")
 
     # Ensure logs directory exists
-    os.makedirs("logs", exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
 
     try:
         _run_all_demos()

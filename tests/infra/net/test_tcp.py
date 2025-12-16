@@ -142,7 +142,7 @@ class TestHelperFunctions:
 
             mock_ticker_handler.ticker_start.assert_called_once_with(mock_manager)
             mock_process.start.assert_called_once()
-            mock_logger.debug.assert_called_with("Ticker process started")
+            mock_logger.debug.assert_called_with("ticker process started")
             assert proc == mock_process
 
     def test_start_ticker_in_process_with_ticker(self, mock_logger):
@@ -153,7 +153,7 @@ class TestHelperFunctions:
         _start_ticker_in_process(mock_handler, mock_logger)
 
         mock_handler.start.assert_called_once()
-        mock_logger.debug.assert_called_with("Ticker started in single-process mode")
+        mock_logger.debug.assert_called_with("ticker started in single-process mode")
 
     def test_start_ticker_in_process_without_ticker(self, mock_handler, mock_logger):
         """Test starting ticker when handler is not a Ticker."""

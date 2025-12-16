@@ -18,6 +18,7 @@ from unittest.mock import Mock
 import pytest
 
 from appinfra.cli.tools.check_functions import (
+    EXIT_CODE_WARNING,
     CheckFunctionsTool,
     FunctionAnalyzer,
     FunctionInfo,
@@ -780,12 +781,12 @@ class TestCheckFunctionsToolRun:
 
             assert result == 0
 
-    def test_returns_zero_in_non_strict_mode_with_violations(self):
-        """Test returns 0 in non-strict mode even with violations."""
+    def test_returns_warning_code_for_moderate_violations_non_strict(self):
+        """Test returns EXIT_CODE_WARNING (42) for moderate-only violations in non-strict mode."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a large function file
-            test_file = Path(tmpdir) / "large.py"
-            lines = ["def large():\n"] + [f"    x{i} = {i}\n" for i in range(40)]
+            # Create a moderate violation (40 lines = 30-50 range)
+            test_file = Path(tmpdir) / "moderate.py"
+            lines = ["def moderate():\n"] + [f"    x{i} = {i}\n" for i in range(40)]
             test_file.write_text("".join(lines))
 
             tool = CheckFunctionsTool()
@@ -801,7 +802,58 @@ class TestCheckFunctionsToolRun:
 
             result = tool.run()
 
-            assert result == 0
+            # Moderate violations only → warning (exit 42)
+            assert result == EXIT_CODE_WARNING
+
+    def test_returns_one_for_high_priority_violations_non_strict(self):
+        """Test returns 1 for high priority violations (50-80 lines) even in non-strict mode."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a high priority violation (60 lines = 50-80 range)
+            test_file = Path(tmpdir) / "high.py"
+            lines = ["def high_priority():\n"] + [
+                f"    x{i} = {i}\n" for i in range(60)
+            ]
+            test_file.write_text("".join(lines))
+
+            tool = CheckFunctionsTool()
+            tool._logger = Mock()
+            args = Mock()
+            args.dir = tmpdir
+            args.limit = 30
+            args.format = "simple"
+            args.strict = False
+            args.exclude = None
+            args.include_tests = False
+            tool._parsed_args = args
+
+            result = tool.run()
+
+            # High priority violations fail even in non-strict mode
+            assert result == 1
+
+    def test_returns_one_for_critical_violations_non_strict(self):
+        """Test returns 1 for critical violations (>80 lines) even in non-strict mode."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a critical violation (90 lines = >80)
+            test_file = Path(tmpdir) / "critical.py"
+            lines = ["def critical():\n"] + [f"    x{i} = {i}\n" for i in range(90)]
+            test_file.write_text("".join(lines))
+
+            tool = CheckFunctionsTool()
+            tool._logger = Mock()
+            args = Mock()
+            args.dir = tmpdir
+            args.limit = 30
+            args.format = "simple"
+            args.strict = False
+            args.exclude = None
+            args.include_tests = False
+            tool._parsed_args = args
+
+            result = tool.run()
+
+            # Critical violations fail even in non-strict mode
+            assert result == 1
 
     def test_returns_one_in_strict_mode_with_violations(self):
         """Test returns 1 in strict mode when violations found."""
@@ -910,8 +962,8 @@ class TestCheckFunctionsToolIntegration:
             sys.stdout = old_stdout
             output = captured.getvalue()
 
-            # Should find one violation
-            assert result == 0
+            # Should find one violation - non-strict mode returns warning code
+            assert result == EXIT_CODE_WARNING
             data = json.loads(output)
             assert len(data) == 1
             assert data[0]["name"] == "large_func"

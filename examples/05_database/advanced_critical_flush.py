@@ -28,11 +28,19 @@ import time
 from datetime import datetime
 
 # Add the project root to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+project_root = os.path.join(os.path.dirname(__file__), "..", "..")
+sys.path.insert(0, project_root)
 
 from appinfra.app.cfg import Config
 from appinfra.log.builder.database import DatabaseLoggingBuilder
-from tests.helpers.pg.helper import PGTestCaseHelper
+
+try:
+    from tests.helpers.pg.helper import PGTestCaseHelper
+except ImportError:
+    print("This example requires test infrastructure (tests.helpers.pg.helper).")
+    print("Please run from within the development environment with tests installed,")
+    print("or run: pip install -e .[dev]")
+    sys.exit(0)
 
 
 class CriticalFlushDemo:

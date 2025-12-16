@@ -14,6 +14,7 @@ class AppBuilder:
 - `with_description(desc)` - Set description
 - `with_version(version)` - Set version string
 - `with_config(config)` - Set Config or DotDict configuration
+- `config(path)` - Load config from file path (tracks path for hot-reload)
 - `with_main_cls(cls)` - Use custom App subclass
 - `without_auto_config()` - Disable automatic config loading
 - `with_standard_args(**kwargs)` - Enable/disable standard CLI args
@@ -43,15 +44,18 @@ app = (
 
 ## LoggingConfigurer
 
-Accessed via `AppBuilder().logging`:
+Accessed via `AppBuilder().logging()`:
 
 ```python
 app = (
     AppBuilder("myapp")
-    .logging
+    .logging()
         .with_level("info")       # Set log level
         .with_location(1)         # Show file/line (0=none, 1=file:line, 2=full path)
         .with_micros(True)        # Microsecond timestamps
+        .with_colors(True)        # Enable colored output
+        .with_format("%(msg)s")   # Custom format string
+        .with_hot_reload(True)    # Enable config hot-reload (requires watchdog)
         .done()
     .build()
 )
@@ -144,7 +148,43 @@ By default, AppBuilder adds these CLI arguments:
 
 Disable with `.without_standard_args()` or selectively with `.with_standard_args(log_micros=False)`.
 
+## Hot-Reload Logging
+
+Enable automatic config reloading when config files change (requires `pip install
+appinfra[hotreload]`):
+
+```python
+app = (
+    AppBuilder("my-service")
+    .config("etc/config.yaml")  # Track config path
+    .logging()
+        .with_hot_reload(True)  # Enable watching
+        .done()
+    .build()
+)
+```
+
+Or with explicit config path:
+
+```python
+app = (
+    AppBuilder("my-service")
+    .logging()
+        .with_hot_reload(
+            enabled=True,
+            config_path="etc/logging.yaml",
+            section="logging",
+            debounce_ms=500
+        )
+        .done()
+    .build()
+)
+```
+
+See [Hot-Reload Logging Guide](../guides/hot-reload-logging.md) for full documentation.
+
 ## See Also
 
 - [Application Framework](app.md) - Tool and ToolConfig
 - [Logging System](logging.md) - LoggingBuilder
+- [Hot-Reload Logging](../guides/hot-reload-logging.md) - Dynamic config reloading

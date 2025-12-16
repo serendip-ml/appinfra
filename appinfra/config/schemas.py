@@ -178,7 +178,7 @@ try:
             config_data = {...}
             try:
                 validated = validate_config(config_data)
-                lg.info("Config is valid!")
+                lg.info("config is valid!")
             except ValidationError as e:
                 lg.error(f"Invalid config: {e}")
         """

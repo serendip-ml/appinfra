@@ -32,6 +32,7 @@ Advanced logging system with structured output:
 - Fluent builder API
 - JSON structured logging
 - Microsecond precision timestamps
+- Hot-reload configuration (change log settings without restart)
 
 ### Database Layer (`appinfra/db/`)
 
