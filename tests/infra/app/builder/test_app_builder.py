@@ -451,6 +451,100 @@ class TestLoggingConfig:
 
 
 # =============================================================================
+# Test LoggingConfig Merge
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestLoggingConfigMerge:
+    """Test AppBuilder._merge_logging_into_config method."""
+
+    def test_merge_returns_config_when_no_logging_settings(self):
+        """Test that merge returns original config when no logging settings are set."""
+        from appinfra.dot_dict import DotDict
+
+        # Create a config, but no logging settings in builder
+        builder = AppBuilder("test")
+        builder._config = DotDict(app_name="test")
+        # _logging_config has all None values by default
+
+        result = builder._merge_logging_into_config()
+
+        # Should return original config unchanged
+        assert result is builder._config
+        assert result.app_name == "test"
+
+    def test_merge_creates_config_with_logging_when_no_config(self):
+        """Test that merge creates new config with logging when no config exists."""
+        builder = AppBuilder("test")
+        builder._config = None
+        builder._logging_config = LoggingConfig(level="debug")
+
+        result = builder._merge_logging_into_config()
+
+        # Should create new config with logging
+        assert result is not None
+        assert hasattr(result, "logging")
+        assert result.logging.level == "debug"
+
+    def test_merge_adds_logging_to_config_without_logging_section(self):
+        """Test that logging config is added when config has no logging section."""
+        from appinfra.dot_dict import DotDict
+
+        # Create a config without logging section
+        builder = AppBuilder("test")
+        builder._config = DotDict(app_name="test")
+        builder._logging_config = LoggingConfig(level="debug")
+
+        result = builder._merge_logging_into_config()
+
+        assert hasattr(result, "logging")
+        assert result.logging.level == "debug"
+
+    def test_merge_updates_existing_logging_section(self):
+        """Test that logging config updates existing logging section."""
+        from appinfra.dot_dict import DotDict
+
+        # Create a config with existing logging section
+        builder = AppBuilder("test")
+        builder._config = DotDict(logging=DotDict(location=1))
+        builder._logging_config = LoggingConfig(level="debug")
+
+        result = builder._merge_logging_into_config()
+
+        # Should have both values
+        assert result.logging.level == "debug"
+        assert result.logging.location == 1
+
+
+# =============================================================================
+# Test create_app_builder Factory Function
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestCreateAppBuilder:
+    """Test create_app_builder factory function."""
+
+    def test_create_app_builder_returns_builder(self):
+        """Test that create_app_builder returns an AppBuilder instance."""
+        from appinfra.app.builder import create_app_builder
+
+        builder = create_app_builder("myapp")
+
+        assert isinstance(builder, AppBuilder)
+        assert builder._name == "myapp"
+
+    def test_create_app_builder_supports_chaining(self):
+        """Test that create_app_builder result can be chained."""
+        from appinfra.app.builder import create_app_builder
+
+        app = create_app_builder("myapp").with_description("My application").build()
+
+        assert app is not None
+
+
+# =============================================================================
 # Test AppBuilder Initialization
 # =============================================================================
 
@@ -528,17 +622,24 @@ class TestAppBuilderFluentMethods:
         assert builder._config is config
         assert result is builder
 
-    def test_with_config_builder(self):
-        """Test with_config_builder builds and sets config."""
-        builder = AppBuilder()
-        config_builder = Mock()
-        built_config = Mock()
-        config_builder.build.return_value = built_config
+    def test_with_config_file_uses_default_when_none(self):
+        """Test that with_config_file() uses default config filename when path is None."""
+        builder = AppBuilder("test")
 
-        result = builder.with_config_builder(config_builder)
+        result = builder.with_config_file()
 
-        config_builder.build.assert_called_once()
-        assert builder._config is built_config
+        assert builder._config_path == "infra.yaml"
+        assert builder._config_from_etc_dir is True
+        assert result is builder
+
+    def test_with_config_file_with_explicit_path(self):
+        """Test that with_config_file() uses explicit path when provided."""
+        builder = AppBuilder("test")
+
+        result = builder.with_config_file("custom.yaml")
+
+        assert builder._config_path == "custom.yaml"
+        assert builder._config_from_etc_dir is True
         assert result is builder
 
     def test_with_main_cls(self):
@@ -551,6 +652,27 @@ class TestAppBuilderFluentMethods:
         result = builder.with_main_cls(CustomApp)
 
         assert builder._main_cls is CustomApp
+        assert result is builder
+
+    def test_with_main_tool_by_name(self):
+        """Test with_main_tool sets main tool by name."""
+        builder = AppBuilder()
+
+        result = builder.with_main_tool("run")
+
+        assert builder._main_tool == "run"
+        assert result is builder
+
+    def test_with_main_tool_by_object(self):
+        """Test with_main_tool sets main tool by Tool object."""
+        from appinfra.app.tools.base import Tool, ToolConfig
+
+        builder = AppBuilder()
+        tool = Tool(config=ToolConfig(name="process"))
+
+        result = builder.with_main_tool(tool)
+
+        assert builder._main_tool == "process"
         assert result is builder
 
 
@@ -581,86 +703,6 @@ class TestAppBuilderDecoratorAPI:
         result = builder.argument
 
         assert callable(result)
-
-
-# =============================================================================
-# Test AppBuilder Create Methods
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestAppBuilderCreateMethods:
-    """Test AppBuilder create_* methods."""
-
-    def test_create_config_builder(self):
-        """Test create_config_builder returns ConfigBuilder."""
-        builder = AppBuilder()
-
-        result = builder.create_config_builder()
-
-        from appinfra.app.builder.config import ConfigBuilder
-
-        assert isinstance(result, ConfigBuilder)
-
-    def test_create_server_config_builder(self):
-        """Test create_server_config_builder returns ServerConfigBuilder."""
-        builder = AppBuilder()
-
-        result = builder.create_server_config_builder()
-
-        from appinfra.app.builder.config import ServerConfigBuilder
-
-        assert isinstance(result, ServerConfigBuilder)
-
-    def test_create_logging_config_builder(self):
-        """Test create_logging_config_builder returns LoggingConfigBuilder."""
-        builder = AppBuilder()
-
-        result = builder.create_logging_config_builder()
-
-        from appinfra.app.builder.config import LoggingConfigBuilder
-
-        assert isinstance(result, LoggingConfigBuilder)
-
-    def test_create_tool_builder(self):
-        """Test create_tool_builder returns ToolBuilder."""
-        builder = AppBuilder()
-
-        result = builder.create_tool_builder("mytool")
-
-        from appinfra.app.builder.tool import ToolBuilder
-
-        assert isinstance(result, ToolBuilder)
-
-    def test_create_middleware_builder(self):
-        """Test create_middleware_builder returns MiddlewareBuilder."""
-        builder = AppBuilder()
-
-        result = builder.create_middleware_builder("mymiddleware")
-
-        from appinfra.app.builder.middleware import MiddlewareBuilder
-
-        assert isinstance(result, MiddlewareBuilder)
-
-    def test_create_validation_builder(self):
-        """Test create_validation_builder returns ValidationBuilder."""
-        builder = AppBuilder()
-
-        result = builder.create_validation_builder()
-
-        from appinfra.app.builder.validation import ValidationBuilder
-
-        assert isinstance(result, ValidationBuilder)
-
-    def test_create_hook_builder(self):
-        """Test create_hook_builder returns HookBuilder."""
-        builder = AppBuilder()
-
-        result = builder.create_hook_builder()
-
-        from appinfra.app.builder.hook import HookBuilder
-
-        assert isinstance(result, HookBuilder)
 
 
 # =============================================================================
@@ -788,59 +830,3 @@ class TestAppBuilderIntegration:
 
         advanced_configurer = builder.advanced
         assert advanced_configurer.done() is builder
-
-
-# =============================================================================
-# Test without_auto_config
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestWithoutAutoConfig:
-    """Test without_auto_config method for disabling auto-loading."""
-
-    def test_without_auto_config_sets_flag(self):
-        """Test that without_auto_config sets internal flag to False."""
-        builder = AppBuilder()
-
-        # By default, auto-load should be enabled
-        assert builder._auto_load_config is True
-
-        # Calling without_auto_config should disable it
-        result = builder.without_auto_config()
-
-        assert builder._auto_load_config is False
-        assert result is builder  # Should return self for chaining
-
-    def test_without_auto_config_passed_to_app(self):
-        """Test that auto-load flag is passed to App during build."""
-        builder = AppBuilder()
-        builder.without_auto_config()
-
-        app = builder.build()
-
-        # The flag should be set on the app instance
-        assert hasattr(app, "_auto_load_config")
-        assert app._auto_load_config is False
-
-    def test_auto_config_enabled_by_default(self):
-        """Test that auto-loading is enabled by default."""
-        builder = AppBuilder()
-        app = builder.build()
-
-        # By default, auto-load should be enabled
-        assert hasattr(app, "_auto_load_config")
-        assert app._auto_load_config is True
-
-    def test_without_auto_config_chainable(self):
-        """Test that without_auto_config can be chained with other methods."""
-        builder = AppBuilder("test_app")
-
-        result = (
-            builder.with_description("Test app")
-            .without_auto_config()
-            .with_version("1.0.0")
-        )
-
-        assert result is builder
-        assert builder._auto_load_config is False

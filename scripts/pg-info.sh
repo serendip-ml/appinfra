@@ -26,6 +26,7 @@ PG_HOST="$3"
 PG_PORT="$4"
 PG_PORT_R="$5"
 PG_USER="$6"
+PG_REPLICA_ENABLED="$7"
 
 # Check connection status first
 if psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" -c "SELECT 1" >/dev/null 2>&1; then
@@ -36,27 +37,35 @@ else
     PRIMARY_STATUS="${RED}DOWN${RESET}"
 fi
 
-if psql -h "${PG_HOST}" -p "${PG_PORT_R}" -U "${PG_USER}" -c "SELECT 1" >/dev/null 2>&1; then
-    STANDBY_UP=true
-    STANDBY_STATUS="${GREEN}UP${RESET}"
-else
-    STANDBY_UP=false
-    STANDBY_STATUS="${RED}DOWN${RESET}"
+# Only check standby if replica is enabled
+STANDBY_UP=false
+STANDBY_STATUS="${RED}DOWN${RESET}"
+if [ "$PG_REPLICA_ENABLED" = "true" ]; then
+    if psql -h "${PG_HOST}" -p "${PG_PORT_R}" -U "${PG_USER}" -c "SELECT 1" >/dev/null 2>&1; then
+        STANDBY_UP=true
+        STANDBY_STATUS="${GREEN}UP${RESET}"
+    fi
 fi
 
 # Short mode output
 if [ "$SHORT_MODE" = true ]; then
     # Connection status
-    echo -e "${BOLD}Endpoints:${RESET} Primary ${PRIMARY_STATUS} (${PG_HOST}:${PG_PORT}) | Standby ${STANDBY_STATUS} (${PG_HOST}:${PG_PORT_R})"
+    if [ "$PG_REPLICA_ENABLED" = "true" ]; then
+        echo -e "${BOLD}Endpoints:${RESET} Primary ${PRIMARY_STATUS} (${PG_HOST}:${PG_PORT}) | Standby ${STANDBY_STATUS} (${PG_HOST}:${PG_PORT_R})"
+    else
+        echo -e "${BOLD}Endpoint:${RESET} ${PRIMARY_STATUS} (${PG_HOST}:${PG_PORT})"
+    fi
 
     if [ "$PRIMARY_UP" = true ]; then
-        # Replication status
-        REPL_STATE=$(psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" -t -A -c "SELECT state FROM pg_stat_replication LIMIT 1;" 2>/dev/null)
-        if [ -n "$REPL_STATE" ]; then
-            REPL_SYNC=$(psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" -t -A -c "SELECT sync_state FROM pg_stat_replication LIMIT 1;" 2>/dev/null)
-            echo -e "${BOLD}Replication:${RESET} ${YELLOW}${REPL_STATE}${RESET} (${REPL_SYNC})"
-        else
-            echo -e "${BOLD}Replication:${RESET} ${GRAY}not configured${RESET}"
+        # Replication status (only show if replica enabled)
+        if [ "$PG_REPLICA_ENABLED" = "true" ]; then
+            REPL_STATE=$(psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" -t -A -c "SELECT state FROM pg_stat_replication LIMIT 1;" 2>/dev/null)
+            if [ -n "$REPL_STATE" ]; then
+                REPL_SYNC=$(psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" -t -A -c "SELECT sync_state FROM pg_stat_replication LIMIT 1;" 2>/dev/null)
+                echo -e "${BOLD}Replication:${RESET} ${YELLOW}${REPL_STATE}${RESET} (${REPL_SYNC})"
+            else
+                echo -e "${BOLD}Replication:${RESET} ${GRAY}not active${RESET}"
+            fi
         fi
 
         # Database info
@@ -92,26 +101,37 @@ echo -e "${BOLD}SYSTEM CONFIGURATION${RESET}"
 echo -e "${GRAY}--------------------${RESET}"
 echo -e "Version:          ${BLUE}PostgreSQL ${PG_VERSION}${RESET}"
 echo -e "Docker Image:     ${BLUE}${PG_DOCKER_IMAGE}${RESET}"
-echo -e "Primary Port:     ${BLUE}${PG_PORT}${RESET}"
-echo -e "Standby Port:     ${BLUE}${PG_PORT_R}${RESET}"
+if [ "$PG_REPLICA_ENABLED" = "true" ]; then
+    echo -e "Primary Port:     ${BLUE}${PG_PORT}${RESET}"
+    echo -e "Standby Port:     ${BLUE}${PG_PORT_R}${RESET}"
+else
+    echo -e "Port:             ${BLUE}${PG_PORT}${RESET}"
+fi
 echo ""
 
 # Connection endpoints
 echo -e "${BOLD}CONNECTION ENDPOINTS${RESET}"
 echo -e "${GRAY}--------------------${RESET}"
-printf "%-30s " "Primary (${PG_HOST}:${PG_PORT}):"
-echo -e "${PRIMARY_STATUS}"
-printf "%-30s " "Standby (${PG_HOST}:${PG_PORT_R}):"
-echo -e "${STANDBY_STATUS}"
+if [ "$PG_REPLICA_ENABLED" = "true" ]; then
+    printf "%-30s " "Primary (${PG_HOST}:${PG_PORT}):"
+    echo -e "${PRIMARY_STATUS}"
+    printf "%-30s " "Standby (${PG_HOST}:${PG_PORT_R}):"
+    echo -e "${STANDBY_STATUS}"
+else
+    printf "%-30s " "Server (${PG_HOST}:${PG_PORT}):"
+    echo -e "${PRIMARY_STATUS}"
+fi
 echo ""
 
 # Only show database information if primary is up
 if [ "$PRIMARY_UP" = true ]; then
-    # Replication status
-    echo -e "${BOLD}REPLICATION STATUS${RESET}"
-    echo -e "${GRAY}------------------${RESET}"
-    psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" -c "SELECT client_addr AS standby_addr, state, sync_state FROM pg_stat_replication;" 2>/dev/null || echo "No replication configured"
-    echo ""
+    # Replication status (only if replica enabled)
+    if [ "$PG_REPLICA_ENABLED" = "true" ]; then
+        echo -e "${BOLD}REPLICATION STATUS${RESET}"
+        echo -e "${GRAY}------------------${RESET}"
+        psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" -c "SELECT client_addr AS standby_addr, state, sync_state FROM pg_stat_replication;" 2>/dev/null || echo "No replication active"
+        echo ""
+    fi
 
     # Databases with sizes
     echo -e "${BOLD}DATABASES${RESET}"

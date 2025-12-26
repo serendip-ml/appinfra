@@ -14,6 +14,7 @@ The Infra framework is organized into several major modules, each providing spec
 | [UI Components](ui.md) | Rich terminal output, progress bars, spinners, and prompts |
 | [Database Layer](database.md) | PostgreSQL interface with connection pooling and query monitoring |
 | [Time & Scheduling](time.md) | Periodic execution, scheduling, and time utilities |
+| [Version Tracking](version.md) | Git commit tracking for installed packages |
 | [Utilities](utilities.md) | Core utilities (DotDict, Config, rate limiting, etc.) |
 | [Exceptions](exceptions.md) | Exception hierarchy for error handling |
 
@@ -44,6 +45,7 @@ appinfra/
 ├── db/               # Database layer
 │   └── pg/          # PostgreSQL implementation
 ├── time/             # Time and scheduling
+├── version/          # Version and commit tracking
 ├── net/              # Network components
 ├── config/           # Configuration schemas (optional)
 └── observability/    # Monitoring hooks
@@ -141,6 +143,7 @@ def get(self, path: str, default: Any = None) -> Any:
 
 ### Utilities & Helpers
 - [Time & Scheduling](time.md) - Periodic execution
+- [Version Tracking](version.md) - Git commit tracking
 - [Core Utilities](utilities.md) - DotDict, rate limiting
 
 ### Error Handling

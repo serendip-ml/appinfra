@@ -9,6 +9,8 @@ import threading
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from appinfra.log.level_manager import LogLevelManager
 
 
@@ -116,6 +118,17 @@ class TestRuleManagement:
 
 class TestPatternMatching:
     """Test glob pattern matching."""
+
+    def test_pattern_starting_with_recursive_wildcard(self, manager):
+        """Test pattern starting with **/ (suffix matching)."""
+        manager.add_rule("/**/queries", "debug", source="yaml", priority=1)
+
+        # Should match paths ending with /queries
+        assert manager.get_effective_level("/infra/db/queries") == "debug"
+        assert manager.get_effective_level("/myapp/data/queries") == "debug"
+
+        # Should not match paths not ending with /queries
+        assert manager.get_effective_level("/infra/db/pg") is None
 
     def test_exact_match(self, manager):
         """Test exact path matching (no wildcards)."""
@@ -292,6 +305,39 @@ class TestRuntimeUpdates:
         # Convert to numeric level for comparison
         expected_level = getattr(logging, "DEBUG")
         assert test_logger.level == expected_level
+
+    def test_runtime_updates_with_numeric_level(self, manager):
+        """Test that runtime updates work with numeric level values."""
+        # Create a test logger
+        test_logger = logging.getLogger("/infra/numeric/test")
+        test_logger.setLevel(logging.INFO)
+
+        # Enable runtime updates and add rule with numeric level
+        manager.enable_runtime_updates()
+        manager.add_rule("/infra/numeric/*", logging.DEBUG, source="api", priority=10)
+
+        # Logger should be updated to DEBUG level
+        assert test_logger.level == logging.DEBUG
+
+    def test_runtime_updates_with_handler(self, manager):
+        """Test that runtime updates also update handler levels."""
+        # Create a test logger with a handler
+        test_logger = logging.getLogger("/infra/handler/test")
+        test_logger.setLevel(logging.INFO)
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.INFO)
+        test_logger.addHandler(handler)
+
+        try:
+            # Enable runtime updates and add rule
+            manager.enable_runtime_updates()
+            manager.add_rule("/infra/handler/*", "debug", source="api", priority=10)
+
+            # Both logger and handler should be updated
+            assert test_logger.level == logging.DEBUG
+            assert handler.level == logging.DEBUG
+        finally:
+            test_logger.removeHandler(handler)
 
 
 # =============================================================================

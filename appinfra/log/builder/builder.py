@@ -13,7 +13,6 @@ from ..config import LogConfig
 from ..exceptions import LogConfigurationError
 from ..factory import LoggerFactory
 from ..logger import Logger
-from ..logger_with_sep import LoggerWithSeparator
 from .interface import HandlerConfig, LoggingBuilderInterface
 
 
@@ -147,16 +146,6 @@ class LoggingBuilder(LoggingBuilderInterface):
             self._colors = config["colors"]
         if "location_color" in config:
             self._location_color = config["location_color"]
-        return self
-
-    def with_separator(self) -> Self:
-        """
-        Use LoggerWithSeparator for multiprocessing support.
-
-        Returns:
-            Self for method chaining
-        """
-        self._logger_class = LoggerWithSeparator
         return self
 
     def with_extra(self, **kwargs: Any) -> Self:

@@ -20,6 +20,9 @@ class LogConfigHolder:
     """
     Thread-safe holder for LogConfig that supports atomic updates.
 
+    Uses lock-free reads with atomic reference swap for minimal overhead
+    on the hot path (reading config during log formatting).
+
     Used by formatters to access configuration indirectly, allowing
     hot-reload without replacing formatter instances.
 
@@ -27,7 +30,7 @@ class LogConfigHolder:
         >>> from appinfra.log.config import LogConfig
         >>> config = LogConfig.from_params("info")
         >>> holder = LogConfigHolder(config)
-        >>> holder.level  # Access via property
+        >>> holder.level  # Access via property (lock-free)
         20
         >>> new_config = LogConfig.from_params("debug")
         >>> holder.update(new_config)  # Atomic update
@@ -42,42 +45,48 @@ class LogConfigHolder:
         Args:
             config: Initial LogConfig instance
         """
+        # Config reference - reads are lock-free (Python GIL ensures atomic
+        # reference reads/writes). Updates swap the entire immutable config.
         self._config = config
+        # Lock only needed for callback list mutations, not config access
         self._lock = threading.RLock()
         self._callbacks: list[Callable[[LogConfig], None]] = []
 
     @property
     def config(self) -> LogConfig:
-        """Get current config (thread-safe read)."""
-        with self._lock:
-            return self._config
+        """Get current config (lock-free read).
 
-    # Delegate properties for convenient access
+        Thread-safe due to Python's GIL guaranteeing atomic reference reads.
+        The config object itself is treated as immutable after creation.
+        """
+        return self._config
+
+    # Delegate properties for convenient access (all lock-free)
 
     @property
     def level(self) -> int | bool:
         """Get current log level."""
-        return self.config.level
+        return self._config.level
 
     @property
     def location(self) -> int:
         """Get current location display depth."""
-        return self.config.location
+        return self._config.location
 
     @property
     def micros(self) -> bool:
         """Get whether microsecond precision is enabled."""
-        return self.config.micros
+        return self._config.micros
 
     @property
     def colors(self) -> bool:
         """Get whether colored output is enabled."""
-        return self.config.colors
+        return self._config.colors
 
     @property
     def location_color(self) -> str | None:
         """Get current location color."""
-        return self.config.location_color
+        return self._config.location_color
 
     def update(self, new_config: LogConfig) -> None:
         """
@@ -87,10 +96,14 @@ class LogConfigHolder:
             new_config: New LogConfig to replace current config
 
         Note:
-            Callbacks are invoked outside the lock to prevent deadlocks.
+            Reference swap is atomic under GIL. Callbacks are invoked
+            outside the lock to prevent deadlocks.
         """
+        # Atomic reference swap (GIL ensures atomicity)
+        self._config = new_config
+
+        # Get callback list snapshot under lock
         with self._lock:
-            self._config = new_config
             callbacks = list(self._callbacks)
 
         # Notify listeners outside lock to avoid deadlock

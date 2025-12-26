@@ -1,0 +1,22 @@
+# Hot-Reload Example Configuration
+#
+# Edit this file while the server is running to see hot-reload in action.
+# Changes are applied automatically without restart.
+
+logging:
+  level: debug
+  location: 1
+
+  # Hot-reload settings
+  hot_reload:
+    enabled: true
+    debounce_ms: 500
+
+# Server configuration - try changing these while running!
+server:
+  timeout: 30
+  max_connections: 100
+
+# Try changing these values and watch the logs:
+# - timeout: 60
+# - max_connections: 200

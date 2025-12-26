@@ -1,12 +1,18 @@
 from importlib.metadata import PackageNotFoundError, version
+from typing import TYPE_CHECKING
 
-from . import db, net
-from .app.cfg import (
+# Lazy imports for heavy modules (db, net) - only loaded when accessed
+# This reduces CLI startup time from ~1s to ~100ms
+if TYPE_CHECKING:
+    from . import db, net
+
+from .config import (
     DEFAULT_CONFIG_FILE,
+    DEFAULT_CONFIG_FILENAME,
     ETC_DIR,
     PROJECT_ROOT,
     Config,
-    get_config_path,
+    get_config_file_path,
     get_default_config,
     get_etc_dir,
     get_project_root,
@@ -34,6 +40,7 @@ from .regex_utils import (
     safe_match,
     safe_search,
 )
+from .size import InvalidSizeError, size_str, size_to_bytes, validate_size
 from .utils import is_int, pretty
 
 # Version is read from package metadata (pyproject.toml)
@@ -59,11 +66,12 @@ __all__ = [
     # Config utilities
     "get_project_root",
     "get_etc_dir",
-    "get_config_path",
+    "get_config_file_path",
     "get_default_config",
     "PROJECT_ROOT",
     "ETC_DIR",
     "DEFAULT_CONFIG_FILE",
+    "DEFAULT_CONFIG_FILENAME",
     # Utils
     "pretty",
     "is_int",
@@ -85,4 +93,20 @@ __all__ = [
     "safe_findall",
     "RegexTimeoutError",
     "RegexComplexityError",
+    # Size formatting
+    "size_str",
+    "size_to_bytes",
+    "validate_size",
+    "InvalidSizeError",
 ]
+
+
+def __getattr__(name: str) -> object:
+    """Lazy import for heavy modules (db, net) to speed up CLI startup."""
+    import importlib
+
+    if name in ("db", "net"):
+        module = importlib.import_module(f".{name}", __name__)
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

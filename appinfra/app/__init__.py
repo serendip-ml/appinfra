@@ -11,6 +11,18 @@ This module provides a comprehensive framework for building CLI applications wit
 """
 
 # Import core modules
+from appinfra.config import (
+    DEFAULT_CONFIG_FILE,
+    DEFAULT_CONFIG_FILENAME,
+    ETC_DIR,
+    PROJECT_ROOT,
+    Config,
+    get_config_file_path,
+    get_default_config,
+    get_etc_dir,
+    get_project_root,
+)
+
 from .args import DefaultsHelpFormatter
 from .builder import (
     AppBuilder,
@@ -26,16 +38,6 @@ from .builder import (
     ValidationBuilder,
     ValidationResult,
     ValidationRule,
-)
-from .cfg import (
-    DEFAULT_CONFIG_FILE,
-    ETC_DIR,
-    PROJECT_ROOT,
-    Config,
-    get_config_path,
-    get_default_config,
-    get_etc_dir,
-    get_project_root,
 )
 from .cli import CLIParser, CommandHandler, HelpGenerator
 from .core import (
@@ -80,11 +82,12 @@ __all__ = [
     "Config",
     "get_project_root",
     "get_etc_dir",
-    "get_config_path",
+    "get_config_file_path",
     "get_default_config",
     "PROJECT_ROOT",
     "ETC_DIR",
     "DEFAULT_CONFIG_FILE",
+    "DEFAULT_CONFIG_FILENAME",
     # AppBuilder API
     "AppBuilder",
     "ConfigBuilder",

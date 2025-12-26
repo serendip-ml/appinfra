@@ -8,7 +8,7 @@ from configuration loading through query execution and proper cleanup.
 import pytest
 from sqlalchemy import text
 
-from appinfra.app.cfg import Config
+from appinfra.config import Config
 from appinfra.db.pg.pg import PG
 from appinfra.log import LoggingBuilder
 

@@ -22,20 +22,11 @@ class TestShutdownManagerInit:
 
     def test_basic_initialization(self):
         """Test basic initialization."""
-        callback = Mock()
-        manager = ShutdownManager(callback, timeout=30.0)
+        manager = ShutdownManager()
 
-        assert manager._shutdown_callback is callback
-        assert manager._timeout == 30.0
         assert manager._shutting_down is False
+        assert manager._signal_return_code == 130  # Default
         assert manager._original_handlers == {}
-
-    def test_default_timeout(self):
-        """Test default timeout value."""
-        callback = Mock()
-        manager = ShutdownManager(callback)
-
-        assert manager._timeout == 30.0
 
 
 @pytest.mark.unit
@@ -44,8 +35,7 @@ class TestSignalRegistration:
 
     def test_register_signal_handlers(self):
         """Test register_signal_handlers registers SIGTERM and SIGINT."""
-        callback = Mock()
-        manager = ShutdownManager(callback)
+        manager = ShutdownManager()
 
         with patch("signal.signal") as mock_signal:
             mock_signal.return_value = Mock()  # Original handler
@@ -60,8 +50,7 @@ class TestSignalRegistration:
 
     def test_original_handlers_preserved(self):
         """Test that original signal handlers are preserved."""
-        callback = Mock()
-        manager = ShutdownManager(callback)
+        manager = ShutdownManager()
 
         mock_term_handler = Mock()
         mock_int_handler = Mock()
@@ -85,61 +74,47 @@ class TestSignalRegistration:
 class TestSignalHandling:
     """Test signal handling logic."""
 
-    def test_handle_sigint_sets_return_code_130(self):
-        """Test SIGINT handler uses return code 130."""
-        callback = Mock(return_value=130)
-        manager = ShutdownManager(callback)
+    def test_handle_sigint_stores_return_code_130(self):
+        """Test SIGINT handler stores return code 130 and raises KeyboardInterrupt."""
+        manager = ShutdownManager()
 
-        with patch("sys.exit") as mock_exit:
+        with pytest.raises(KeyboardInterrupt):
             manager._handle_signal(signal.SIGINT, None)
 
-            callback.assert_called_once_with(130)
-            mock_exit.assert_called_once_with(130)
+        assert manager.get_signal_return_code() == 130
 
-    def test_handle_sigterm_sets_return_code_143(self):
-        """Test SIGTERM handler uses return code 143."""
-        callback = Mock(return_value=143)
-        manager = ShutdownManager(callback)
+    def test_handle_sigterm_stores_return_code_143(self):
+        """Test SIGTERM handler stores return code 143 and raises KeyboardInterrupt."""
+        manager = ShutdownManager()
 
-        with patch("sys.exit") as mock_exit:
+        with pytest.raises(KeyboardInterrupt):
             manager._handle_signal(signal.SIGTERM, None)
 
-            callback.assert_called_once_with(143)
-            mock_exit.assert_called_once_with(143)
+        assert manager.get_signal_return_code() == 143
 
     def test_handle_signal_sets_shutting_down_flag(self):
-        """Test signal handler sets shutting_down flag."""
-        callback = Mock(return_value=0)
-        manager = ShutdownManager(callback)
+        """Test signal handler sets shutting_down flag before raising."""
+        manager = ShutdownManager()
 
-        with patch("sys.exit"):
-            assert manager._shutting_down is False
+        assert manager._shutting_down is False
+        with pytest.raises(KeyboardInterrupt):
             manager._handle_signal(signal.SIGINT, None)
-            assert manager._shutting_down is True
+        assert manager._shutting_down is True
 
     def test_duplicate_signal_ignored(self):
         """Test duplicate signal is ignored when already shutting down."""
-        callback = Mock(return_value=0)
-        manager = ShutdownManager(callback)
+        manager = ShutdownManager()
         manager._shutting_down = True  # Already shutting down
 
-        with patch("sys.exit") as mock_exit:
-            manager._handle_signal(signal.SIGINT, None)
+        # Should not raise - just returns silently
+        manager._handle_signal(signal.SIGINT, None)
 
-            # Callback should not be called again
-            callback.assert_not_called()
-            mock_exit.assert_not_called()
+    def test_get_signal_return_code_default(self):
+        """Test get_signal_return_code returns 130 as default."""
+        manager = ShutdownManager()
 
-    def test_handle_signal_exception_exits_with_1(self):
-        """Test signal handler exits with code 1 on exception."""
-        callback = Mock(side_effect=RuntimeError("Shutdown failed"))
-        manager = ShutdownManager(callback)
-
-        with patch("sys.exit") as mock_exit, patch("logging.error") as mock_log_error:
-            manager._handle_signal(signal.SIGINT, None)
-
-            mock_log_error.assert_called_once()
-            mock_exit.assert_called_once_with(1)
+        # Before any signal, should return default 130
+        assert manager.get_signal_return_code() == 130
 
 
 @pytest.mark.unit
@@ -148,17 +123,15 @@ class TestIsShuttingDown:
 
     def test_is_shutting_down_false_initially(self):
         """Test is_shutting_down returns False initially."""
-        callback = Mock()
-        manager = ShutdownManager(callback)
+        manager = ShutdownManager()
 
         assert manager.is_shutting_down() is False
 
     def test_is_shutting_down_true_after_signal(self):
         """Test is_shutting_down returns True after signal handled."""
-        callback = Mock(return_value=0)
-        manager = ShutdownManager(callback)
+        manager = ShutdownManager()
 
-        with patch("sys.exit"):
+        with pytest.raises(KeyboardInterrupt):
             manager._handle_signal(signal.SIGINT, None)
 
         assert manager.is_shutting_down() is True

@@ -62,6 +62,7 @@ EXIT_CODE_WARNING=42
 PYTHON="${PYTHON:-~/.venv/bin/python}"
 PKG_NAME="${INFRA_DEV_PKG_NAME:-appinfra}"
 CQ_STRICT="${INFRA_DEV_CQ_STRICT:-false}"
+COVERAGE_MARKERS="${INFRA_PYTEST_COVERAGE_MARKERS:-unit}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${INFRA_DEV_PROJECT_ROOT:-$(dirname "$SCRIPT_DIR")}"
 
@@ -107,13 +108,18 @@ CHECKS+=(
 )
 
 # Test subchecks: "Name|Make Target|Command|Coverage Target"
+COVERAGE_MARKER_ARG=""
+if [ -n "$COVERAGE_MARKERS" ]; then
+    COVERAGE_MARKER_ARG="-m \"${COVERAGE_MARKERS}\""
+fi
+
 declare -a TEST_SUBCHECKS=(
     "Unit tests|test.unit|${PYTHON} -m pytest tests/ -m unit --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
     "Integration tests|test.integration|${PYTHON} -m pytest tests/ -m integration --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
     "E2E tests|test.e2e|${PYTHON} -m pytest tests/ -m e2e --tb=short --no-header -qq|"
     "Security tests|test.security|${PYTHON} -m pytest tests/ -m security --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
     "Performance tests|test.perf|${PYTHON} -m pytest tests/ -m performance --tb=short --no-header -qq|"
-    "Code coverage|test.coverage|${PYTHON} -m pytest tests/ -m unit --cov=${PKG_NAME} --cov-report=term -qq ${PYTEST_PARALLEL}|${COVERAGE_TARGET}"
+    "Code coverage|test.coverage|${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term -qq ${PYTEST_PARALLEL}|${COVERAGE_TARGET}"
 )
 
 # Verbose versions for raw mode
@@ -123,7 +129,7 @@ declare -a TEST_SUBCHECKS_RAW=(
     "E2E tests|test.e2e.v|${PYTHON} -m pytest tests/ -m e2e -v --tb=short|"
     "Security tests|test.security.v|${PYTHON} -m pytest tests/ -m security -v --tb=short ${PYTEST_PARALLEL}|"
     "Performance tests|test.perf.v|${PYTHON} -m pytest tests/ -m performance -v --tb=short|"
-    "Code coverage|test.coverage|${PYTHON} -m pytest tests/ -m unit --cov=${PKG_NAME} --cov-report=term-missing ${PYTEST_PARALLEL}|${COVERAGE_TARGET}"
+    "Code coverage|test.coverage|${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term-missing ${PYTEST_PARALLEL}|${COVERAGE_TARGET}"
 )
 
 declare -A CHECK_LINES

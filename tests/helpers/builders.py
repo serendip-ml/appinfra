@@ -7,7 +7,7 @@ with sensible defaults and easy customization.
 
 from typing import Any
 
-from appinfra.app.cfg import Config
+from appinfra.config import Config
 from appinfra.dot_dict import DotDict
 
 

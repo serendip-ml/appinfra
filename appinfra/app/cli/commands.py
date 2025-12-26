@@ -40,6 +40,16 @@ class CommandHandler:
             sub_parser = self._subparsers.add_parser(*cmd_args, **cmd_kwargs)
             tool.set_args(sub_parser)
 
+        # Set main tool as argparse default (runs when no subcommand specified)
+        if self.application._main_tool:
+            main_tool = self.application.registry.get_tool(self.application._main_tool)
+            if main_tool:
+                # Add main tool's args to root parser so they work without subcommand
+                main_tool.set_args(self.application.parser.parser)
+            self.application.parser.parser.set_defaults(
+                tool=self.application._main_tool
+            )
+
     def execute_command(self, tool_name: str, **kwargs: Any) -> int:
         """
         Execute a command.

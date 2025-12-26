@@ -11,7 +11,6 @@ The framework uses a consistent naming convention for configuration variables:
 ### Quick Start
 
 ```makefile
-# Recommended: pip install appinfra, then use scripts-path
 infra := $(shell appinfra scripts-path)
 
 # Set your configuration
@@ -24,6 +23,7 @@ include $(infra)/make/Makefile.env
 include $(infra)/make/Makefile.help
 include $(infra)/make/Makefile.utils
 include $(infra)/make/Makefile.dev
+include $(infra)/make/Makefile.install  # Optional: only if building a package
 include $(infra)/make/Makefile.pytest
 include $(infra)/make/Makefile.clean
 ```
@@ -315,6 +315,13 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 |----------|---------|-------------|
 | `INFRA_ENV_PYTHON` | `~/.venv/bin/python` | Python interpreter path |
 
+**Config:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ETC_DIR` | `$(CURDIR)/etc` | Config directory path |
+| `INFRA_DEFAULT_CONFIG_FILE` | `infra.yaml` | Default config filename (contains all sections if specific files not set) |
+
 **Development (DEV):**
 
 | Variable | Default | Description |
@@ -337,14 +344,14 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `INFRA_DOCS_CONFIG` | `etc/mkdocs.yaml` | MkDocs config path |
+| `INFRA_DOCS_CONFIG_FILE` | (empty) | MkDocs config filename (empty = use `INFRA_DEFAULT_CONFIG_FILE`) |
 | `INFRA_DOCS_OUTPUT_DIR` | `.site` | Documentation build output |
 
 **PostgreSQL (PG):**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `INFRA_PG_CONFIG` | `etc/pg.yaml` | PostgreSQL config file |
+| `INFRA_PG_CONFIG_FILE` | (empty) | PostgreSQL config filename (empty = use `INFRA_DEFAULT_CONFIG_FILE`) |
 | `INFRA_PG_CONFIG_KEY` | `pgserver` | Config section key |
 | `INFRA_PG_DATABASES` | (empty) | Space-separated database list |
 | `INFRA_PG_HOST` | `127.0.0.1` | PostgreSQL host |
@@ -392,6 +399,7 @@ include $(infra)/make/Makefile.env
 include $(infra)/make/Makefile.help
 include $(infra)/make/Makefile.utils
 include $(infra)/make/Makefile.dev
+include $(infra)/make/Makefile.install
 include $(infra)/make/Makefile.pytest
 include $(infra)/make/Makefile.docs
 include $(infra)/make/Makefile.pg

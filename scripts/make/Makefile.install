@@ -1,0 +1,60 @@
+# Makefile.install - Package installation targets
+#
+# Provides install, install.e (editable), and uninstall targets.
+# Separate from Makefile.dev so projects can use dev tools without package install.
+#
+# Required variables:
+#   INFRA_DEV_PKG_NAME  - Package name to install/uninstall
+#   PYTHON_ENVS         - Python environments to install to
+#
+# Optional variables:
+#   INFRA_DEV_INSTALL_EXTRAS - Comma-separated extras (e.g., "dev,ui")
+
+##@ Package Installation
+
+install:: areyousure ## installs $(INFRA_DEV_PKG_NAME) to all environments in PYTHON_ENVS
+	@echo "* installing $(INFRA_DEV_PKG_NAME) to all environments..."
+	@for pyenv in $(PYTHON_ENVS); do \
+		if [ -x "$$pyenv" ]; then \
+			echo "  → $$pyenv"; \
+			if [ -n "$(INFRA_DEV_INSTALL_EXTRAS)" ]; then \
+				$$pyenv -m pip install -q ".[$(INFRA_DEV_INSTALL_EXTRAS)]"; \
+			else \
+				$$pyenv -m pip install -q .; \
+			fi; \
+		else \
+			echo "  → $$pyenv (skipped, not found)"; \
+		fi; \
+	done
+	@echo "* install done"
+.PHONY: install
+
+install.e:: areyousure ## installs $(INFRA_DEV_PKG_NAME) (editable) to all environments in PYTHON_ENVS
+	@echo "* installing $(INFRA_DEV_PKG_NAME) (editable) to all environments..."
+	@for pyenv in $(PYTHON_ENVS); do \
+		if [ -x "$$pyenv" ]; then \
+			echo "  → $$pyenv"; \
+			if [ -n "$(INFRA_DEV_INSTALL_EXTRAS)" ]; then \
+				$$pyenv -m pip install -q -e ".[$(INFRA_DEV_INSTALL_EXTRAS)]"; \
+			else \
+				$$pyenv -m pip install -q -e .; \
+			fi; \
+		else \
+			echo "  → $$pyenv (skipped, not found)"; \
+		fi; \
+	done
+	@echo "* install.e done"
+.PHONY: install.e
+
+uninstall:: areyousure ## uninstalls $(INFRA_DEV_PKG_NAME) from all environments in PYTHON_ENVS
+	@echo "* uninstalling $(INFRA_DEV_PKG_NAME) from all environments..."
+	@for pyenv in $(PYTHON_ENVS); do \
+		if [ -x "$$pyenv" ]; then \
+			echo "  → $$pyenv"; \
+			$$pyenv -m pip uninstall -q -y $(INFRA_DEV_PKG_NAME) 2>/dev/null || true; \
+		else \
+			echo "  → $$pyenv (skipped, not found)"; \
+		fi; \
+	done
+	@echo "* uninstall done"
+.PHONY: uninstall

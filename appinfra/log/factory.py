@@ -11,10 +11,10 @@ import sys
 from typing import Any
 
 from .callback import CallbackRegistry
-from .config import LogConfig
+from .config import ChildLogConfig, LogConfig
+from .config_holder import LogConfigHolder
 from .formatters import LogFormatter
 from .logger import Logger
-from .logger_with_sep import LoggerWithSeparator
 
 
 class LoggerFactory:
@@ -67,26 +67,28 @@ class LoggerFactory:
         )
 
     @staticmethod
-    def _setup_console_handler(config: LogConfig) -> logging.Handler:
-        """Set up and return console handler with formatter.
+    def _setup_console_handler(
+        config: LogConfig,
+    ) -> tuple[logging.Handler, LogConfigHolder]:
+        """Set up and return console handler with formatter and holder.
 
         Creates handler with LogConfigHolder for hot-reload support.
         The holder is registered with the global registry, enabling
         automatic config updates when files change.
-        """
-        from .config_registry import LogConfigRegistry
 
+        Returns:
+            Tuple of (handler, holder) - holder is shared with logger for hot-reload
+        """
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(config.level)
 
-        # Create holder through registry for hot-reload support
-        registry = LogConfigRegistry.get_instance()
-        holder = registry.create_holder(config)
+        # Create holder for hot-reload support
+        holder = LogConfigHolder(config)
 
         formatter = LogFormatter(holder)
         handler.setFormatter(formatter)
 
-        return handler
+        return handler, holder
 
     @staticmethod
     def create(
@@ -157,9 +159,16 @@ class LoggerFactory:
         effective_config = LoggerFactory._get_effective_config(name, config)
         lg.setLevel(effective_config.level)
 
-        handler = LoggerFactory._setup_console_handler(effective_config)
+        handler, holder = LoggerFactory._setup_console_handler(effective_config)
         lg.addHandler(handler)
+        lg._holder = holder  # Share holder for hot-reload of location
         lg.propagate = False
+
+        # Set parent to root for proper propagation when propagate=True
+        lg.parent = logging.root
+
+        # Register in loggerDict so hot-reload can find it
+        logging.root.manager.loggerDict[name] = lg
 
         lg.trace2(
             "created logger",
@@ -172,13 +181,84 @@ class LoggerFactory:
         return lg
 
     @staticmethod
+    def _get_view_logger_config(name: str, parent: Logger) -> ChildLogConfig:
+        """Build effective config for a view logger based on parent.
+
+        Child loggers only store level. Global settings (location, colors, etc.)
+        are read from the registry's root config for hot-reload support.
+        """
+        from .level_manager import LogLevelManager
+
+        # Check if there's a topic-specific level override
+        level_manager = LogLevelManager.get_instance()
+        effective_level = level_manager.get_effective_level(name)
+
+        if effective_level is not None:
+            if isinstance(effective_level, str):
+                resolved_level = getattr(logging, effective_level.upper(), logging.INFO)
+            else:
+                resolved_level = effective_level
+        else:
+            resolved_level = parent.get_level()
+
+        return ChildLogConfig(level=resolved_level)
+
+    @staticmethod
+    def _set_view_logger_level(
+        lg: Logger, name: str, effective_config: ChildLogConfig
+    ) -> None:
+        """Set level for view logger - NOTSET for inheritance or explicit if topic rule."""
+        from .level_manager import LogLevelManager
+
+        level_manager = LogLevelManager.get_instance()
+        topic_level = level_manager.get_effective_level(name)
+        if topic_level is not None:
+            lg.setLevel(effective_config.level)
+        else:
+            lg.setLevel(logging.NOTSET)
+
+    @staticmethod
+    def _create_view_logger(name: str, parent: Logger, label: str) -> Logger:
+        """Create a view logger that delegates to root's handlers.
+
+        View loggers have no handlers of their own - they delegate to the root
+        logger's handlers via the _root_logger reference. They share the root's
+        holder for hot-reload of location settings.
+        """
+        root = parent._root_logger if parent._root_logger else parent
+        effective_config = LoggerFactory._get_view_logger_config(name, parent)
+
+        logging.setLoggerClass(parent.__class__)
+        callback_registry = CallbackRegistry()
+        lg = parent.__class__(name, effective_config, callback_registry)
+
+        LoggerFactory._set_view_logger_level(lg, name, effective_config)
+
+        lg._root_logger = root
+        lg._holder = root._holder  # Share holder for hot-reload of location
+        lg.parent = parent
+        lg.propagate = False
+
+        logging.root.manager.loggerDict[name] = lg
+        parent._callbacks.inherit_to(lg._callbacks)
+
+        lg.trace2(
+            label,
+            extra={
+                "level": logging.getLevelName(effective_config.level),
+                "root": root.name,
+            },
+        )
+        return lg
+
+    @staticmethod
     def create_child(parent: Logger, name: str) -> Logger:
         """
-        Create a child logger from a parent with a single name component.
+        Create a child "view" logger that delegates to root's handlers.
 
         This method creates a direct child logger by appending a single name
-        to the parent's path. For creating loggers with multiple hierarchical
-        components, use derive() instead.
+        to the parent's path. The child logger shares handlers with the root
+        logger, making it a lightweight "view" rather than an independent logger.
 
         Examples:
             >>> parent = LoggerFactory.create_root(config)  # name: "/"
@@ -209,30 +289,21 @@ class LoggerFactory:
         """
         full_name = f"{parent.name}/{name}" if parent.name != "/" else f"/{name}"
 
-        # Create child config based on parent
-        child_config = LogConfig(
-            level=parent.get_level(),
-            location=parent.location,
-            micros=parent.micros,
-            colors=parent.config.colors,
-        )
+        existing = LoggerFactory._check_existing_logger(full_name)
+        if existing:
+            return existing
 
-        child_logger = LoggerFactory.create(full_name, child_config, parent.__class__)
-
-        # Inherit callbacks from parent
-        parent._callbacks.inherit_to(child_logger._callbacks)
-
-        return child_logger
+        return LoggerFactory._create_view_logger(full_name, parent, "child logger")
 
     @staticmethod
     def derive(parent: Logger, tags: str | list[str]) -> Logger:
         """
-        Derive a logger with one or more hierarchical tag components.
+        Derive a "view" logger that delegates to root's handlers.
 
-        This method creates a derived logger by appending tag(s) to the parent's
-        path. When multiple tags are provided (as a list), they are joined with
-        "/" to create a multi-level hierarchy. For simple single-name children,
-        create_child() provides equivalent functionality with a simpler API.
+        Creates a derived logger that has its own name and level but shares
+        handlers with the root logger. This is more efficient than creating
+        independent loggers and ensures all derived loggers automatically
+        benefit from handlers added to the root (e.g., FileHandler).
 
         Examples:
             >>> parent = LoggerFactory.create_root(config)  # name: "/"
@@ -277,53 +348,8 @@ class LoggerFactory:
         prefix = parent.name if parent.name == "/" else parent.name + "/"
         name = prefix + "/".join(tags)
 
-        # Create derived config based on parent
-        derived_config = LogConfig(
-            level=parent.get_level(),
-            location=parent.location,
-            micros=parent.micros,
-            colors=parent.config.colors,
-            location_color=getattr(parent.config, "location_color", None),
-        )
+        existing = LoggerFactory._check_existing_logger(name)
+        if existing:
+            return existing
 
-        derived_logger = LoggerFactory.create(name, derived_config, parent.__class__)
-
-        # Inherit callbacks from parent
-        parent._callbacks.inherit_to(derived_logger._callbacks)
-
-        return derived_logger
-
-    @staticmethod
-    def create_with_separator(name: str, config: LogConfig) -> LoggerWithSeparator:
-        """
-        Create a logger with separator functionality.
-
-        Args:
-            name: Logger name
-            config: Logger configuration
-
-        Returns:
-            Logger with separator functionality
-        """
-        from typing import cast
-
-        return cast(
-            LoggerWithSeparator, LoggerFactory.create(name, config, LoggerWithSeparator)
-        )
-
-    @staticmethod
-    def create_root_with_separator(config: LogConfig) -> LoggerWithSeparator:
-        """
-        Create a root logger with separator functionality.
-
-        Args:
-            config: Logger configuration
-
-        Returns:
-            Root logger with separator functionality
-        """
-        from typing import cast
-
-        return cast(
-            LoggerWithSeparator, LoggerFactory.create_root(config, LoggerWithSeparator)
-        )
+        return LoggerFactory._create_view_logger(name, parent, "derived logger")

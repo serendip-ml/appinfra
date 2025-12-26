@@ -16,6 +16,13 @@ from .interface import HandlerConfig
 from .json import JSONFormatter
 
 
+def _create_text_formatter(config: LogConfig, logger: Any = None) -> LogFormatter:
+    """Create text formatter with hot-reload support if logger has holder."""
+    if logger is not None and hasattr(logger, "_holder") and logger._holder is not None:
+        return LogFormatter(logger._holder)
+    return LogFormatter(config)
+
+
 class ConsoleHandlerConfig(HandlerConfig):
     """Configuration for console handlers."""
 
@@ -57,8 +64,7 @@ class ConsoleHandlerConfig(HandlerConfig):
             }
             formatter = JSONFormatter(**json_config)
         else:
-            # Use text formatter
-            formatter = LogFormatter(config)
+            formatter = _create_text_formatter(config, logger)
 
         handler.setFormatter(formatter)
         return handler

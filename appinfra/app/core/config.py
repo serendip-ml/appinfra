@@ -8,9 +8,8 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+from appinfra.config import Config, get_etc_dir
 from appinfra.dot_dict import DotDict
-
-from ..cfg import Config, get_etc_dir
 
 # Logging level constant for quiet mode (suppresses all logging)
 LOG_LEVEL_QUIET = 1000
@@ -286,7 +285,10 @@ def _load_all_configs(dir_name: str, lg: Any | None) -> DotDict:
             final_config.update(config_dict)
         except Exception as e:
             if lg:
-                lg.warning(f"Failed to load config file {yaml_file}: {e}")
+                lg.warning(
+                    "failed to load config file",
+                    extra={"file": str(yaml_file), "exception": e},
+                )
 
     return DotDict(**final_config)
 

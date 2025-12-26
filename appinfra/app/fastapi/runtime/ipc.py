@@ -253,7 +253,7 @@ class IPCChannel:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error polling responses: {e}")
+                logger.error("error polling responses", extra={"exception": e})
                 await asyncio.sleep(self.config.poll_interval)
 
     async def _handle_stream_chunk(self, request_id: str, chunk: Any) -> None:

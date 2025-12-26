@@ -150,7 +150,7 @@ class ScaffoldTool(Tool):
             _log_next_steps(self.lg, name, project_path)
             return 0
         except Exception as e:
-            self.lg.error(f"Failed to create project: {e}")  # type: ignore[union-attr]
+            self.lg.error("failed to create project", extra={"exception": e})  # type: ignore[union-attr]
             return 1
 
     def _is_valid_project_name(self, name: str) -> bool:
@@ -272,7 +272,7 @@ class ScaffoldTool(Tool):
             '"""',
             "",
             "from appinfra.app import App, AppBuilder",
-            "from appinfra.app.cfg import Config",
+            "from appinfra.config import Config",
             "from appinfra.app.tools import Tool, ToolConfig",
         ]
         if with_db:
@@ -483,7 +483,7 @@ class ScaffoldTool(Tool):
             self.lg.debug(f"Generated {makefile_style} Makefile")  # type: ignore[union-attr]
 
         except Exception as e:
-            self.lg.error(f"Failed to generate Makefile: {e}")  # type: ignore[union-attr]
+            self.lg.error("failed to generate Makefile", extra={"exception": e})  # type: ignore[union-attr]
 
     def _generate_supporting_files(self, project_path: Path, name: str) -> None:
         """Generate README, pyproject.toml, etc."""

@@ -21,8 +21,9 @@ _help_makefile_list = $(wordlist 2,$(words $(MAKEFILE_LIST)),$(MAKEFILE_LIST)) $
 
 # Build filter pattern for disabled targets (awk regex)
 # Combines INFRA_DISABLE_TARGETS (exact match) and INFRA_DISABLE_GROUPS (prefix match)
-_help_disabled_targets := $(INFRA_DISABLE_TARGETS)
-_help_disabled_groups := $(INFRA_DISABLE_GROUPS)
+# Use deferred assignment (=) so values set by later includes are picked up
+_help_disabled_targets = $(INFRA_DISABLE_TARGETS)
+_help_disabled_groups = $(INFRA_DISABLE_GROUPS)
 
 .PHONY: help
 help: ## Display this help message

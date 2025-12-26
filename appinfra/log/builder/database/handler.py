@@ -168,7 +168,7 @@ class DatabaseHandler(logging.Handler):
 
         except Exception as e:
             # Log error but don't raise to avoid infinite recursion
-            self._lg.error(f"Database logging error: {e}")
+            self._lg.error("database logging error", extra={"exception": e})
         finally:
             self.batch.clear()
             self.last_flush = datetime.now()

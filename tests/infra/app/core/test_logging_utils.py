@@ -407,13 +407,18 @@ class TestLocationColorE2E:
     ensuring location_color is correctly parsed, resolved, and applied.
     """
 
+    @pytest.fixture(autouse=True)
+    def reset_registry(self):
+        """Reset registry before and after each test."""
+        yield
+
     def test_location_color_from_config_file(self, tmp_path):
         """Test location_color from actual YAML config file reaches the formatter.
 
         Full pipeline test:
         YAML file -> Config() -> setup_logging_from_config() -> formatter._location_color
         """
-        from appinfra.app.cfg import Config
+        from appinfra.config import Config
         from appinfra.log.colors import ColorManager
 
         # Create a test config file with location_color
@@ -449,7 +454,7 @@ logging:
 
     def test_location_color_grey_level_from_config_file(self, tmp_path):
         """Test grey-N color names from YAML are resolved correctly."""
-        from appinfra.app.cfg import Config
+        from appinfra.config import Config
         from appinfra.log.colors import ColorManager
 
         config_file = tmp_path / "test_config.yaml"
@@ -484,7 +489,7 @@ logging:
 
     def test_location_color_from_real_config_file(self):
         """Test location_color from the actual etc/infra.yaml config file."""
-        from appinfra.app.cfg import Config
+        from appinfra.config import Config
 
         config = Config("etc/infra.yaml")
 
@@ -508,7 +513,7 @@ logging:
 
     def test_location_color_kwargs_override(self, tmp_path):
         """Test location_color can be overridden via kwargs."""
-        from appinfra.app.cfg import Config
+        from appinfra.config import Config
         from appinfra.log.colors import ColorManager
 
         config_file = tmp_path / "test_config.yaml"
@@ -574,7 +579,7 @@ logging:
         app = AppBuilder("test").logging.with_level("info").done().build()
 
         # Simulate what happens during app.setup() - load config from etc
-        from appinfra.app.cfg import Config
+        from appinfra.config import Config
 
         loaded_config = Config(str(config_file))
 
@@ -634,7 +639,7 @@ logging:
     def test_full_app_lifecycle_preserves_config_file_location(self, tmp_path):
         """Full lifecycle test: config file location preserved through app setup."""
         from appinfra.app.builder.app import AppBuilder
-        from appinfra.app.cfg import Config
+        from appinfra.config import Config
 
         # Create config directory structure
         etc_dir = tmp_path / "etc"
@@ -680,3 +685,33 @@ logging:
         assert merged["logging"]["location_color"] == "grey-12", (
             "location_color should be grey-12 from config file"
         )
+
+
+# =============================================================================
+# Test Helper Functions - Edge Cases
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestResolveLogLevel:
+    """Test _resolve_log_level edge cases."""
+
+    def test_with_int_level(self):
+        """Test with integer log level."""
+        from appinfra.app.core.logging_utils import _resolve_log_level
+
+        result = _resolve_log_level(logging.DEBUG)
+        assert result == logging.DEBUG
+
+        result = _resolve_log_level(20)  # INFO level
+        assert result == 20
+
+    def test_with_string_level(self):
+        """Test with string log level."""
+        from appinfra.app.core.logging_utils import _resolve_log_level
+
+        result = _resolve_log_level("debug")
+        assert result == logging.DEBUG
+
+        result = _resolve_log_level("INFO")
+        assert result == logging.INFO

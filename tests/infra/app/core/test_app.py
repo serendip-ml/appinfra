@@ -115,6 +115,38 @@ class TestAddTool:
 
 
 # =============================================================================
+# Test Main Tool
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestSetMainTool:
+    """Test set_main_tool method."""
+
+    def test_set_main_tool(self):
+        """Test set_main_tool sets the main tool name."""
+        app = App()
+
+        app.set_main_tool("run")
+
+        assert app._main_tool == "run"
+
+    def test_set_main_tool_twice_raises(self):
+        """Test set_main_tool raises if called twice."""
+        app = App()
+        app.set_main_tool("run")
+
+        with pytest.raises(ValueError, match="Main tool already set"):
+            app.set_main_tool("other")
+
+    def test_main_tool_default_is_none(self):
+        """Test _main_tool defaults to None."""
+        app = App()
+
+        assert app._main_tool is None
+
+
+# =============================================================================
 # Test Create Methods
 # =============================================================================
 
@@ -849,119 +881,146 @@ class TestEtcDirArgument:
         assert app.config.etc_dir == "/custom/etc"
 
 
-@pytest.mark.integration
-class TestAutoLoading:
-    """Test automatic configuration loading from etc directory."""
+# =============================================================================
+# Test Deferred Config Loading
+# =============================================================================
 
-    def test_auto_loading_loads_config_files(self):
-        """Test that config files are auto-loaded during setup."""
+
+@pytest.mark.unit
+class TestDeferredConfigLoading:
+    """Test _load_deferred_config method for config file loading from etc-dir."""
+
+    def test_load_deferred_config_returns_none_when_no_config_path(self):
+        """Test that _load_deferred_config returns None when no _config_path is set."""
+        app = App()
+        app.create_args()
+
+        with patch.object(sys, "argv", ["test"]):
+            app._parsed_args = app.parser.parse_args()
+
+        # No _config_path set, should return None
+        result = app._load_deferred_config()
+        assert result is None
+
+    def test_load_deferred_config_returns_none_for_missing_file(self):
+        """Test that _load_deferred_config returns None gracefully when file doesn't exist."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create etc directory with config file
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+            # Don't create the config file
+
+            app = App()
+            app._config_path = "nonexistent.yaml"  # type: ignore[attr-defined]
+            app._config_from_etc_dir = True  # type: ignore[attr-defined]
+            app.create_args()
+
+            with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
+                app._parsed_args = app.parser.parse_args()
+                result = app._load_deferred_config()
+
+            # Should return None, not raise
+            assert result is None
+
+    def test_load_deferred_config_handles_generic_exception(self):
+        """Test that _load_deferred_config handles generic exceptions gracefully."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+            # Create an invalid YAML file
+            (etc_dir / "invalid.yaml").write_text("invalid: yaml: content: [")
+
+            app = App()
+            app._config_path = "invalid.yaml"  # type: ignore[attr-defined]
+            app._config_from_etc_dir = True  # type: ignore[attr-defined]
+            app.create_args()
+
+            with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
+                app._parsed_args = app.parser.parse_args()
+                result = app._load_deferred_config()
+
+            # Should return None, not raise
+            assert result is None
+
+    def test_load_deferred_config_loads_and_merges_config(self):
+        """Test that _load_deferred_config loads and returns config info."""
+        with tempfile.TemporaryDirectory() as tmpdir:
             etc_dir = Path(tmpdir) / "etc"
             etc_dir.mkdir()
             (etc_dir / "app.yaml").write_text("test_key: test_value\n")
 
             app = App()
+            app._config_path = "app.yaml"  # type: ignore[attr-defined]
+            app._config_from_etc_dir = True  # type: ignore[attr-defined]
             app.create_args()
 
             with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
                 app._parsed_args = app.parser.parse_args()
-                app.config = ConfigLoader.from_args(app._parsed_args, app.config)
+                result = app._load_deferred_config()
 
-                # Mock lifecycle.initialize to avoid logger setup complexity
-                with patch.object(app.lifecycle, "initialize"):
-                    app._auto_load_etc_config()
-
-            # Config should have been loaded
+            # Should return config info
+            assert result is not None
+            assert result["file"] == "app.yaml"
+            assert result["etc_dir"] == str(etc_dir)
+            # Config should be loaded
             assert hasattr(app.config, "test_key")
             assert app.config.test_key == "test_value"
 
-    def test_auto_loading_merges_configs(self):
-        """Test that auto-loaded config merges with existing config."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create etc directory with config file
-            etc_dir = Path(tmpdir) / "etc"
-            etc_dir.mkdir()
-            (etc_dir / "app.yaml").write_text("loaded_key: loaded_value\n")
 
-            # Start with existing config
-            existing_config = DotDict(existing_key="existing_value")
-            app = App(config=existing_config)
-            app.create_args()
+@pytest.mark.unit
+class TestConfigWatcherProperty:
+    """Test App.config_watcher property."""
 
-            with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
-                app._parsed_args = app.parser.parse_args()
-                app.config = ConfigLoader.from_args(app._parsed_args, app.config)
+    def test_config_watcher_returns_none_by_default(self):
+        """Test that config_watcher is None when not enabled."""
+        app = App()
+        assert app.config_watcher is None
 
-                # Call auto-load
-                app._auto_load_etc_config()
+    def test_config_watcher_returns_watcher_when_set(self):
+        """Test that config_watcher returns the watcher when set."""
+        from unittest.mock import MagicMock
 
-            # Both configs should be present
-            assert app.config.existing_key == "existing_value"
-            assert app.config.loaded_key == "loaded_value"
+        app = App()
+        mock_watcher = MagicMock()
+        app._config_watcher = mock_watcher
 
-    def test_auto_loading_preserves_cli_overrides(self):
-        """Test that CLI args take precedence over auto-loaded config."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create etc directory with config file
-            etc_dir = Path(tmpdir) / "etc"
-            etc_dir.mkdir()
-            (etc_dir / "app.yaml").write_text("logging:\n  level: info\n")
+        assert app.config_watcher is mock_watcher
 
-            app = App()
-            app.create_args()
 
-            with patch.object(
-                sys, "argv", ["test", "--etc-dir", str(etc_dir), "--log-level", "debug"]
-            ):
-                app._parsed_args = app.parser.parse_args()
-                app.config = ConfigLoader.from_args(app._parsed_args, app.config)
+@pytest.mark.unit
+class TestAddArgumentAfterParser:
+    """Test App.add_argument when parser already exists."""
 
-                # Call auto-load
-                app._auto_load_etc_config()
+    def test_add_argument_after_parser_created(self):
+        """Test that add_argument works after parser is created."""
+        app = App()
+        app.create_args()  # Creates the parser
 
-            # CLI arg should win over loaded config
-            assert app.config.logging.level == "debug"
+        # Add argument after parser is created
+        app.add_argument("--custom-arg", help="A custom argument")
 
-    def test_auto_loading_handles_missing_etc_gracefully(self):
-        """Test that missing etc directory doesn't crash app."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Don't create etc directory
-            nonexistent_etc = Path(tmpdir) / "nonexistent_etc"
+        with patch.object(sys, "argv", ["test", "--custom-arg", "value"]):
+            app._parsed_args = app.parser.parse_args()
 
-            app = App()
-            app.create_args()
+        assert app._parsed_args.custom_arg == "value"
 
-            with patch.object(sys, "argv", ["test", "--etc-dir", str(nonexistent_etc)]):
-                app._parsed_args = app.parser.parse_args()
-                app.config = ConfigLoader.from_args(app._parsed_args, app.config)
+    def test_add_argument_before_parser_created(self):
+        """Test that add_argument stores args when parser not yet created."""
+        app = App()
+        # Don't create parser yet
 
-                # Should not raise - auto-loading is optional
-                try:
-                    app._auto_load_etc_config()
-                except FileNotFoundError:
-                    # resolve_etc_dir will raise for specified but nonexistent path
-                    pass  # This is expected behavior
+        # Add argument before parser is created
+        app.add_argument("--custom-arg", help="A custom argument")
 
-    def test_auto_loading_handles_empty_etc_gracefully(self):
-        """Test that empty etc directory doesn't crash app."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create empty etc directory
-            etc_dir = Path(tmpdir) / "etc"
-            etc_dir.mkdir()
+        # Should be stored for later
+        assert len(app._custom_args) == 1
 
-            app = App()
-            app.create_args()
+        # Now create parser - args should be applied
+        app.create_args()
 
-            with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
-                app._parsed_args = app.parser.parse_args()
-                app.config = ConfigLoader.from_args(app._parsed_args, app.config)
+        with patch.object(sys, "argv", ["test", "--custom-arg", "value"]):
+            app._parsed_args = app.parser.parse_args()
 
-                # Should not raise - auto-loading is optional
-                app._auto_load_etc_config()
-
-            # App should still work, just no extra config loaded
-            assert app.config is not None
+        assert app._parsed_args.custom_arg == "value"
 
 
 # =============================================================================
@@ -1070,3 +1129,151 @@ class TestDeepMerge:
         # Top-level YAML sections should be preserved
         assert "pgserver" in result
         assert result["pgserver"]["port"] == 7432
+
+
+# =============================================================================
+# Test App Helper Methods (subprocess_context, create_config_watcher)
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestSubprocessContextMethod:
+    """Test App.subprocess_context() helper method."""
+
+    def test_subprocess_context_returns_context_manager(self):
+        """Test that subprocess_context() returns a SubprocessContext."""
+        from appinfra.subprocess import SubprocessContext
+
+        app = App()
+        app.config = DotDict(logging=DotDict(level="info", location=0))
+
+        ctx = app.subprocess_context()
+
+        assert isinstance(ctx, SubprocessContext)
+        # Clean up
+        ctx._lg.handlers.clear()
+
+    def test_subprocess_context_creates_fresh_logger(self):
+        """Test that subprocess_context() creates a new logger instance."""
+        app = App()
+        app.config = DotDict(logging=DotDict(level="debug", location=1))
+        app.lifecycle._logger = Mock()
+
+        ctx = app.subprocess_context()
+
+        # The context should have its own logger, not the app's
+        assert ctx._lg is not app.lifecycle._logger
+        # Clean up
+        ctx._lg.handlers.clear()
+
+    def test_subprocess_context_passes_etc_dir_and_config_file(self):
+        """Test that subprocess_context() passes etc_dir and config_file."""
+        app = App()
+        app.config = DotDict(logging=DotDict(level="info", location=0))
+        app._etc_dir = "/etc/myapp"  # type: ignore[attr-defined]
+        app._config_file = "config.yaml"  # type: ignore[attr-defined]
+
+        ctx = app.subprocess_context()
+
+        assert ctx._etc_dir == "/etc/myapp"
+        assert ctx._config_file == "config.yaml"
+        # Clean up
+        ctx._lg.handlers.clear()
+
+    def test_subprocess_context_handles_missing_config(self):
+        """Test subprocess_context() works without etc_dir/config_file."""
+        app = App()
+        app.config = DotDict(logging=DotDict(level="info", location=0))
+        # No _etc_dir or _config_file set
+
+        ctx = app.subprocess_context()
+
+        assert ctx._etc_dir is None
+        assert ctx._config_file is None
+        # Clean up
+        ctx._lg.handlers.clear()
+
+    def test_subprocess_context_handle_signals_parameter(self):
+        """Test that handle_signals parameter is passed correctly."""
+        app = App()
+        app.config = DotDict(logging=DotDict(level="info", location=0))
+
+        ctx = app.subprocess_context(handle_signals=False)
+
+        # Can't easily verify signal handling is disabled, but no exception means success
+        assert ctx is not None
+        # Clean up
+        ctx._lg.handlers.clear()
+
+    def test_subprocess_context_can_be_used_as_context_manager(self):
+        """Test that subprocess_context() works with 'with' statement."""
+        app = App()
+        app.config = DotDict(logging=DotDict(level="info", location=0))
+
+        with app.subprocess_context(handle_signals=False) as ctx:
+            assert ctx.running is True
+
+        # After exiting, running should be True (only signal sets it to False)
+        # Actually verify it doesn't raise
+
+
+@pytest.mark.unit
+class TestCreateConfigWatcherMethod:
+    """Test App.create_config_watcher() helper method."""
+
+    def test_create_config_watcher_returns_watcher_when_configured(self):
+        """Test that create_config_watcher() returns a ConfigWatcher."""
+        from appinfra.config import ConfigWatcher
+
+        app = App()
+        app.lifecycle._logger = Mock()
+        app._etc_dir = "/etc/myapp"  # type: ignore[attr-defined]
+        app._config_file = "config.yaml"  # type: ignore[attr-defined]
+
+        watcher = app.create_config_watcher()
+
+        assert isinstance(watcher, ConfigWatcher)
+
+    def test_create_config_watcher_returns_none_when_no_etc_dir(self):
+        """Test that create_config_watcher() returns None without etc_dir."""
+        app = App()
+        app.lifecycle._logger = Mock()
+        app._config_file = "config.yaml"  # type: ignore[attr-defined]
+        # No _etc_dir
+
+        watcher = app.create_config_watcher()
+
+        assert watcher is None
+
+    def test_create_config_watcher_returns_none_when_no_config_file(self):
+        """Test that create_config_watcher() returns None without config_file."""
+        app = App()
+        app.lifecycle._logger = Mock()
+        app._etc_dir = "/etc/myapp"  # type: ignore[attr-defined]
+        # No _config_file
+
+        watcher = app.create_config_watcher()
+
+        assert watcher is None
+
+    def test_create_config_watcher_returns_none_when_both_missing(self):
+        """Test that create_config_watcher() returns None when both are missing."""
+        app = App()
+        app.lifecycle._logger = Mock()
+        # No _etc_dir or _config_file
+
+        watcher = app.create_config_watcher()
+
+        assert watcher is None
+
+    def test_create_config_watcher_uses_app_logger(self):
+        """Test that create_config_watcher() uses the app's logger."""
+        app = App()
+        mock_logger = Mock()
+        app.lifecycle._logger = mock_logger
+        app._etc_dir = "/etc/myapp"  # type: ignore[attr-defined]
+        app._config_file = "config.yaml"  # type: ignore[attr-defined]
+
+        watcher = app.create_config_watcher()
+
+        assert watcher._lg is mock_logger

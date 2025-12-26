@@ -32,11 +32,15 @@ from .console import Console, get_console
 from .help import RichHelpFormatter, get_help_formatter
 from .progress_logger import ProgressLogger
 from .prompts import (
+    INQUIRER_AVAILABLE,
+    TERM_MENU_AVAILABLE,
     NonInteractiveError,
     confirm,
     multiselect,
     password,
     select,
+    select_scrollable,
+    select_table,
     text,
 )
 
@@ -75,6 +79,10 @@ __all__ = [
     "text",
     "password",
     "select",
+    "select_scrollable",
+    "select_table",
     "multiselect",
     "NonInteractiveError",
+    "INQUIRER_AVAILABLE",
+    "TERM_MENU_AVAILABLE",  # Backward compatibility alias
 ]

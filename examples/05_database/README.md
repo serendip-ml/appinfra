@@ -108,6 +108,9 @@ pgserver:
   port: 7432
   user: "postgres"
   password: "postgres"
+  replica:                     # Optional: for replication mode
+    enabled: true
+    port: 7433
 
 dbs:
   test:

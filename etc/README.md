@@ -133,7 +133,19 @@ pgserver:
   port: 7432                   # PostgreSQL port
   user: postgres               # Database user
   pass: ''                     # Database password (use environment variable for security)
+  replica:                     # Optional: replication mode configuration
+    enabled: true              # Enable replication targets (pg.server.up.repl, pg.standby)
+    port: 7433                 # Standby server port (required when enabled: true)
 ```
+
+When `replica.enabled` is `true`:
+- Replication targets are available (`make pg.server.up.repl`, `make pg.standby`)
+- `replica.port` is required and used for the standby server
+- Database URLs can reference `${pgserver.replica.port}` for read replicas
+
+When `replica` is omitted or `replica.enabled` is `false`:
+- Only single-instance mode is available
+- Replication targets are hidden from `make help`
 
 ### 3. Database Configurations
 
@@ -269,7 +281,8 @@ dbs:
 **Available Variables:**
 - `${pgserver.user}` - Database username
 - `${pgserver.pass}` - Database password
-- `${pgserver.port}` - Database port
+- `${pgserver.port}` - Database port (primary)
+- `${pgserver.replica.port}` - Database port (standby/replica)
 - `${pgserver.name}` - Database server name
 - Any configuration value can be referenced
 
@@ -483,7 +496,7 @@ etc/
 
 **Usage in code:**
 ```python
-from appinfra.app.cfg import Config
+from appinfra.config import Config
 
 # Load configuration with includes automatically resolved
 config = Config('etc/infra.yaml')

@@ -211,8 +211,6 @@ class LoggingConfigurer:
     def with_hot_reload(
         self,
         enabled: bool = True,
-        config_path: str | None = None,
-        section: str = "logging",
         debounce_ms: int = 500,
     ) -> "LoggingConfigurer":
         """
@@ -226,11 +224,10 @@ class LoggingConfigurer:
 
         Note:
             Requires watchdog package. Install with: pip install appinfra[hotreload]
+            Requires calling with_config_file() first to set the config path.
 
         Args:
             enabled: Whether to enable hot-reload (default: True)
-            config_path: Path to config file. If None, uses app's config path.
-            section: Config section containing logging config (default: "logging")
             debounce_ms: Milliseconds to wait before applying changes (default: 500)
 
         Returns:
@@ -238,49 +235,45 @@ class LoggingConfigurer:
 
         Example:
             app = (AppBuilder("myapp")
-                .config("etc/app.yaml")
+                .with_config_file("app.yaml")
                 .logging
-                    .with_hot_reload(True)  # Watch app's config file
-                    .done()
-                .build())
-
-            # Or with explicit config path:
-            app = (AppBuilder("myapp")
-                .logging
-                    .with_hot_reload(True, config_path="etc/logging.yaml")
+                    .with_hot_reload(True)
                     .done()
                 .build())
 
         Raises:
             ImportError: If watchdog is not installed
-            ValueError: If config_path not provided and app config not set
+            ValueError: If with_config_file() was not called first
         """
-        from ..app import HotReloadConfig
+        from appinfra.dot_dict import DotDict
 
-        if not enabled:
-            self._app_builder._hot_reload_config = None
-            return self
+        # Require config path from with_config_file()
+        if not (
+            hasattr(self._app_builder, "_config_path")
+            and self._app_builder._config_path
+        ):
+            raise ValueError(
+                "with_config_file() must be called before with_hot_reload(). "
+                "Example: AppBuilder('app').with_config_file('app.yaml').logging.with_hot_reload()"
+            )
 
-        # Determine config path
-        resolved_path = config_path
-        if resolved_path is None:
-            if (
-                hasattr(self._app_builder, "_config_path")
-                and self._app_builder._config_path
-            ):
-                resolved_path = self._app_builder._config_path
-            else:
-                raise ValueError(
-                    "config_path required when app config not set. "
-                    "Either call .config() first or provide config_path explicitly."
-                )
+        # Ensure config exists
+        if self._app_builder._config is None:
+            self._app_builder._config = DotDict()
 
-        self._app_builder._hot_reload_config = HotReloadConfig(
-            enabled=True,
-            config_path=resolved_path,
-            section=section,
+        config = self._app_builder._config
+
+        # Ensure logging section exists
+        if not hasattr(config, "logging"):
+            config.logging = DotDict()  # type: ignore[attr-defined]
+
+        # Write hot_reload config directly to config.logging.hot_reload
+        # This ensures LifecycleManager will see it during initialization
+        config.logging.hot_reload = DotDict(  # type: ignore[attr-defined]
+            enabled=enabled,
             debounce_ms=debounce_ms,
         )
+
         return self
 
     def done(self) -> "AppBuilder":

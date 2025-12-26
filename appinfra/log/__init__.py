@@ -8,7 +8,6 @@ This module extends Python's standard logging with:
 - File location tracking in log messages
 - Structured logging with extra fields
 - Callback system for log event handling
-- Multi-process logging with separators
 - Fluent LoggingBuilder API for easy configuration
 - JSON logging support for structured output
 - Specialized builders for different output types
@@ -51,7 +50,7 @@ from .builder import (
     quick_json_file,
 )
 from .callback import CallbackRegistry, listens_for
-from .config import LogConfig
+from .config import ChildLogConfig, LogConfig
 
 # Import new architecture components
 from .constants import LogConstants
@@ -59,7 +58,7 @@ from .exceptions import InvalidLogLevelError, LogError
 from .factory import LoggerFactory
 from .level_manager import LevelRule, LogLevelManager
 from .logger import Logger
-from .logger_with_sep import LoggerWithSeparator
+from .reloader import LogConfigReloader
 
 # Define custom log levels for more granular debugging
 logging.TRACE = LogConstants.CUSTOM_LEVELS["TRACE"]  # type: ignore[attr-defined]
@@ -207,6 +206,21 @@ def derive_lg(lg: Logger, tags: str | list, cls: type[Logger] | None = None) -> 
     return LoggerFactory.derive(lg, tags)
 
 
+def _create_capture_handler(
+    config: LogConfig, numeric_level: int
+) -> logging.StreamHandler:
+    """Create handler with appinfra formatter for capture_all_loggers."""
+    from .config_holder import LogConfigHolder
+    from .formatters import LogFormatter
+
+    holder = LogConfigHolder(config)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(LogFormatter(holder))
+    handler.setLevel(numeric_level)
+    return handler
+
+
 def capture_all_loggers(
     level: str | int = "info",
     clear_handlers: bool = True,
@@ -232,30 +246,19 @@ def capture_all_loggers(
         >>> capture_all_loggers(level="info")
         >>> # Now all loggers (including third-party) use appinfra formatting
     """
-    from .formatters import LogFormatter
-
-    # Resolve level
     numeric_level = resolve_level(level)
     if numeric_level is False:
-        # Disable all logging
         logging.disable(logging.CRITICAL)
         return
 
-    # Create LogConfig for formatter
     config = LogConfig.from_params(level, location, micros, colors=colors)
+    handler = _create_capture_handler(config, numeric_level)
 
-    # Create handler with appinfra formatter
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(LogFormatter(config))
-    handler.setLevel(numeric_level)
-
-    # Configure root logger
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(numeric_level)
 
-    # Process all existing loggers
     for name in list(logging.Logger.manager.loggerDict.keys()):
         logger = logging.getLogger(name)
         if clear_handlers:
@@ -294,13 +297,14 @@ def capture_logger(name: str, level: str | int | None = None) -> None:
 __all__ = [
     # Core classes
     "Logger",
-    "LoggerWithSeparator",
     "LoggerFactory",
     "CallbackRegistry",
     "LogConfig",
+    "ChildLogConfig",
     "LogConstants",
     "LogLevelManager",
     "LevelRule",
+    "LogConfigReloader",
     # Exception classes
     "LogError",
     "InvalidLogLevelError",

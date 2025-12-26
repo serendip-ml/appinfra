@@ -31,7 +31,7 @@ from datetime import datetime
 project_root = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, project_root)
 
-from appinfra.app.cfg import Config
+from appinfra.config import Config
 from appinfra.log.builder.database import DatabaseLoggingBuilder
 
 try:

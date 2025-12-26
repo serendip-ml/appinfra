@@ -134,7 +134,7 @@ class Manager:
 
             except Exception as e:
                 error_msg = f"failed to setup database '{name}': {e}"
-                self._lg.error(error_msg, extra={"db": name, "error": str(e)})
+                self._lg.error(error_msg, extra={"db": name, "exception": e})
                 self._setup_errors[name] = e
 
         _check_setup_results(successful_setups, self._setup_errors, self._lg)

@@ -4,30 +4,69 @@ Periodic task execution, scheduling, and time utilities.
 
 ## Ticker
 
-Periodic task execution with configurable intervals.
+Periodic task execution with configurable intervals. Supports three usage patterns: callback-based,
+iterator, and iterator with context manager.
 
 ```python
 class Ticker:
     def __init__(
         self,
-        lg: Logger,                          # Logger instance
-        handler: TickerHandler | Callable,   # Handler or plain callable
-        secs: float | None = None,           # Seconds between ticks (None for continuous)
-        initial: bool = True                 # Run initial tick immediately
+        lg: Logger,                                    # Logger instance
+        handler: TickerHandler | Callable | None = None,  # Optional for iterator mode
+        secs: float | None = None,                     # Seconds between ticks
+        initial: bool = True                           # Run initial tick immediately
     ): ...
 
-    def run(self) -> None: ...       # Start ticker (blocking)
+    # Callback mode
+    def run(self) -> None: ...       # Start ticker (blocking, requires handler)
     def stop(self) -> None: ...      # Stop ticker gracefully
     def is_running(self) -> bool: ...
+
+    # Context manager (installs signal handlers)
+    def __enter__(self) -> Ticker: ...
+    def __exit__(self, *args) -> None: ...
+
+    # Iterator (yields tick count)
+    def __iter__(self) -> Iterator[int]: ...
 ```
 
-**Basic Usage (Simple Callable):**
+**Iterator Pattern (Recommended):**
 
 ```python
-import logging
 from appinfra.time import Ticker
 
-lg = logging.getLogger(__name__)
+# With context manager - handles SIGTERM/SIGINT gracefully
+with Ticker(lg, secs=5.0) as ticker:
+    for tick in ticker:
+        print(f"Tick {tick}")
+        do_work()
+        # Stops on SIGTERM/SIGINT
+
+# Without context manager (manual stop required)
+ticker = Ticker(lg, secs=5.0)
+for tick in ticker:
+    do_work()
+    if done:
+        ticker.stop()
+```
+
+**With Subprocess Context:**
+
+```python
+from appinfra.time import Ticker
+
+def worker_process(app):
+    with app.subprocess_context() as ctx:
+        with Ticker(ctx.lg, secs=30) as ticker:
+            for tick in ticker:
+                sync_data()
+                # Config hot-reload + signal handling
+```
+
+**Callback Pattern (Simple Callable):**
+
+```python
+from appinfra.time import Ticker
 
 def my_task():
     print("Task executed!")
@@ -36,13 +75,10 @@ ticker = Ticker(lg, my_task, secs=5.0)
 ticker.run()  # Blocks, executes my_task every 5 seconds
 ```
 
-**With Handler Class:**
+**Callback Pattern (Handler Class):**
 
 ```python
-import logging
 from appinfra.time import Ticker, TickerHandler
-
-lg = logging.getLogger(__name__)
 
 class MyHandler(TickerHandler):
     def ticker_start(self, *args, **kwargs):
@@ -282,3 +318,4 @@ Period.MONTHLY   # Every month
 ## See Also
 
 - [Application Framework](app.md) - Use with app lifecycle
+- [Hot-Reload Logging](../guides/hot-reload-logging.md) - Using Ticker with subprocess context

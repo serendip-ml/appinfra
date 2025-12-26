@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import getpass
 import os
+import re
 import sys
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, cast
 
 # Check for questionary availability
 try:
@@ -24,6 +25,20 @@ except ImportError:
     QUESTIONARY_AVAILABLE = False
     questionary = None  # type: ignore[assignment]
     Style = None  # type: ignore[assignment, misc]
+
+# Check for InquirerPy availability
+try:
+    from InquirerPy import inquirer as inq
+    from InquirerPy.utils import InquirerPyStyle
+
+    INQUIRER_AVAILABLE = True
+except ImportError:
+    INQUIRER_AVAILABLE = False
+    inq = None  # type: ignore[assignment]
+    InquirerPyStyle = None  # type: ignore[assignment, misc]
+
+# Backward compatibility alias
+TERM_MENU_AVAILABLE = INQUIRER_AVAILABLE
 
 
 # Default style for prompts
@@ -399,3 +414,294 @@ def multiselect(
     if QUESTIONARY_AVAILABLE and questionary:
         return _multiselect_questionary(message, choice_list, default)
     return _multiselect_fallback(message, choice_list, default)
+
+
+def _require_term_menu() -> None:
+    """Raise ImportError if simple-term-menu is not installed."""
+    if not TERM_MENU_AVAILABLE:
+        raise ImportError(
+            "Scrollable selection requires simple-term-menu. "
+            "Install with: pip install appinfra[ui]"
+        )
+
+
+def _display_fallback_page(
+    choices: list[str], start: int, end: int, default_index: int
+) -> None:
+    """Display a page of choices for fallback selection."""
+    for i in range(start, end):
+        marker = ">" if i == default_index else " "
+        print(f"  {marker}{i + 1}. {choices[i]}")
+    if start > 0:
+        print("  (p) Previous page")
+    if end < len(choices):
+        print("  (n) Next page")
+
+
+def _select_scrollable_fallback(
+    message: str, choices: list[str], default_index: int, max_height: int
+) -> int | None:
+    """Fallback to numbered selection when simple-term-menu is not available."""
+    print(message)
+    start, page_size = 0, max_height
+
+    while True:
+        end = min(start + page_size, len(choices))
+        _display_fallback_page(choices, start, end, default_index)
+
+        try:
+            response = input("Enter number (or p/n): ").strip().lower()
+            if response == "n" and end < len(choices):
+                start = end
+            elif response == "p" and start > 0:
+                start = max(0, start - page_size)
+            elif not response:
+                return default_index
+            else:
+                idx = int(response) - 1
+                if 0 <= idx < len(choices):
+                    return idx
+                print(f"Please enter a number between 1 and {len(choices)}")
+        except ValueError:
+            print("Invalid input")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
+
+
+def select_scrollable(
+    message: str,
+    choices: Sequence[str],
+    *,
+    default_index: int = 0,
+    max_height: int = 10,
+    highlight_color: str = "#005fff",
+    highlight_text: str = "#ffffff",
+) -> int | None:
+    """
+    Scrollable single selection with arrow keys.
+
+    Args:
+        message: Title/prompt message displayed above the menu
+        choices: List of string options to choose from
+        default_index: Initially highlighted option (0-based)
+        max_height: Maximum visible rows before scrolling
+        highlight_color: Background color for highlighted row (hex color)
+        highlight_text: Text color for highlighted row (hex color)
+
+    Returns:
+        Selected index (0-based), or None if cancelled
+
+    Raises:
+        NonInteractiveError: If in non-interactive mode
+
+    Example:
+        idx = select_scrollable(
+            "Choose server:",
+            ["web-1", "web-2", "db-1", "cache-1"],
+            max_height=5
+        )
+        if idx is not None:
+            print(f"Selected: {choices[idx]}")
+    """
+    if not _is_interactive() or _get_non_interactive():
+        raise NonInteractiveError(
+            f"Cannot show scrollable selection in non-interactive mode: {message}"
+        )
+
+    choice_list = list(choices)
+
+    if not INQUIRER_AVAILABLE:
+        return _select_scrollable_fallback(
+            message, choice_list, default_index, max_height
+        )
+
+    result = _inquirer_select(
+        message, choice_list, default_index, max_height, highlight_color, highlight_text
+    )
+    if result is None:
+        return None
+
+    try:
+        return choice_list.index(result)
+    except ValueError:
+        return None
+
+
+def _inquirer_select(
+    message: str,
+    choices: list[str],
+    default_index: int,
+    max_height: int,
+    highlight_color: str,
+    highlight_text: str,
+) -> str | None:
+    """Invoke InquirerPy select with standard styling and keybindings."""
+    style = InquirerPyStyle({"pointer": f"bg:{highlight_color} {highlight_text} bold"})
+    default_value = (
+        choices[default_index] if 0 <= default_index < len(choices) else None
+    )
+
+    result = inq.select(
+        message=message,
+        choices=choices,
+        default=default_value,
+        max_height=max_height,
+        style=style,
+        keybindings={"skip": [{"key": "q"}, {"key": "escape"}]},
+        mandatory=False,
+    ).execute()
+    return cast(str, result) if result is not None else None
+
+
+def _result_to_row(
+    result: str | None, formatted: list[str], row_list: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Convert InquirerPy result string back to row dict."""
+    if result is None:
+        return None
+    try:
+        return row_list[formatted.index(result)]
+    except ValueError:
+        return None
+
+
+def _select_table_fallback(
+    message: str,
+    header: str,
+    formatted: list[str],
+    row_list: list[dict[str, Any]],
+    default_index: int,
+    max_height: int,
+) -> dict[str, Any] | None:
+    """Fallback for table selection when InquirerPy is not available."""
+    print(f"{message}\n{header}")
+    print("-" * len(header))
+    idx = _select_scrollable_fallback("", formatted, default_index, max_height)
+    return row_list[idx] if idx is not None else None
+
+
+# Pattern to match ANSI escape sequences (color codes, cursor movement, etc.)
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+
+# Zero-width Unicode characters that don't contribute to visible width
+_ZERO_WIDTH = frozenset(
+    {
+        "\u200b",  # Zero Width Space
+        "\u200c",  # Zero Width Non-Joiner
+        "\u200d",  # Zero Width Joiner
+        "\u2063",  # Invisible Separator
+        "\ufeff",  # Zero Width No-Break Space (BOM)
+        "\ufe0f",  # Variation Selector-16 (emoji modifier)
+    }
+)
+
+
+def _visible_len(s: str) -> int:
+    """Return display width of string, excluding ANSI codes and zero-width chars."""
+    plain = _ANSI_ESCAPE.sub("", s)
+    return sum(1 for c in plain if c not in _ZERO_WIDTH)
+
+
+def _pad(s: str, width: int) -> str:
+    """Pad string to width using visible length for calculation."""
+    padding = width - _visible_len(s)
+    return s + " " * max(0, padding)
+
+
+def _format_table_rows(
+    rows: Sequence[dict[str, Any]], columns: Sequence[str], column_spacing: int = 2
+) -> tuple[str, list[str]]:
+    """Format rows as aligned table strings. Returns (header, formatted_rows)."""
+    row_list = list(rows)
+    col_list = list(columns)
+
+    widths = {
+        col: max(
+            _visible_len(str(col)),
+            max(_visible_len(str(r.get(col, ""))) for r in row_list),
+        )
+        for col in col_list
+    }
+
+    spacing = " " * column_spacing
+    header = spacing.join(_pad(str(col), widths[col]) for col in col_list)
+    formatted = [
+        spacing.join(_pad(str(r.get(col, "")), widths[col]) for col in col_list)
+        for r in row_list
+    ]
+    return header, formatted
+
+
+def select_table(
+    message: str,
+    rows: Sequence[dict[str, Any]],
+    columns: Sequence[str],
+    *,
+    default_index: int = 0,
+    max_height: int = 10,
+    column_spacing: int = 2,
+    highlight_color: str = "#005fff",
+    highlight_text: str = "#ffffff",
+) -> dict[str, Any] | None:
+    """
+    Scrollable table selection with arrow keys.
+
+    Displays rows as aligned columns and returns the selected row dict.
+
+    Args:
+        message: Title/prompt message displayed above the table
+        rows: List of dicts, each representing a row
+        columns: Column keys to display (in order)
+        default_index: Initially highlighted row (0-based)
+        max_height: Maximum visible rows before scrolling
+        column_spacing: Spaces between columns
+        highlight_color: Background color for highlighted row (hex color)
+        highlight_text: Text color for highlighted row (hex color)
+
+    Returns:
+        Selected row dict, or None if cancelled
+
+    Raises:
+        NonInteractiveError: If in non-interactive mode
+
+    Example:
+        servers = [
+            {"id": "001", "name": "web-prod", "status": "running"},
+            {"id": "002", "name": "db-main", "status": "stopped"},
+        ]
+        selected = select_table(
+            "Choose server:",
+            servers,
+            columns=["id", "name", "status"],
+            max_height=5
+        )
+        if selected:
+            print(f"Selected: {selected['name']}")
+    """
+    if not _is_interactive() or _get_non_interactive():
+        raise NonInteractiveError(
+            f"Cannot show table selection in non-interactive mode: {message}"
+        )
+
+    if not rows:
+        return None
+
+    row_list = list(rows)
+    header, formatted = _format_table_rows(row_list, columns, column_spacing)
+
+    if not INQUIRER_AVAILABLE:
+        return _select_table_fallback(
+            message, header, formatted, row_list, default_index, max_height
+        )
+
+    full_message = f"{message}\n  {header}"  # 2-space indent to match selection marker
+    result = _inquirer_select(
+        full_message,
+        formatted,
+        default_index,
+        max_height,
+        highlight_color,
+        highlight_text,
+    )
+    return _result_to_row(result, formatted, row_list)

@@ -4,7 +4,6 @@ Tests for base logging builder.
 Tests key functionality including:
 - with_location method
 - with_micros method
-- with_separator method
 - with_extra method
 - Exception handling in _add_handlers
 - create_logger convenience function
@@ -21,7 +20,6 @@ from appinfra.log.builder.builder import LoggingBuilder, create_logger
 from appinfra.log.builder.interface import HandlerConfig
 from appinfra.log.exceptions import LogConfigurationError
 from appinfra.log.logger import Logger
-from appinfra.log.logger_with_sep import LoggerWithSeparator
 
 # =============================================================================
 # Fixtures
@@ -167,22 +165,6 @@ class TestMissingCoverage:
 
         assert result is builder
         assert builder._micros is True
-
-    def test_with_separator(self):
-        """Test with_separator method (lines 137-138)."""
-        builder = LoggingBuilder("test")
-        result = builder.with_separator()
-
-        assert result is builder  # Returns self for chaining
-        assert builder._logger_class == LoggerWithSeparator
-
-    def test_with_separator_builds_correct_logger_class(self):
-        """Test with_separator results in LoggerWithSeparator when built."""
-        builder = LoggingBuilder("test")
-        builder.with_separator().with_level("INFO")
-
-        # The _logger_class should be LoggerWithSeparator
-        assert builder._logger_class is LoggerWithSeparator
 
     def test_with_extra_single_field(self):
         """Test with_extra with single field (lines 153-154)."""
@@ -475,25 +457,6 @@ class TestIntegrationScenarios:
 
         assert logger is not None
         assert len(logger.handlers) == 1
-
-        # Clean up
-        for handler in logger.handlers[:]:
-            handler.close()
-            logger.removeHandler(handler)
-
-    def test_build_with_separator_creates_correct_class(self):
-        """Test that with_separator creates LoggerWithSeparator."""
-        builder = (
-            LoggingBuilder("sep_test")
-            .with_separator()
-            .with_level("info")
-            .with_console_handler()
-        )
-
-        logger = builder.build()
-
-        # Should be LoggerWithSeparator instance
-        assert isinstance(logger, LoggerWithSeparator)
 
         # Clean up
         for handler in logger.handlers[:]:

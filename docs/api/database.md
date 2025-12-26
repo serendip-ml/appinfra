@@ -23,9 +23,10 @@ class PG:
 
 ```python
 from appinfra.db import PG
+from appinfra.cfg import get_config_file_path
 import sqlalchemy
 
-pg = PG("etc/infra.yaml", "production")
+pg = PG(get_config_file_path(), "production")
 
 with pg.session() as session:
     result = session.execute(sqlalchemy.text("SELECT version()"))
@@ -47,8 +48,9 @@ class Manager:
 
 ```python
 from appinfra.db import Manager
+from appinfra.cfg import get_config_file_path
 
-manager = Manager("etc/infra.yaml")
+manager = Manager(get_config_file_path())
 
 prod_db = manager.get_db("production")
 test_db = manager.get_db("test")
@@ -83,8 +85,9 @@ databases:
 
 ```python
 from appinfra.db import PG
+from appinfra.cfg import get_config_file_path
 
-pg = PG("etc/infra.yaml", "production")
+pg = PG(get_config_file_path(), "production")
 
 # Open read-only session (no writes allowed)
 with pg.session(readonly=True) as session:
@@ -96,9 +99,10 @@ with pg.session(readonly=True) as session:
 
 ```python
 from appinfra.db import PG
+from appinfra.cfg import get_config_file_path
 import sqlalchemy
 
-pg = PG("etc/infra.yaml", "production")
+pg = PG(get_config_file_path(), "production")
 
 with pg.session() as session:
     try:
@@ -114,6 +118,7 @@ with pg.session() as session:
 
 ```python
 from appinfra.db import PG
+from appinfra.cfg import get_config_file_path
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import Column, Integer, String
 
@@ -126,7 +131,7 @@ class User(Base):
     name = Column(String)
     email = Column(String)
 
-pg = PG("etc/infra.yaml", "production")
+pg = PG(get_config_file_path(), "production")
 
 with pg.session() as session:
     users = session.query(User).filter(User.name == 'John').all()

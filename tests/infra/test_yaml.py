@@ -1571,3 +1571,299 @@ name: app
 
         # Should just parse normally without treating indented content specially
         assert data["name"] == "app"
+
+
+# =============================================================================
+# Additional Edge Case Coverage Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestIncludePathEdgeCases:
+    """Test edge cases for include path resolution."""
+
+    def test_absolute_include_path(self, tmp_path):
+        """Test including a file with absolute path."""
+        # Create include file
+        include_file = tmp_path / "included.yaml"
+        include_file.write_text("value: 42\n")
+
+        # Create main file with absolute include path
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(f'data: !include "{include_file}"\n')
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        assert data["data"]["value"] == 42
+
+    def test_include_depth_exceeded(self, tmp_path):
+        """Test error when include depth exceeds maximum."""
+        # Create a chain of includes that exceeds depth limit (default is 10)
+        # We need 11 files to exceed depth of 10
+        for i in range(11):
+            if i == 0:
+                (tmp_path / f"level{i}.yaml").write_text("value: bottom\n")
+            else:
+                (tmp_path / f"level{i}.yaml").write_text(
+                    f'nested: !include "./level{i - 1}.yaml"\n'
+                )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text('root: !include "./level10.yaml"\n')
+
+        with open(main_file) as f:
+            with pytest.raises(yaml.YAMLError, match="Include depth exceeds maximum"):
+                load(f, current_file=main_file)
+
+    def test_include_depth_exceeded_with_custom_limit(self, tmp_path):
+        """Test error when include depth exceeds custom maximum."""
+        # Create chain of 4 includes
+        for i in range(4):
+            if i == 0:
+                (tmp_path / f"level{i}.yaml").write_text("value: bottom\n")
+            else:
+                (tmp_path / f"level{i}.yaml").write_text(
+                    f'nested: !include "./level{i - 1}.yaml"\n'
+                )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text('root: !include "./level3.yaml"\n')
+
+        # With max_include_depth=3, this should fail
+        with open(main_file) as f:
+            with pytest.raises(yaml.YAMLError, match="Include depth exceeds maximum"):
+                load(f, current_file=main_file, max_include_depth=3)
+
+    def test_document_level_include_depth_exceeded(self, tmp_path):
+        """Test error when document-level include depth exceeds maximum."""
+        # Create chain of document-level includes
+        for i in range(4):
+            if i == 0:
+                (tmp_path / f"doc{i}.yaml").write_text("value: bottom\n")
+            else:
+                # Document-level include (at start of line)
+                (tmp_path / f"doc{i}.yaml").write_text(
+                    f'!include "./doc{i - 1}.yaml"\n\nlevel: {i}\n'
+                )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text('!include "./doc3.yaml"\n\nname: app\n')
+
+        # With max_include_depth=2, this should fail
+        with open(main_file) as f:
+            with pytest.raises(yaml.YAMLError, match="Include depth exceeds maximum"):
+                load(f, current_file=main_file, max_include_depth=2)
+
+
+@pytest.mark.unit
+class TestIncludeSecurityEdgeCases:
+    """Test security-related edge cases for includes."""
+
+    def test_include_outside_project_root(self, tmp_path):
+        """Test error when include path is outside project root."""
+        # Create project directory
+        project = tmp_path / "project"
+        project.mkdir()
+
+        # Create file outside project
+        outside_file = tmp_path / "outside.yaml"
+        outside_file.write_text("secret: exposed\n")
+
+        # Create main file trying to include outside file
+        main_file = project / "main.yaml"
+        main_file.write_text('data: !include "../outside.yaml"\n')
+
+        with open(main_file) as f:
+            with pytest.raises(yaml.YAMLError, match="outside project root"):
+                load(f, current_file=main_file, project_root=project)
+
+
+@pytest.mark.unit
+class TestIncludeSectionEdgeCases:
+    """Test edge cases for include with section paths."""
+
+    def test_section_path_on_non_dict(self, tmp_path):
+        """Test error when navigating section path through non-dict."""
+        include_file = tmp_path / "included.yaml"
+        include_file.write_text(
+            """
+root:
+  items:
+    - item1
+    - item2
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        # Try to navigate through the list (items.first doesn't work on list)
+        main_file.write_text('data: !include "./included.yaml#root.items.first"\n')
+
+        with open(main_file) as f:
+            with pytest.raises(yaml.YAMLError, match="is not a mapping"):
+                load(f, current_file=main_file)
+
+    def test_section_path_not_found(self, tmp_path):
+        """Test error when section path key not found."""
+        include_file = tmp_path / "included.yaml"
+        include_file.write_text(
+            """
+config:
+  database:
+    host: localhost
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text('data: !include "./included.yaml#config.nonexistent"\n')
+
+        with open(main_file) as f:
+            with pytest.raises(yaml.YAMLError, match="not found"):
+                load(f, current_file=main_file)
+
+    def test_section_with_source_tracking(self, tmp_path):
+        """Test section extraction with source tracking enabled."""
+        include_file = tmp_path / "included.yaml"
+        include_file.write_text(
+            """
+outer:
+  inner:
+    value: 42
+    nested:
+      deep: true
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text('data: !include "./included.yaml#outer.inner"\n')
+
+        with open(main_file) as f:
+            data, source_map = load(f, current_file=main_file, track_sources=True)
+
+        assert data["data"]["value"] == 42
+        # Source map should have entries for the included data
+        assert source_map is not None
+
+
+@pytest.mark.unit
+class TestSourceTrackingEdgeCases:
+    """Test source tracking edge cases."""
+
+    def test_source_tracking_with_sequences(self, tmp_path):
+        """Test source tracking properly tracks sequence items."""
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """
+items:
+  - first
+  - second
+  - third
+"""
+        )
+
+        with open(main_file) as f:
+            data, source_map = load(f, current_file=main_file, track_sources=True)
+
+        assert data["items"] == ["first", "second", "third"]
+        # Source map should track sequence items with indexed paths
+        assert "items[0]" in source_map or "items" in source_map
+
+
+@pytest.mark.unit
+class TestDocumentMergeEdgeCases:
+    """Test edge cases for document-level merge behavior."""
+
+    def test_non_dict_main_takes_precedence(self, tmp_path):
+        """Test that non-dict main data takes precedence over merged dict."""
+        base_file = tmp_path / "base.yaml"
+        base_file.write_text(
+            """
+config:
+  key: value
+"""
+        )
+
+        # Main file with non-dict content (a list)
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """!include "./base.yaml"
+
+- item1
+- item2
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # The list should take precedence
+        assert isinstance(data, list)
+        assert data == ["item1", "item2"]
+
+
+@pytest.mark.unit
+class TestDocumentLevelIncludeWithSection:
+    """Test document-level includes with section paths."""
+
+    def test_document_include_section_on_non_dict(self, tmp_path):
+        """Test error when document-level section path traverses non-dict."""
+        include_file = tmp_path / "included.yaml"
+        include_file.write_text(
+            """
+data:
+  items:
+    - one
+    - two
+"""
+        )
+
+        # Document-level include with section that traverses a list
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text('!include "./included.yaml#data.items.key"\n\nname: app\n')
+
+        with open(main_file) as f:
+            with pytest.raises(yaml.YAMLError, match="is not a mapping"):
+                load(f, current_file=main_file)
+
+    def test_document_include_section_not_found(self, tmp_path):
+        """Test error when document-level section path key not found."""
+        include_file = tmp_path / "included.yaml"
+        include_file.write_text(
+            """
+config:
+  database:
+    host: localhost
+"""
+        )
+
+        # Document-level include with non-existent section
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text('!include "./included.yaml#config.missing"\n\nname: app\n')
+
+        with open(main_file) as f:
+            with pytest.raises(yaml.YAMLError, match="not found"):
+                load(f, current_file=main_file)
+
+    def test_document_include_section_with_source_tracking(self, tmp_path):
+        """Test document-level section include with source tracking."""
+        include_file = tmp_path / "included.yaml"
+        include_file.write_text(
+            """
+outer:
+  inner:
+    value: 42
+    nested:
+      deep: true
+"""
+        )
+
+        # Document-level include with section and source tracking
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text('!include "./included.yaml#outer.inner"\n\nname: app\n')
+
+        with open(main_file) as f:
+            data, source_map = load(f, current_file=main_file, track_sources=True)
+
+        assert data["value"] == 42
+        assert data["name"] == "app"
+        assert source_map is not None

@@ -54,9 +54,11 @@ Example Usage:
 """
 
 import sched
+import signal
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from types import FrameType
 from typing import Any
 
 
@@ -163,9 +165,21 @@ class Ticker:
     for periodic tasks. Can work with TickerHandler objects to execute
     periodic operations.
 
-    The ticker supports two execution modes:
-    - Scheduled: Uses sched.scheduler for interval-based execution
-    - Continuous: Runs in a loop with no built-in stopping mechanism
+    The ticker supports three usage patterns:
+
+    1. Callback-based (using run()):
+        ticker = Ticker(lg, lambda: do_work(), secs=5)
+        ticker.run()
+
+    2. Iterator (for-loop):
+        for tick in Ticker(lg, secs=5):
+            do_work()
+
+    3. Iterator with context manager (recommended for signal handling):
+        with Ticker(lg, secs=5) as t:
+            for tick in t:
+                do_work()
+                # Stops gracefully on SIGTERM/SIGINT
 
     Thread safety: The ticker is not thread-safe by default. If you need
     thread safety, consider using locks or running in a separate thread.
@@ -176,7 +190,7 @@ class Ticker:
 
         lg = logging.getLogger(__name__)
 
-        # Scheduled execution every 10 seconds
+        # Scheduled execution every 10 seconds with handler
         class HealthChecker(TickerHandler):
             def __init__(self):
                 self.lg = logging.getLogger(__name__)
@@ -194,14 +208,17 @@ class Ticker:
         # Stop gracefully
         ticker.stop()
 
-        # Or use a simple callable
-        ticker = Ticker(lg, lambda: print("health check"), secs=10)
+        # Or use iterator pattern with subprocess context
+        with app.subprocess_context() as ctx:
+            with Ticker(ctx.lg, secs=30) as ticker:
+                for tick in ticker:
+                    sync_data()
     """
 
     def __init__(
         self,
         lg: Any,
-        handler: TickerHandler | Callable[[], None],
+        handler: TickerHandler | Callable[[], None] | None = None,
         secs: float | None = None,
         initial: bool = True,
     ) -> None:
@@ -212,22 +229,21 @@ class Ticker:
             lg: Logger instance for error logging
             handler: TickerHandler instance or callable to execute on each tick.
                      Plain callables are automatically wrapped in a TickerHandler.
+                     Optional when using iterator pattern (required for run()).
             secs: Interval between ticks in seconds (None for continuous mode)
             initial: Whether to run tick immediately on start (default True).
                      If False, waits for first interval before firing.
-
-        Raises:
-            ValueError: If handler is None
         """
-        if handler is None:
-            raise ValueError("Handler cannot be None")
-
         # Auto-wrap plain callables in a TickerHandler
-        if callable(handler) and not isinstance(handler, TickerHandler):
+        if (
+            handler is not None
+            and callable(handler)
+            and not isinstance(handler, TickerHandler)
+        ):
             handler = _CallableWrapper(handler)
 
         self._lg = lg
-        self._handler = handler
+        self._handler: TickerHandler | None = handler
         self._secs = secs
         self._initial = initial
         self._first = True
@@ -236,10 +252,16 @@ class Ticker:
         self._sched = (
             sched.scheduler(time.time, time.sleep) if secs is not None else None
         )
+        # For context manager signal handling (stores previous handlers)
+        self._prev_sigterm: Any = None
+        self._prev_sigint: Any = None
 
     def run(self, *args: Any, **kwargs: Any) -> None:
         """
-        Start the ticker execution.
+        Start the ticker execution (callback-based mode).
+
+        Requires a handler to be set. For iterator-based usage, use the
+        for-loop pattern instead.
 
         Args:
             *args: Positional arguments to pass to handler
@@ -247,6 +269,7 @@ class Ticker:
 
         Raises:
             RuntimeError: If ticker is already running
+            ValueError: If no handler was provided
 
         Example:
             >>> import threading
@@ -265,6 +288,10 @@ class Ticker:
             >>> # Later, stop gracefully
             >>> ticker.stop()
         """
+        if self._handler is None:
+            raise ValueError(
+                "Handler required for run() mode. Use iterator pattern instead."
+            )
         if self._running:
             raise RuntimeError("Ticker is already running")
 
@@ -289,6 +316,9 @@ class Ticker:
             **kwargs: Keyword arguments to pass to handler
         """
         kwargs = self._update_params_from_kwargs(kwargs)
+
+        # Handler is guaranteed to be set - run() validates this
+        assert self._handler is not None
 
         try:
             if self._sched is not None:
@@ -319,6 +349,9 @@ class Ticker:
         """
         if self._secs is None:
             raise RuntimeError("Cannot schedule tick without secs parameter")
+
+        # Handler is guaranteed to be set - only called from run_started
+        assert self._handler is not None
 
         if not self._stop_event.is_set():
             # Schedule the next tick
@@ -362,12 +395,13 @@ class Ticker:
         """
         Stop the ticker gracefully.
 
-        This method signals the ticker to stop and calls the handler's
-        ticker_stop method immediately. The ticker will stop after the current
-        tick completes.
+        This method signals the ticker to stop. If a handler is set, calls the
+        handler's ticker_stop method immediately. The ticker will stop after
+        the current tick completes.
         """
+        self._stop_event.set()
+
         if self._running:
-            self._stop_event.set()
             # For scheduled mode, we need to cancel pending events
             if self._sched is not None:
                 # Cancel all pending events
@@ -376,11 +410,12 @@ class Ticker:
 
             # Call ticker_stop handler immediately so cleanup logging
             # happens during the shutdown phase, not in finally block
-            try:
-                self._handler.ticker_stop()
-            except Exception:
-                # Log error but continue with stop
-                self._lg.exception("Error in ticker_stop callback")
+            if self._handler is not None:
+                try:
+                    self._handler.ticker_stop()
+                except Exception:
+                    # Log error but continue with stop
+                    self._lg.exception("Error in ticker_stop callback")
 
     def is_running(self) -> bool:
         """
@@ -405,3 +440,68 @@ class Ticker:
             "first_tick": self._first,
             "stop_requested": self._stop_event.is_set(),
         }
+
+    # Context manager and iterator support
+
+    def __enter__(self) -> "Ticker":
+        """
+        Install signal handlers for graceful shutdown.
+
+        When used as a context manager, SIGTERM and SIGINT will stop the ticker.
+
+        Returns:
+            Self for use in with statement.
+        """
+        self._prev_sigterm = signal.signal(signal.SIGTERM, self._handle_iter_signal)
+        self._prev_sigint = signal.signal(signal.SIGINT, self._handle_iter_signal)
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        """Restore previous signal handlers."""
+        if self._prev_sigterm is not None:
+            signal.signal(signal.SIGTERM, self._prev_sigterm)
+            self._prev_sigterm = None
+        if self._prev_sigint is not None:
+            signal.signal(signal.SIGINT, self._prev_sigint)
+            self._prev_sigint = None
+
+    def __iter__(self) -> Iterator[int]:
+        """
+        Yield tick count on each interval until stopped.
+
+        Can be used with or without context manager:
+
+            # Without context manager (no signal handling)
+            for tick in Ticker(lg, secs=5):
+                do_work()
+
+            # With context manager (signal handling enabled)
+            with Ticker(lg, secs=5) as t:
+                for tick in t:
+                    do_work()
+
+        Yields:
+            int: Tick count starting from 0.
+        """
+        if self._secs is None:
+            raise ValueError("secs parameter required for iterator mode")
+
+        tick = 0
+
+        # Check stop before initial tick
+        if self._stop_event.is_set():
+            return
+
+        if self._initial:
+            yield tick
+            tick += 1
+
+        while not self._stop_event.wait(timeout=self._secs):
+            yield tick
+            tick += 1
+
+    def _handle_iter_signal(self, signum: int, frame: FrameType | None) -> None:
+        """Handle signal by stopping iteration."""
+        sig_name = signal.Signals(signum).name
+        self._lg.debug(f"received {sig_name}, stopping ticker")
+        self._stop_event.set()

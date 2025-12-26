@@ -144,11 +144,11 @@ class TestFunctionAnalyzerAnalyzeFile:
             f.flush()
 
             analyzer = FunctionAnalyzer(limit=30)
-            result = analyzer.analyze_file(Path(f.name))
+            violations, exempt = analyzer.analyze_file(Path(f.name))
 
-            assert len(result) == 1
-            assert result[0].name == "large_function"
-            assert result[0].code_lines > 30
+            assert len(violations) == 1
+            assert violations[0].name == "large_function"
+            assert violations[0].code_lines > 30
 
     def test_excludes_small_functions(self):
         """Test does not report functions within threshold."""
@@ -165,9 +165,9 @@ class TestFunctionAnalyzerAnalyzeFile:
             f.flush()
 
             analyzer = FunctionAnalyzer(limit=30)
-            result = analyzer.analyze_file(Path(f.name))
+            violations, exempt = analyzer.analyze_file(Path(f.name))
 
-            assert len(result) == 0
+            assert len(violations) == 0
 
     def test_analyzes_function_with_docstring(self):
         """Test excludes docstring from code line count."""
@@ -217,11 +217,11 @@ class TestFunctionAnalyzerAnalyzeFile:
             f.flush()
 
             analyzer = FunctionAnalyzer(limit=30)
-            result = analyzer.analyze_file(Path(f.name))
+            violations, exempt = analyzer.analyze_file(Path(f.name))
 
             # Should find violation (31+ lines after docstring)
-            assert len(result) == 1
-            assert result[0].name == "function_with_docstring"
+            assert len(violations) == 1
+            assert violations[0].name == "function_with_docstring"
 
     def test_analyzes_class_methods(self):
         """Test analyzes methods inside classes."""
@@ -268,30 +268,32 @@ class TestFunctionAnalyzerAnalyzeFile:
             f.flush()
 
             analyzer = FunctionAnalyzer(limit=30)
-            result = analyzer.analyze_file(Path(f.name))
+            violations, exempt = analyzer.analyze_file(Path(f.name))
 
-            assert len(result) == 1
-            assert result[0].name == "large_method"
-            assert result[0].is_method is True
-            assert result[0].class_name == "MyClass"
+            assert len(violations) == 1
+            assert violations[0].name == "large_method"
+            assert violations[0].is_method is True
+            assert violations[0].class_name == "MyClass"
 
     def test_handles_syntax_errors_gracefully(self):
-        """Test returns empty list for files with syntax errors."""
+        """Test returns empty tuple for files with syntax errors."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write("def broken syntax here!")
             f.flush()
 
             analyzer = FunctionAnalyzer()
-            result = analyzer.analyze_file(Path(f.name))
+            violations, exempt = analyzer.analyze_file(Path(f.name))
 
-            assert result == []
+            assert violations == []
+            assert exempt == []
 
     def test_handles_nonexistent_file(self):
-        """Test returns empty list for nonexistent files."""
+        """Test returns empty tuple for nonexistent files."""
         analyzer = FunctionAnalyzer()
-        result = analyzer.analyze_file(Path("/nonexistent/file.py"))
+        violations, exempt = analyzer.analyze_file(Path("/nonexistent/file.py"))
 
-        assert result == []
+        assert violations == []
+        assert exempt == []
 
     def test_avoids_duplicate_functions(self):
         """Test does not report same function twice."""
@@ -337,10 +339,319 @@ class TestFunctionAnalyzerAnalyzeFile:
             f.flush()
 
             analyzer = FunctionAnalyzer(limit=30)
-            result = analyzer.analyze_file(Path(f.name))
+            violations, exempt = analyzer.analyze_file(Path(f.name))
 
             # Should only find one violation, not duplicates
-            assert len(result) == 1
+            assert len(violations) == 1
+
+
+# =============================================================================
+# Test cq directive parsing
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestCqDirective:
+    """Test # cq: directive parsing and handling."""
+
+    def test_max_lines_directive_allows_larger_function(self):
+        """Test # cq: max-lines=N allows function up to N lines and tracks as exempt."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            # 35-line function with max-lines=40 should pass but be tracked as exempt
+            code = "def large_function():  # cq: max-lines=40\n"
+            code += "\n".join(f"    x{i} = {i}" for i in range(34))
+            f.write(code)
+            f.flush()
+
+            analyzer = FunctionAnalyzer(limit=30)
+            violations, exempt = analyzer.analyze_file(Path(f.name))
+
+            # Should not be a violation since 35 <= 40
+            assert len(violations) == 0
+            # Should be tracked as exempt since 35 > 30 (default limit)
+            assert len(exempt) == 1
+            assert exempt[0].name == "large_function"
+            assert exempt[0].custom_limit == 40
+            assert exempt[0].code_lines == 35
+
+    def test_max_lines_directive_still_catches_exceeding(self):
+        """Test # cq: max-lines=N still catches functions exceeding N."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            # 45-line function with max-lines=40 should fail
+            code = "def large_function():  # cq: max-lines=40\n"
+            code += "\n".join(f"    x{i} = {i}" for i in range(44))
+            f.write(code)
+            f.flush()
+
+            analyzer = FunctionAnalyzer(limit=30)
+            violations, exempt = analyzer.analyze_file(Path(f.name))
+
+            # Should be a violation since 45 > 40
+            assert len(violations) == 1
+            assert violations[0].custom_limit == 40
+            assert violations[0].code_lines > 40
+
+    def test_exempt_directive_skips_function(self):
+        """Test # cq: exempt skips line check entirely."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            # 50-line function with exempt should not be a violation
+            code = "def large_function():  # cq: exempt\n"
+            code += "\n".join(f"    x{i} = {i}" for i in range(49))
+            f.write(code)
+            f.flush()
+
+            analyzer = FunctionAnalyzer(limit=30)
+            violations, exempt = analyzer.analyze_file(Path(f.name))
+
+            # Should not be a violation, but should be in exempt list
+            assert len(violations) == 0
+            assert len(exempt) == 1
+            assert exempt[0].name == "large_function"
+            assert exempt[0].is_exempt is True
+
+    def test_directive_with_async_def(self):
+        """Test directive works with async def functions."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            code = "async def async_function():  # cq: max-lines=40\n"
+            code += "\n".join(f"    x{i} = {i}" for i in range(34))
+            f.write(code)
+            f.flush()
+
+            analyzer = FunctionAnalyzer(limit=30)
+            violations, exempt = analyzer.analyze_file(Path(f.name))
+
+            assert len(violations) == 0
+            # Should be tracked as exempt since 35 > 30
+            assert len(exempt) == 1
+            assert exempt[0].custom_limit == 40
+
+    def test_directive_with_class_method(self):
+        """Test directive works with class methods."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            code = dedent(
+                """
+                class MyClass:
+                    def large_method(self):  # cq: exempt
+                        x1 = 1
+                        x2 = 2
+                        x3 = 3
+                        x4 = 4
+                        x5 = 5
+                        x6 = 6
+                        x7 = 7
+                        x8 = 8
+                        x9 = 9
+                        x10 = 10
+                        x11 = 11
+                        x12 = 12
+                        x13 = 13
+                        x14 = 14
+                        x15 = 15
+                        x16 = 16
+                        x17 = 17
+                        x18 = 18
+                        x19 = 19
+                        x20 = 20
+                        x21 = 21
+                        x22 = 22
+                        x23 = 23
+                        x24 = 24
+                        x25 = 25
+                        x26 = 26
+                        x27 = 27
+                        x28 = 28
+                        x29 = 29
+                        x30 = 30
+                        x31 = 31
+                        return x31
+                """
+            ).strip()
+            f.write(code)
+            f.flush()
+
+            analyzer = FunctionAnalyzer(limit=30)
+            violations, exempt = analyzer.analyze_file(Path(f.name))
+
+            assert len(violations) == 0
+            assert len(exempt) == 1
+            assert exempt[0].is_method is True
+            assert exempt[0].class_name == "MyClass"
+
+    def test_directive_case_insensitive(self):
+        """Test directive is case insensitive."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            code = "def large_function():  # CQ: MAX-LINES=40\n"
+            code += "\n".join(f"    x{i} = {i}" for i in range(34))
+            f.write(code)
+            f.flush()
+
+            analyzer = FunctionAnalyzer(limit=30)
+            violations, exempt = analyzer.analyze_file(Path(f.name))
+
+            assert len(violations) == 0
+            assert len(exempt) == 1  # Tracked as exempt
+
+    def test_directive_with_spaces(self):
+        """Test directive with various spacing."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            code = "def large_function():  #  cq:  max-lines=40\n"
+            code += "\n".join(f"    x{i} = {i}" for i in range(34))
+            f.write(code)
+            f.flush()
+
+            analyzer = FunctionAnalyzer(limit=30)
+            violations, exempt = analyzer.analyze_file(Path(f.name))
+
+            assert len(violations) == 0
+            assert len(exempt) == 1  # Tracked as exempt
+
+
+@pytest.mark.unit
+class TestCqDirectiveReporting:
+    """Test reporting of cq directive exemptions."""
+
+    def test_simple_list_reports_exempt_functions(self):
+        """Test simple list format reports exempt functions with details."""
+        exempt_func = FunctionInfo(
+            name="exempt_func",
+            file_path=Path("/test.py"),
+            line_number=10,
+            end_line=50,
+            total_lines=41,
+            code_lines=40,
+            is_method=False,
+            class_name=None,
+            is_exempt=True,
+        )
+        reporter = FunctionReporter([], limit=30, exempt_functions=[exempt_func])
+        result = reporter.format_simple_list()
+
+        assert "EXEMPT (1 function(s) skipped):" in result
+        assert "/test.py:10 - exempt_func()" in result
+        assert "40 lines, exempt" in result  # Shows exempt status
+
+    def test_simple_list_reports_max_lines_exempt(self):
+        """Test simple list format reports max-lines exempt functions with custom limit."""
+        exempt_func = FunctionInfo(
+            name="large_func",
+            file_path=Path("/test.py"),
+            line_number=10,
+            end_line=50,
+            total_lines=41,
+            code_lines=35,
+            is_method=False,
+            class_name=None,
+            custom_limit=40,
+        )
+        reporter = FunctionReporter([], limit=30, exempt_functions=[exempt_func])
+        result = reporter.format_simple_list()
+
+        assert "EXEMPT (1 function(s) skipped):" in result
+        assert "/test.py:10 - large_func()" in result
+        assert "35 lines, limit=40" in result  # Shows custom limit
+
+    def test_detailed_report_shows_exempt_in_header(self):
+        """Test detailed report shows exempt count in header."""
+        violation = FunctionInfo(
+            name="violating_func",
+            file_path=Path("/test.py"),
+            line_number=1,
+            end_line=40,
+            total_lines=40,
+            code_lines=40,
+            is_method=False,
+            class_name=None,
+        )
+        exempt_func = FunctionInfo(
+            name="exempt_func",
+            file_path=Path("/test.py"),
+            line_number=50,
+            end_line=100,
+            total_lines=51,
+            code_lines=50,
+            is_method=False,
+            class_name=None,
+            is_exempt=True,
+        )
+        reporter = FunctionReporter(
+            [violation], limit=30, exempt_functions=[exempt_func]
+        )
+        result = reporter.format_detailed_report()
+
+        assert "Exempt: 1" in result
+        assert "1 functions exempt from line limit" in result
+
+    def test_json_includes_exempt_functions(self):
+        """Test JSON output includes exempt functions list."""
+        exempt_func = FunctionInfo(
+            name="exempt_func",
+            file_path=Path("/test.py"),
+            line_number=10,
+            end_line=50,
+            total_lines=41,
+            code_lines=40,
+            is_method=False,
+            class_name=None,
+            is_exempt=True,
+        )
+        reporter = FunctionReporter([], limit=30, exempt_functions=[exempt_func])
+        result = reporter.format_json()
+
+        data = json.loads(result)
+        assert len(data["exempt_functions"]) == 1
+        assert data["exempt_functions"][0]["name"] == "exempt_func"
+        assert data["summary"]["exempt_count"] == 1
+
+    def test_summary_stats_shows_exempt_list(self):
+        """Test summary stats shows exempt functions with details."""
+        violation = FunctionInfo(
+            name="violating_func",
+            file_path=Path("/test.py"),
+            line_number=1,
+            end_line=40,
+            total_lines=40,
+            code_lines=40,
+            is_method=False,
+            class_name=None,
+        )
+        exempt_func = FunctionInfo(
+            name="exempt_func",
+            file_path=Path("/test.py"),
+            line_number=50,
+            end_line=100,
+            total_lines=51,
+            code_lines=50,
+            is_method=False,
+            class_name=None,
+            is_exempt=True,
+        )
+        reporter = FunctionReporter(
+            [violation], limit=30, exempt_functions=[exempt_func]
+        )
+        result = reporter.format_summary_stats()
+
+        assert "EXEMPT (1 function(s) skipped):" in result
+        assert "/test.py:50 - exempt_func()" in result
+
+    def test_json_includes_custom_limit(self):
+        """Test JSON output includes custom limit for violations."""
+        violation = FunctionInfo(
+            name="func",
+            file_path=Path("/test.py"),
+            line_number=1,
+            end_line=50,
+            total_lines=50,
+            code_lines=50,
+            is_method=False,
+            class_name=None,
+            custom_limit=45,
+        )
+        reporter = FunctionReporter([violation], limit=30)
+        result = reporter.format_json()
+
+        data = json.loads(result)
+        assert data["violations"][0]["custom_limit"] == 45
+        assert data["violations"][0]["limit"] == 45  # effective limit
 
 
 # =============================================================================
@@ -498,7 +809,11 @@ class TestFunctionReporterJson:
         result = reporter.format_json()
 
         data = json.loads(result)
-        assert data == []
+        assert data["violations"] == []
+        assert data["exempt_functions"] == []
+        assert data["summary"]["violation_count"] == 0
+        assert data["summary"]["exempt_count"] == 0
+        assert data["summary"]["default_limit"] == 30
 
     def test_json_with_violations(self):
         """Test JSON includes all function details."""
@@ -518,15 +833,16 @@ class TestFunctionReporterJson:
         result = reporter.format_json()
 
         data = json.loads(result)
-        assert len(data) == 1
-        assert data[0]["name"] == "func1"
-        assert data[0]["file"] == "/test.py"
-        assert data[0]["line"] == 10
-        assert data[0]["lines"] == 35
-        assert data[0]["total_lines"] == 41
-        assert data[0]["is_method"] is False
-        assert data[0]["class_name"] is None
-        assert data[0]["limit"] == 30
+        assert len(data["violations"]) == 1
+        assert data["violations"][0]["name"] == "func1"
+        assert data["violations"][0]["file"] == "/test.py"
+        assert data["violations"][0]["line"] == 10
+        assert data["violations"][0]["lines"] == 35
+        assert data["violations"][0]["total_lines"] == 41
+        assert data["violations"][0]["is_method"] is False
+        assert data["violations"][0]["class_name"] is None
+        assert data["violations"][0]["limit"] == 30
+        assert data["summary"]["violation_count"] == 1
 
 
 # =============================================================================
@@ -965,9 +1281,9 @@ class TestCheckFunctionsToolIntegration:
             # Should find one violation - non-strict mode returns warning code
             assert result == EXIT_CODE_WARNING
             data = json.loads(output)
-            assert len(data) == 1
-            assert data[0]["name"] == "large_func"
-            assert data[0]["lines"] > 30
+            assert len(data["violations"]) == 1
+            assert data["violations"][0]["name"] == "large_func"
+            assert data["violations"][0]["lines"] > 30
 
     def test_all_output_formats(self):
         """Test all output formats produce valid output."""

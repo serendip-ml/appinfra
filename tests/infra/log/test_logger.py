@@ -715,7 +715,9 @@ class TestLoggerFindCaller:
         assert isinstance(func, str)
 
     def test_findcaller_with_location_tracking(self):
-        """Test findCaller with location > 0 stores trace in _pending_trace."""
+        """Test findCaller with location > 0 stores trace in instance storage."""
+        import threading
+
         config = LogConfig.from_params("info", location=2)
         logger = Logger("test", config=config)
 
@@ -724,11 +726,14 @@ class TestLoggerFindCaller:
         # Standard types for compatibility
         assert isinstance(pathname, str)
         assert isinstance(lineno, int)
-        # Full trace stored in _pending_trace for _makeRecord to attach
-        assert hasattr(logger, "_pending_trace")
-        pathnames, linenos = logger._pending_trace
+        # Full trace stored in _pending_traces keyed by thread ID
+        tid = threading.get_ident()
+        assert tid in logger._pending_traces
+        pathnames, linenos = logger._pending_traces[tid]
         assert isinstance(pathnames, list)
         assert isinstance(linenos, list)
+        # Clean up for other tests
+        logger._pending_traces.pop(tid, None)
 
 
 # =============================================================================
@@ -801,6 +806,8 @@ class TestIntegrationScenarios:
         logger = Logger("test", config=log_config)
 
         assert logger.level == logging.DEBUG
+        # location and micros are read from holder which is set via factory
+        # Direct Logger creation doesn't set holder, so falls back to config
         assert logger.location == 1
         assert logger.micros is True
 
@@ -853,3 +860,195 @@ class TestEdgeCases:
         config = LogConfig.from_params("info", location=10)
         logger = Logger("test", config=config)
         assert logger.location == 10
+
+
+# =============================================================================
+# Test Level Inheritance (Parent Chain)
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestLevelInheritance:
+    """Test logger level inheritance through parent chain."""
+
+    @pytest.fixture(autouse=True)
+    def cleanup_loggers(self):
+        """Clean up loggers before and after each test."""
+        # Clean up before test
+        for name in list(logging.root.manager.loggerDict.keys()):
+            if name.startswith("/"):
+                del logging.root.manager.loggerDict[name]
+        yield
+        # Clean up after test
+        for name in list(logging.root.manager.loggerDict.keys()):
+            if name.startswith("/"):
+                del logging.root.manager.loggerDict[name]
+
+    def test_child_inherits_parent_level_change(self):
+        """Test child logger respects parent level changes."""
+        from appinfra.log.factory import LoggerFactory
+
+        config = LogConfig.from_params("info")
+        root = LoggerFactory.create_root(config)
+        child = LoggerFactory.create_child(root, "test_child")
+
+        # Initially, DEBUG should be disabled (root is INFO)
+        assert not root.isEnabledFor(logging.DEBUG)
+        assert not child.isEnabledFor(logging.DEBUG)
+
+        # Change root to DEBUG
+        root.setLevel(logging.DEBUG)
+        assert root.isEnabledFor(logging.DEBUG)
+        assert child.isEnabledFor(logging.DEBUG)
+
+        # Change root back to INFO
+        root.setLevel(logging.INFO)
+        assert not root.isEnabledFor(logging.DEBUG)
+        assert not child.isEnabledFor(logging.DEBUG)
+
+    def test_grandchild_inherits_root_level_change(self):
+        """Test grandchild logger respects root level changes."""
+        from appinfra.log.factory import LoggerFactory
+
+        config = LogConfig.from_params("info")
+        root = LoggerFactory.create_root(config)
+        child = LoggerFactory.create_child(root, "test_child2")
+        grandchild = LoggerFactory.create_child(child, "test_grandchild")
+
+        # Initially, DEBUG should be disabled
+        assert not grandchild.isEnabledFor(logging.DEBUG)
+
+        # Change root to DEBUG
+        root.setLevel(logging.DEBUG)
+        assert grandchild.isEnabledFor(logging.DEBUG)
+
+        # Change root back to INFO
+        root.setLevel(logging.INFO)
+        assert not grandchild.isEnabledFor(logging.DEBUG)
+
+    def test_child_level_notset_by_default(self):
+        """Test child logger has NOTSET level by default."""
+        from appinfra.log.factory import LoggerFactory
+
+        config = LogConfig.from_params("info")
+        root = LoggerFactory.create_root(config)
+        child = LoggerFactory.create_child(root, "test_child3")
+
+        # Child should have NOTSET level
+        assert child.level == logging.NOTSET
+
+    def test_parent_reference_set_correctly(self):
+        """Test parent reference is set on child loggers."""
+        import logging
+
+        from appinfra.log.factory import LoggerFactory
+
+        config = LogConfig.from_params("info")
+        root = LoggerFactory.create_root(config)
+        child = LoggerFactory.create_child(root, "test_child4")
+        grandchild = LoggerFactory.create_child(child, "test_grandchild4")
+
+        assert child.parent is root
+        assert grandchild.parent is child
+        # Root logger's parent is logging.root for proper propagation
+        assert root.parent is logging.root
+
+    def test_setlevel_clears_cache(self):
+        """Test that setLevel clears the logger's cache."""
+        from appinfra.log.factory import LoggerFactory
+
+        config = LogConfig.from_params("info")
+        root = LoggerFactory.create_root(config)
+
+        # Populate cache by calling isEnabledFor
+        root.isEnabledFor(logging.DEBUG)
+        assert len(root._cache) > 0
+
+        # setLevel should clear cache
+        root.setLevel(logging.DEBUG)
+        assert len(root._cache) == 0
+
+    def test_deep_nesting_inherits_level(self):
+        """Test level inheritance works with deeply nested loggers."""
+        from appinfra.log.factory import LoggerFactory
+
+        config = LogConfig.from_params("warning")
+        root = LoggerFactory.create_root(config)
+
+        # Create deep hierarchy
+        level1 = LoggerFactory.create_child(root, "l1")
+        level2 = LoggerFactory.create_child(level1, "l2")
+        level3 = LoggerFactory.create_child(level2, "l3")
+        level4 = LoggerFactory.create_child(level3, "l4")
+        level5 = LoggerFactory.create_child(level4, "l5")
+
+        # All should respect WARNING level
+        assert not level5.isEnabledFor(logging.INFO)
+        assert level5.isEnabledFor(logging.WARNING)
+
+        # Change root to DEBUG
+        root.setLevel(logging.DEBUG)
+        assert level5.isEnabledFor(logging.DEBUG)
+
+        # Change root to ERROR
+        root.setLevel(logging.ERROR)
+        assert not level5.isEnabledFor(logging.WARNING)
+        assert level5.isEnabledFor(logging.ERROR)
+
+    def test_multiple_level_changes(self):
+        """Test multiple consecutive level changes are respected."""
+        from appinfra.log.factory import LoggerFactory
+
+        config = LogConfig.from_params("info")
+        root = LoggerFactory.create_root(config)
+        child = LoggerFactory.create_child(root, "test_multi")
+
+        levels = [
+            logging.DEBUG,
+            logging.INFO,
+            logging.WARNING,
+            logging.ERROR,
+            logging.DEBUG,
+        ]
+
+        for level in levels:
+            root.setLevel(level)
+            assert root.level == level
+            assert child.isEnabledFor(level)
+            if level > logging.DEBUG:
+                assert not child.isEnabledFor(logging.DEBUG)
+
+    def test_does_not_interfere_with_plain_python_loggers(self):
+        """Test our isEnabledFor doesn't break plain Python loggers."""
+        from appinfra.log.factory import LoggerFactory
+
+        # Create our logger first (sets logging.setLoggerClass)
+        config = LogConfig.from_params("info")
+        root = LoggerFactory.create_root(config)
+
+        # Create a plain Python logger (will use our Logger class due to setLoggerClass)
+        plain = logging.getLogger("plain.test.logger")
+        plain.setLevel(logging.DEBUG)
+
+        # Should work correctly - plain logger's parent is logging.root
+        # which doesn't have _root_logger, so we don't walk up the chain
+        assert plain.isEnabledFor(logging.DEBUG)
+
+    def test_child_more_restrictive_than_parent(self):
+        """Test child can be more restrictive than parent when explicitly set."""
+        from appinfra.log.factory import LoggerFactory
+
+        config = LogConfig.from_params("debug")
+        root = LoggerFactory.create_root(config)
+        child = LoggerFactory.create_child(root, "restrictive_child")
+
+        # Child starts with NOTSET, inherits DEBUG
+        assert child.isEnabledFor(logging.DEBUG)
+
+        # Explicitly set child to WARNING
+        child.setLevel(logging.WARNING)
+        assert not child.isEnabledFor(logging.INFO)
+        assert child.isEnabledFor(logging.WARNING)
+
+        # But parent is still DEBUG
+        assert root.isEnabledFor(logging.DEBUG)

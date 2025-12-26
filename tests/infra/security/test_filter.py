@@ -4,6 +4,8 @@ import logging
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from appinfra.security.filter import SecretMaskingFilter, add_masking_filter_to_logger
 from appinfra.security.masking import SecretMasker, reset_masker
 
@@ -123,6 +125,27 @@ class TestSecretMaskingFilter:
         )
 
         assert filter_instance.filter(record) is True
+
+    def test_filter_masks_exc_text(self):
+        """Test filter masks secrets in exception text."""
+        masker = SecretMasker()
+        filter_instance = SecretMaskingFilter(masker=masker)
+
+        record = logging.LogRecord(
+            name="test",
+            level=logging.ERROR,
+            pathname="test.py",
+            lineno=1,
+            msg="Error occurred",
+            args=(),
+            exc_info=None,
+        )
+        # Set exc_text manually (normally set by formatter)
+        record.exc_text = "Traceback: password=secret123456789"
+
+        filter_instance.filter(record)
+        assert "[MASKED]" in record.exc_text
+        assert "secret123456789" not in record.exc_text
 
 
 class TestAddMaskingFilterToLogger:

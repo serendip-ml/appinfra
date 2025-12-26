@@ -34,4 +34,4 @@ For API stability guarantees and deprecation policy, see
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[0.1.0]: https://github.com/[USERNAME]/appinfra/releases/tag/v0.1.0
+[0.1.0]: https://github.com/serendip-ml/appinfra/releases/tag/v0.1.0

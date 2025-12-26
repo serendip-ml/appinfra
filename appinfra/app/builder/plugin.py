@@ -251,7 +251,8 @@ class PluginManager:
                 except Exception as e:
                     # Log error but continue with other cleanups
                     logging.error(
-                        f"Plugin '{plugin_name}' cleanup failed", extra={"exception": e}
+                        "plugin cleanup failed",
+                        extra={"plugin": plugin_name, "exception": e},
                     )
 
 

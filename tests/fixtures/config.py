@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from appinfra.app.cfg import Config
+from appinfra.config import Config
 from appinfra.dot_dict import DotDict
 
 

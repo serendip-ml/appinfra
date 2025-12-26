@@ -272,16 +272,16 @@ class TestIntegrationScenarios:
         """Test complete workflow of combining dates."""
         # Individual important dates
         individual_dates = [
-            datetime.date(2025, 12, 15),  # Mid-month
+            datetime.date(2025, 12, 1),  # New Year
             datetime.date(2025, 12, 25),  # Christmas
         ]
 
         # Date ranges
         ranges = [
-            (datetime.date(2025, 12, 1), datetime.date(2025, 12, 7)),  # First week
+            (datetime.date(2025, 12, 1), datetime.date(2025, 12, 7)),  # Week in June
         ]
 
         all_dates = dates_from_lists(individual_dates, ranges, strings=False)
 
-        # Should have 2 individual + 7 range dates = 9 total
-        assert len(all_dates) == 9
+        # Should have 8 unique dates (Dec 1-7 from range + Dec 25, with Dec 1 deduplicated)
+        assert len(all_dates) == 8

@@ -583,7 +583,7 @@ class TestConfigToolIntegration:
 
         assert result is None
         tool._logger.error.assert_called_once()
-        assert "Failed to load config" in str(tool._logger.error.call_args)
+        assert "failed to load config" in str(tool._logger.error.call_args)
 
     def test_format_output_json(self):
         """Test _format_output selects JSON formatter."""

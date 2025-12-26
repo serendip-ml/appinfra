@@ -280,7 +280,8 @@ class TestRunHTTPServerWithCleanup:
         _run_http_server_with_cleanup(mock_logger, mock_handler, "0.0.0.0", 8080)
 
         mock_logger.error.assert_any_call(
-            "Error during server shutdown: shutdown error"
+            "error during server shutdown",
+            extra={"exception": mock_server.shutdown.side_effect},
         )
 
 
@@ -735,7 +736,8 @@ class TestEdgeCases:
         mock_server.shutdown.assert_called_once()
         # Error should be logged
         mock_logger.error.assert_any_call(
-            "Error during server shutdown: shutdown error"
+            "error during server shutdown",
+            extra={"exception": mock_server.shutdown.side_effect},
         )
 
     def test_server_attributes_are_private(self, mock_logger, mock_handler):

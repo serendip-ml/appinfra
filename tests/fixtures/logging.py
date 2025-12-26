@@ -13,6 +13,34 @@ import pytest
 from appinfra.log import LogConfig, Logger
 
 
+@pytest.fixture(autouse=True)
+def reset_logging_state() -> Generator[None, None, None]:
+    """
+    Reset Python logging global state before and after each test.
+
+    This prevents test pollution from loggers created by previous tests.
+    Resets: loggerDict, root handlers, root level, and logger class.
+    """
+    # Store original state
+    original_class = logging.getLoggerClass()
+    original_handlers = logging.root.handlers[:]
+    original_level = logging.root.level
+
+    yield
+
+    # Reset logger class
+    logging.setLoggerClass(original_class)
+
+    # Clear all custom loggers from loggerDict
+    for name in list(logging.root.manager.loggerDict.keys()):
+        if name.startswith("/") or name.startswith("test"):
+            del logging.root.manager.loggerDict[name]
+
+    # Restore root logger state
+    logging.root.handlers = original_handlers
+    logging.root.setLevel(original_level)
+
+
 @pytest.fixture
 def capture_logs() -> Generator[StringIO, None, None]:
     """

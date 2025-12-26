@@ -19,6 +19,7 @@ from appinfra.app.builder.hook import (
     HookBuilder,
     HookContext,
     HookManager,
+    create_hook_builder,
     create_logging_hooks,
     create_validation_hooks,
 )
@@ -564,6 +565,14 @@ class TestFactoryFunctions:
         assert isinstance(builder, HookBuilder)
         assert "startup" in builder._hooks
         assert "shutdown" in builder._hooks
+
+    def test_create_hook_builder(self):
+        """Test create_hook_builder factory function."""
+        builder = create_hook_builder()
+
+        assert isinstance(builder, HookBuilder)
+        # Should be a fresh builder with no hooks registered
+        assert len(builder._hooks) == 0
 
 
 # =============================================================================

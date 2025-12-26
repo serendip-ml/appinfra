@@ -109,16 +109,6 @@ class LoggingBuilderInterface(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def with_separator(self) -> "LoggingBuilderInterface":
-        """
-        Use LoggerWithSeparator instead of Logger.
-
-        Returns:
-            Self for method chaining
-        """
-        pass  # pragma: no cover
-
-    @abstractmethod
     def with_extra(self, **kwargs: Any) -> "LoggingBuilderInterface":
         """
         Add extra fields to pre-populate in log records.

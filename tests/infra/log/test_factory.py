@@ -6,8 +6,7 @@ Tests key functionality including:
 - Logger already exists branch
 - create_child method
 - derive method
-- create_with_separator method
-- create_root_with_separator method
+- Hot-reload of location via holder
 """
 
 import collections
@@ -16,8 +15,8 @@ import logging
 import pytest
 
 from appinfra.log.config import LogConfig
+from appinfra.log.config_holder import LogConfigHolder
 from appinfra.log.factory import LoggerFactory
-from appinfra.log.logger_with_sep import LoggerWithSeparator
 
 # =============================================================================
 # Fixtures
@@ -68,16 +67,6 @@ class TestCreateRoot:
         logger = LoggerFactory.create_root(log_config)
 
         assert logger is not None
-        assert logger.name == "/"
-
-        # Cleanup
-        logger.handlers.clear()
-
-    def test_create_root_with_custom_logger_class(self, log_config):
-        """Test create_root with custom logger class."""
-        logger = LoggerFactory.create_root(log_config, LoggerWithSeparator)
-
-        assert isinstance(logger, LoggerWithSeparator)
         assert logger.name == "/"
 
         # Cleanup
@@ -222,50 +211,6 @@ class TestDerive:
 
 
 # =============================================================================
-# Test create_with_separator - Line 169
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestCreateWithSeparator:
-    """Test create_with_separator method."""
-
-    def test_create_with_separator_basic(self, log_config, unique_logger_name):
-        """Test create_with_separator creates LoggerWithSeparator (line 169)."""
-        logger = LoggerFactory.create_with_separator(
-            f"{unique_logger_name}_sep", log_config
-        )
-
-        assert isinstance(logger, LoggerWithSeparator)
-
-        # Cleanup
-        logger.handlers.clear()
-
-
-# =============================================================================
-# Test create_root_with_separator - Line 182
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestCreateRootWithSeparator:
-    """Test create_root_with_separator method."""
-
-    def test_create_root_with_separator(self, log_config):
-        """Test create_root_with_separator (line 182)."""
-        # Use a different approach - just verify it creates the right type
-        # Since "/" may already exist
-        logger = LoggerFactory.create_root_with_separator(log_config)
-
-        # Should be LoggerWithSeparator or compatible
-        assert logger is not None
-        assert logger.name == "/"
-
-        # Cleanup
-        logger.handlers.clear()
-
-
-# =============================================================================
 # Test Integration Scenarios
 # =============================================================================
 
@@ -320,3 +265,114 @@ class TestFactoryIntegration:
 
         # Cleanup
         logger.handlers.clear()
+
+
+# =============================================================================
+# Test Hot-Reload of Location via Holder
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestLoggerHolderHotReload:
+    """Test that logger location is hot-reloadable via registry.
+
+    Note: location and micros are global settings read from the registry's
+    default config. This enables hot-reload - all loggers read from the
+    same source.
+    """
+
+    def test_logger_has_holder_set(self, unique_logger_name):
+        """Test that created loggers have holder set."""
+        config = LogConfig(level=logging.DEBUG, location=2, micros=False, colors=False)
+        logger = LoggerFactory.create(unique_logger_name, config)
+
+        assert logger._holder is not None
+        assert isinstance(logger._holder, LogConfigHolder)
+
+        # Cleanup
+        logger.handlers.clear()
+
+    def test_logger_location_reads_from_holder(self, unique_logger_name):
+        """Test location property reads from holder."""
+        config = LogConfig(level=logging.DEBUG, location=3, micros=False, colors=False)
+        logger = LoggerFactory.create(unique_logger_name, config)
+
+        # Logger reads location from holder
+        assert logger.location == logger._holder.location
+        assert logger.location == 3
+
+        # Cleanup
+        logger.handlers.clear()
+
+    def test_logger_location_updates_on_holder_update(self, unique_logger_name):
+        """Test location property updates when holder is updated."""
+        config = LogConfig(level=logging.DEBUG, location=2, micros=False, colors=False)
+        logger = LoggerFactory.create(unique_logger_name, config)
+
+        # Initial location from holder
+        assert logger.location == 2
+
+        # Update the holder with new config
+        new_config = LogConfig(
+            level=logging.DEBUG, location=5, micros=False, colors=False
+        )
+        logger._holder.update(new_config)
+
+        # Logger location should now reflect the new value
+        assert logger.location == 5
+
+        # Cleanup
+        logger.handlers.clear()
+
+    def test_child_logger_shares_holder_with_root(self, unique_logger_name):
+        """Test child loggers share holder with root for consistent hot-reload."""
+        config = LogConfig(level=logging.DEBUG, location=2, micros=False, colors=False)
+        parent = LoggerFactory.create(unique_logger_name, config)
+        child = LoggerFactory.create_child(parent, "child")
+
+        # Both should have the same holder
+        assert child._holder is parent._holder
+
+        # Cleanup
+        parent.handlers.clear()
+        child.handlers.clear()
+
+    def test_derived_logger_shares_holder_with_root(self, unique_logger_name):
+        """Test derived loggers share holder with root for consistent hot-reload."""
+        config = LogConfig(level=logging.DEBUG, location=2, micros=False, colors=False)
+        parent = LoggerFactory.create(unique_logger_name, config)
+        derived = LoggerFactory.derive(parent, ["service", "component"])
+
+        # Both should have the same holder
+        assert derived._holder is parent._holder
+
+        # Cleanup
+        parent.handlers.clear()
+        derived.handlers.clear()
+
+    def test_holder_update_affects_all_loggers_in_hierarchy(self, unique_logger_name):
+        """Test holder update affects parent and all derived loggers."""
+        config = LogConfig(level=logging.DEBUG, location=1, micros=False, colors=False)
+        parent = LoggerFactory.create(unique_logger_name, config)
+        child = LoggerFactory.create_child(parent, "child")
+        derived = LoggerFactory.derive(parent, ["service", "component"])
+
+        # All read location from shared holder
+        assert parent.location == 1
+        assert child.location == 1
+        assert derived.location == 1
+
+        # Update holder (shared by all)
+        new_config = LogConfig(
+            level=logging.DEBUG, location=4, micros=False, colors=False
+        )
+        parent._holder.update(new_config)
+
+        # All should now show location=4 (they share the same holder)
+        assert parent.location == 4
+        assert child.location == 4
+        assert derived.location == 4
+
+        # Cleanup
+        for lg in [parent, child, derived]:
+            lg.handlers.clear()

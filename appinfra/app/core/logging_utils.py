@@ -73,7 +73,8 @@ def _extract_config_value(
     Returns:
         Config value following precedence rules
     """
-    if args_dict and arg_key in args_dict:
+    # Only use args_dict value if explicitly provided (not None)
+    if args_dict and args_dict.get(arg_key) is not None:
         return args_dict[arg_key]
     if hasattr(infra_config, "logging"):
         return getattr(infra_config.logging, config_key, default)
@@ -140,6 +141,7 @@ def _create_logger_without_default_handlers(
     log_config = LogConfig.from_params(**log_config_params)
 
     # Create logger and remove default handler
+    # The factory sets up the holder on the logger for hot-reload support
     logger = LoggerFactory.create_root(log_config)
     if logger.handlers:
         logger.handlers.clear()
@@ -154,7 +156,7 @@ def _add_handlers_to_logger(
     handler_count = 0
     for handler_config in registry.iter_enabled_handlers():
         try:
-            actual_handler = handler_config.create_handler(log_config)
+            actual_handler = handler_config.create_handler(log_config, logger=logger)
             logger.addHandler(actual_handler)
             handler_count += 1
         except Exception as e:
@@ -198,7 +200,7 @@ def _add_default_console_handler(
     # Add to registry and logger
     registry.add_handler_from_config(default_config, global_level)
     default_handler_config = list(registry.iter_enabled_handlers())[-1]
-    actual_handler = default_handler_config.create_handler(log_config)
+    actual_handler = default_handler_config.create_handler(log_config, logger=logger)
     logger.addHandler(actual_handler)
     logger.trace("added default console handler using global config values")  # type: ignore[attr-defined]
 

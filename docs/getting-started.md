@@ -31,6 +31,9 @@ make install INFRA_DEV_INSTALL_EXTRAS=dev          # All dev dependencies
 # For development (editable mode - changes reflect without reinstall)
 make install.e
 make install.e INFRA_DEV_INSTALL_EXTRAS=ui,dev     # Editable with extras
+
+# Uninstall
+make uninstall
 ```
 
 **Available extras:** `dev`, `validation`, `docs`, `fastapi`, `hotreload`, `ui`
@@ -104,10 +107,10 @@ Load configuration from YAML files with environment variable overrides.
 **Load configuration:**
 
 ```python
-from appinfra.cfg import Config
+from appinfra.cfg import Config, get_config_file_path
 
-# Load from YAML file
-config = Config("etc/infra.yaml")
+# Recommended: Use get_config_file_path() for automatic etc/ resolution
+config = Config(get_config_file_path())  # Finds etc/infra.yaml automatically
 
 # Access with dot notation
 print(config.logging.level)
@@ -126,7 +129,7 @@ export INFRA_DATABASE_PORT=5433
 ```
 
 ```python
-config = Config("etc/infra.yaml")
+config = Config(get_config_file_path())
 print(config.logging.level)  # Returns "debug" from environment
 ```
 
@@ -220,10 +223,11 @@ Connect to PostgreSQL with connection pooling and query logging.
 
 ```python
 from appinfra.db import PG
+from appinfra.cfg import get_config_file_path
 import sqlalchemy
 
-# Initialize database connection
-pg = PG("etc/infra.yaml", "production")
+# Initialize database connection (uses automatic etc/ resolution)
+pg = PG(get_config_file_path(), "production")
 
 # Use with context manager
 with pg.session() as session:
@@ -351,6 +355,25 @@ eval "$(appinfra completion bash)"
 
 # Zsh - add to ~/.zshrc
 eval "$(appinfra completion zsh)"
+```
+
+### Version Information
+
+```bash
+# Show version with commit hash
+appinfra version
+# Output: appinfra 0.1.0 (abc123f)
+
+# Extract specific fields (for scripting)
+appinfra version semver    # 0.1.0
+appinfra version commit    # abc123f
+appinfra version full      # abc123def456789...
+appinfra version modified  # true/false/unknown
+appinfra version time      # 2025-12-01T10:30:00Z
+appinfra version message   # commit message
+
+# JSON output (all fields)
+appinfra version --json
 ```
 
 ## Custom Python Environments

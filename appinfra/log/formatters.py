@@ -73,12 +73,19 @@ def _format_value(formatter: Any, value: Any, col: str, bold: str, name: str) ->
 def _cache_result(
     formatter: Any, cache_key: tuple[Any, str, str, str, bool] | None, result: str
 ) -> None:
-    """Cache result if cacheable and cache not full."""
-    if (
-        cache_key is not None
-        and len(formatter._format_cache) < formatter._max_cache_size
-    ):
-        formatter._format_cache[cache_key] = result
+    """Cache result with LRU eviction when cache is full."""
+    if cache_key is None:
+        return
+
+    cache = formatter._format_cache
+    if cache_key in cache:
+        # Move existing key to end (most recently used)
+        cache.move_to_end(cache_key)
+    else:
+        # Evict oldest entry if cache is full
+        if len(cache) >= formatter._max_cache_size:
+            cache.popitem(last=False)  # Remove oldest (first) item
+        cache[cache_key] = result
 
 
 # Helper functions for LogFormatter._format_with_colors()
@@ -251,9 +258,12 @@ class FieldFormatter:
             self._holder = config
         else:
             self._holder = LogConfigHolder(config)
-        # Performance optimization: cache formatted strings for repeated values
-        self._format_cache: dict[Any, str] = {}
-        self._max_cache_size = 1000  # Prevent unbounded cache growth
+        # LRU cache: OrderedDict maintains insertion order for eviction
+        # Most recently used items are moved to end, oldest are at front
+        self._format_cache: collections.OrderedDict[Any, str] = (
+            collections.OrderedDict()
+        )
+        self._max_cache_size = 1000  # LRU eviction threshold
 
     @property
     def _config(self) -> LogConfig:
@@ -279,6 +289,8 @@ class FieldFormatter:
         # Check cache for simple, frequently repeated values
         cache_key = _get_cache_key(value, col, bold, name, quote)
         if cache_key and cache_key in self._format_cache:
+            # Move to end to mark as recently used (LRU)
+            self._format_cache.move_to_end(cache_key)
             return self._format_cache[cache_key]
 
         # Format the field
@@ -340,14 +352,20 @@ class FieldFormatter:
 
 
 class LocationRenderer:
-    """Handles file location display in log messages."""
+    """Handles file location display in log messages.
+
+    Global display settings (location, location_color) are read from the
+    holder's config to support hot-reload. The holder is shared with the
+    root logger, so updates to the root's config are immediately visible.
+    """
 
     def __init__(self, config: ConfigLike):
         """
         Initialize location renderer.
 
         Args:
-            config: Formatter configuration (LogConfig or LogConfigHolder)
+            config: Formatter configuration (LogConfig or LogConfigHolder).
+                    Should be the root logger's holder for hot-reload to work.
         """
         if isinstance(config, LogConfigHolder):
             self._holder = config
@@ -355,15 +373,15 @@ class LocationRenderer:
             self._holder = LogConfigHolder(config)
 
     @property
-    def _config(self) -> LogConfig:
-        """Get current config (supports hot-reload via holder)."""
-        return self._holder.config
+    def _location(self) -> int:
+        """Get location depth from holder (supports hot-reload)."""
+        return self._holder.location
 
     @property
     def _location_color(self) -> str:
-        """Get location color (property for backward compatibility and testing)."""
-        location_color = self._config.location_color
-        return location_color if location_color is not None else ColorManager.BLACK
+        """Get location color from holder (supports hot-reload)."""
+        color = self._holder.location_color
+        return color if color is not None else ColorManager.create_gray_level(6)
 
     def render_location(self, record: logging.LogRecord) -> str:
         """
@@ -375,7 +393,7 @@ class LocationRenderer:
         Returns:
             Formatted location string
         """
-        if not self._config.location:
+        if not self._location:
             return ""
 
         fmt = ""
@@ -434,8 +452,11 @@ class LogFormatter(logging.Formatter):
         self._field_formatter = FieldFormatter(self._holder)
         self._location_renderer = LocationRenderer(self._holder)
 
-        fmt = LogConstants.DEFAULT_FORMAT
-        self._pre_formatter = PreFormatter(fmt, self._config.micros)
+        # Cache PreFormatter and track micros setting to detect config changes
+        self._cached_micros = self._config.micros
+        self._pre_formatter = PreFormatter(
+            LogConstants.DEFAULT_FORMAT, self._cached_micros
+        )
 
     @property
     def _config(self) -> LogConfig:
@@ -454,7 +475,19 @@ class LogFormatter(logging.Formatter):
         """
         width = self._calculate_width(record)
         fmt = self._format_with_colors(record, width)
-        return PreFormatter(fmt, self._config.micros).format(record)
+
+        # Check if micros config changed (hot-reload support)
+        current_micros = self._config.micros
+        if current_micros != self._cached_micros:
+            self._cached_micros = current_micros
+            self._pre_formatter = PreFormatter(
+                LogConstants.DEFAULT_FORMAT, current_micros
+            )
+
+        # Update the format string and use cached PreFormatter
+        self._pre_formatter._fmt = fmt
+        self._pre_formatter._style._fmt = fmt
+        return self._pre_formatter.format(record)
 
     def _calculate_width(self, record: logging.LogRecord) -> int:
         """Calculate display width without full formatting.

@@ -54,10 +54,14 @@ hotreload = [
 ui = [
     "rich>=13.0.0,<14.0.0",
     "questionary>=2.0.0,<3.0.0",
+    "InquirerPy>=0.3.0,<1.0.0",
 ]
 
 [project.scripts]
 appinfra = "appinfra.cli.cli:main"
+
+[project.entry-points."setuptools.finalize_distribution_options"]
+appinfra_build_info = "appinfra.version.setuptools_hook:finalize_hook"
 
 [tool.ruff]
 line-length = 88
@@ -143,6 +147,7 @@ source = ["appinfra"]
 omit = ["*/test/*", "*/tests/*", "*_test.py"]
 
 [tool.coverage.report]
+precision = 2
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
@@ -156,6 +161,9 @@ directory = ".htmlcov"
 
 [tool.coverage.json]
 output = ".coverage.json"
+
+[tool.coverage.annotate]
+directory = ".build/coverage-annotate"
 
 [tool.setuptools.packages.find]
 where = ["."]

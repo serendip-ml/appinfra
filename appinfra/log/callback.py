@@ -101,7 +101,9 @@ class CallbackRegistry:
             except Exception as e:
                 # Don't let callback errors break logging
                 # Use logging instead of print for better error handling
-                logging.getLogger(__name__).warning(f"Callback error: {e}")
+                logging.getLogger(__name__).warning(
+                    "callback error", extra={"exception": e}
+                )
 
     def inherit_to(self, other: CallbackRegistry) -> None:
         """

@@ -1,6 +1,6 @@
 # Utilities
 
-Core utilities including DotDict, Config, rate limiting, EWMA, and YAML support.
+Core utilities including DotDict, Config, rate limiting, EWMA, size formatting, and YAML support.
 
 ## Config
 
@@ -21,9 +21,9 @@ class Config(DotDict):
 **Usage:**
 
 ```python
-from appinfra.app.cfg import Config
+from appinfra.config import Config, get_config_file_path
 
-config = Config("etc/infra.yaml")
+config = Config(get_config_file_path())  # Automatic etc/ resolution
 
 # Access with dot notation
 print(config.logging.level)
@@ -41,7 +41,7 @@ export INFRA_DATABASE_PORT=5433
 ```
 
 ```python
-config = Config("etc/infra.yaml")
+config = Config(get_config_file_path())
 print(config.logging.level)  # "debug" (from env)
 ```
 
@@ -170,6 +170,53 @@ EWMA uses the formula: `avg = (new * decay) + (avg * (1 - decay))` where `decay 
 The first sample sets the initial value directly. Subsequent samples blend with exponential
 weighting, giving more weight to recent values.
 
+## Size Formatting
+
+Format byte sizes as human-readable strings.
+
+```python
+from appinfra.size import size_str, size_to_bytes
+
+# Format bytes to string
+size_str(1024)           # "1KB"
+size_str(1536)           # "1.5KB"
+size_str(1048576)        # "1MB"
+size_str(500)            # "500B"
+
+# Precise mode (3 decimal places)
+size_str(1536, precise=True)   # "1.500KB"
+
+# SI units (1000-based instead of 1024)
+size_str(1500, binary=False)   # "1.5KB"
+
+# Parse size string back to bytes
+size_to_bytes("1.5MB")   # 1572864
+size_to_bytes("500B")    # 500
+size_to_bytes("1GiB")    # 1073741824 (IEC suffixes supported)
+```
+
+**Options:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `precise` | `False` | Show 3 decimal places |
+| `binary`  | `True`  | Use 1024-based (binary) vs 1000-based (SI) |
+
+**Validation:**
+
+```python
+from appinfra.size import validate_size, InvalidSizeError
+
+validate_size(1024)    # True
+validate_size(-1)      # False
+validate_size("1KB")   # False (not a number)
+
+try:
+    size_str(-1)
+except InvalidSizeError as e:
+    print(f"Invalid: {e}")
+```
+
 ## YAML Utilities
 
 YAML loading with custom tag support.
@@ -229,7 +276,9 @@ logging:
 ```
 
 ```python
-config = Config("etc/config.yaml", resolve_paths=True)
+from appinfra.config import Config, get_config_file_path
+
+config = Config(get_config_file_path("config.yaml"), resolve_paths=True)
 print(config.logging.file)  # Absolute path
 ```
 

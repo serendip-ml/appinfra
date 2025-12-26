@@ -90,6 +90,8 @@ class ProgressLogger:
         total: int | None = None,
         spinner: str = "dots",
         justify: str = "left",
+        expand: bool = False,
+        bar_style: str = "bar.complete",
     ):
         """
         Initialize the progress logger.
@@ -102,12 +104,18 @@ class ProgressLogger:
             justify: Progress bar justification ("left" or "right"). Use "right"
                      to anchor progress bar to right edge, preventing jumping
                      when message text has variable length.
+            expand: When True, progress bar fills terminal width (omits text column).
+                    Useful when message is empty and you want full-width display.
+            bar_style: Style for completed portion of bar (e.g., "green", "blue",
+                       "bar.complete"). Default is Rich's "bar.complete" (Monokai pink).
         """
         self._logger = logger
         self._message = message
         self._total = total
         self._spinner = spinner
         self._justify = justify
+        self._expand = expand
+        self._bar_style = bar_style
         self._completed = 0
 
         # Determine if we should show visual elements
@@ -134,34 +142,33 @@ class ProgressLogger:
 
     def _create_progress_bar(self) -> RichProgress:
         """Create a Rich Progress bar with appropriate justification."""
+        # Right-justify: TextColumn with ratio=1 pushes bar to right edge
         if self._justify == "right":
-            # TextColumn with ratio=1 expands to fill space, pushing bar to right
-            text_column = TextColumn(
+            text_col = TextColumn(
                 "[progress.description]{task.description}",
                 table_column=Column(ratio=1),
             )
-            return RichProgress(
-                SpinnerColumn(),
-                text_column,
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeElapsedColumn(),
-                TimeRemainingColumn(),
-                console=self._console,
-                transient=True,
-                expand=True,
-            )
+            bar_col, expand = BarColumn(complete_style=self._bar_style), True
         else:
-            return RichProgress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeElapsedColumn(),
-                TimeRemainingColumn(),
-                console=self._console,
-                transient=True,
+            text_col = TextColumn("[progress.description]{task.description}")
+            # bar_width=None allows bar to expand when expand=True
+            bar_col = BarColumn(
+                bar_width=None if self._expand else 40,
+                complete_style=self._bar_style,
             )
+            expand = self._expand
+
+        return RichProgress(
+            SpinnerColumn(),
+            text_col,
+            bar_col,
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=self._console,
+            transient=True,
+            expand=expand,
+        )
 
     def _start_display(self) -> None:
         """Start the appropriate display mode."""

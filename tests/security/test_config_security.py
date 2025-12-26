@@ -5,8 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from appinfra.app.cfg import Config
-from appinfra.app.constants import MAX_CONFIG_SIZE_BYTES
+from appinfra.config import MAX_CONFIG_SIZE_BYTES, Config
 from tests.security.payloads.injection import ENV_VAR_INJECTION
 from tests.security.payloads.resource_exhaustion import generate_large_config
 from tests.security.payloads.traversal import (

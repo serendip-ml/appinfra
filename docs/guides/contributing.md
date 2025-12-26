@@ -49,7 +49,7 @@ The framework includes a function size checker under the `cq` (code-quality) com
 appinfra cq cf
 
 # Custom threshold
-appinfra cq cf --threshold=50
+appinfra cq cf --limit=50
 
 # Check specific paths
 appinfra cq cf appinfra/db appinfra/log
@@ -68,6 +68,37 @@ appinfra cq cf --include-tests
 # List available code-quality subcommands
 appinfra cq --help
 ```
+
+#### Function Line Limit Exceptions
+
+Some functions legitimately need more lines than the default 30-line limit (e.g., large parameter
+signatures, constructor calls with many field mappings). Use comment directives to exempt specific
+functions:
+
+```python
+# Allow up to 40 lines for this function
+def from_config(cls, path: str) -> Config:  # cq: max-lines=40
+    ...
+
+# Allow up to 50 lines for async generators with many params
+async def generate_stream(self, prompt: str, ...):  # cq: max-lines=50
+    ...
+
+# Completely exempt from line limit checking
+def legacy_parser():  # cq: exempt
+    ...
+```
+
+**Directive syntax:**
+- `# cq: max-lines=N` - Allow function up to N lines (still enforced, just higher limit)
+- `# cq: exempt` - Skip line checking entirely for this function
+
+**Properties:**
+- Zero runtime impact (just a comment)
+- Works with all function types: `def`, `async def`, methods, classmethods, staticmethods
+- Case-insensitive (`# CQ: MAX-LINES=40` works)
+- Exempt functions are reported separately in output (e.g., "2 functions exempt from line limit")
+- Grep-able for auditing: `grep "# cq:" **/*.py`
 
 **Future extensions**: Additional checks can be added as subcommands:
 - `cq check-complexity` - Cyclomatic complexity analysis

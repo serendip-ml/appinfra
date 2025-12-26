@@ -29,6 +29,5 @@ class ScriptsPathTool(Tool):
         Returns:
             Exit code (0 for success).
         """
-        scripts_dir = files("appinfra") / "scripts"
-        print(scripts_dir)
+        print(files("appinfra") / "scripts")
         return 0

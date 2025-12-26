@@ -8,9 +8,9 @@ objects with a fluent API.
 from dataclasses import dataclass, field
 from typing import Any
 
+from appinfra.config import Config
 from appinfra.dot_dict import DotDict
 
-from ..cfg import Config
 from ..core.config import create_config
 
 

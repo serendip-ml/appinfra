@@ -16,6 +16,7 @@
 #   include $(infra)/scripts/make/Makefile.help
 #   include $(infra)/scripts/make/Makefile.utils
 #   include $(infra)/scripts/make/Makefile.dev
+#   include $(infra)/scripts/make/Makefile.install  # Optional: only if building a package
 #   include $(infra)/scripts/make/Makefile.pytest
 #   # Skip: Makefile.docs, Makefile.pg, Makefile.cicd if not needed
 #   include $(infra)/scripts/make/Makefile.clean
@@ -31,6 +32,7 @@ include $(_infra_make_dir)Makefile.env
 include $(_infra_make_dir)Makefile.help
 include $(_infra_make_dir)Makefile.utils
 include $(_infra_make_dir)Makefile.dev
+include $(_infra_make_dir)Makefile.install
 include $(_infra_make_dir)Makefile.pytest
 include $(_infra_make_dir)Makefile.docs
 include $(_infra_make_dir)Makefile.pg

@@ -13,24 +13,22 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from appinfra.config import Config
 from appinfra.dot_dict import DotDict
 
-from ..cfg import Config
 from ..core.app import App
 from ..decorators import DecoratorAPI
 from ..server.handlers import Middleware
 from ..tools.base import Tool, ToolConfig
 from ..tracing.traceable import Traceable
-from .config import ConfigBuilder, LoggingConfigBuilder, ServerConfigBuilder
 from .configurer.advanced import AdvancedConfigurer
 from .configurer.logging import LoggingConfigurer
 from .configurer.server import ServerConfigurer
 from .configurer.tool import ToolConfigurer
-from .hook import HookBuilder, HookManager
-from .middleware import MiddlewareBuilder
+from .configurer.version import VersionConfigurer
+from .hook import HookManager
 from .plugin import PluginManager
-from .tool import ToolBuilder
-from .validation import ValidationBuilder, ValidationRule
+from .validation import ValidationRule
 
 # Helper functions for AppBuilder.build()
 
@@ -180,7 +178,13 @@ def _register_lifecycle_managers(app: App, hooks: Any, plugins: Any) -> None:
 
 def _initialize_foundation(app: App, builder: "AppBuilder") -> None:
     """Initialize app foundation: flags and metadata."""
-    app._auto_load_config = builder._auto_load_config  # type: ignore[attr-defined]
+    app._config_path = builder._config_path  # type: ignore[attr-defined, assignment]
+    app._config_from_etc_dir = builder._config_from_etc_dir  # type: ignore[attr-defined]
+    # Copy etc_dir and config_file for hot-reload support (set for absolute paths)
+    if hasattr(builder, "_etc_dir"):
+        app._etc_dir = builder._etc_dir  # type: ignore[attr-defined]
+    if hasattr(builder, "_config_file"):
+        app._config_file = builder._config_file  # type: ignore[attr-defined]
     app._standard_args = builder._standard_args.copy()
     _set_app_metadata(app, builder._name, builder._description, builder._version)
 
@@ -188,6 +192,8 @@ def _initialize_foundation(app: App, builder: "AppBuilder") -> None:
 def _register_components(app: App, builder: "AppBuilder") -> None:
     """Register all app components: tools, plugins, lifecycle."""
     _register_tools_and_commands(app, builder._tools, builder._commands)
+    if builder._main_tool:
+        app.set_main_tool(builder._main_tool)
     builder._plugins.configure_all(builder)
     _register_lifecycle_managers(app, builder._hooks, builder._plugins)
     _configure_arguments_and_validation(
@@ -278,20 +284,6 @@ class LoggingConfig:
     location_color: str | None = None
 
 
-@dataclass
-class HotReloadConfig:
-    """Configuration for hot-reload of logging settings.
-
-    When enabled, changes to the config file are automatically detected
-    and applied to all existing loggers without restart.
-    """
-
-    enabled: bool = False
-    config_path: str | None = None
-    section: str = "logging"
-    debounce_ms: int = 500
-
-
 class AppBuilder:
     """
     Fluent builder for constructing CLI applications.
@@ -315,9 +307,9 @@ class AppBuilder:
         self._name: str | None = name
         self._config: Config | DotDict | None = None
         self._config_path: str | None = None  # Track config file path for hot-reload
+        self._config_from_etc_dir: bool = False  # Whether to resolve from --etc-dir
         self._server_config: ServerConfig | None = None
         self._logging_config: LoggingConfig | None = None
-        self._hot_reload_config: HotReloadConfig | None = None
         self._tools: list[Tool] = []
         self._commands: list[Command] = []
         self._middleware: list[Middleware] = []
@@ -328,9 +320,12 @@ class AppBuilder:
         self._description: str | None = None
         self._version: str | None = None
         self._main_cls: type | None = None
-        self._auto_load_config: bool = True  # Auto-load from --etc-dir by default
         self._standard_args: dict[str, bool] = self._DEFAULT_STANDARD_ARGS.copy()
         self._decorators: DecoratorAPI = DecoratorAPI(self)
+        self._main_tool: str | None = None
+        # Version tracking
+        self._version_tracker: Any | None = None
+        self._build_info: Any | None = None
 
     def with_name(self, name: str) -> "AppBuilder":
         """Set the application name."""
@@ -347,28 +342,68 @@ class AppBuilder:
         self._version = version
         return self
 
-    def config(self, path: str) -> "AppBuilder":
+    def with_config_file(
+        self, path: str | None = None, from_etc_dir: bool = True
+    ) -> "AppBuilder":
         """
         Load configuration from a YAML file.
 
-        This method loads configuration and tracks the file path for hot-reload support.
+        By default, relative paths are resolved from --etc-dir at runtime.
+        Absolute paths are always loaded immediately.
 
         Args:
-            path: Path to configuration YAML file
+            path: Path to configuration YAML file. If None, uses the default
+                  config filename (infra.yaml or INFRA_DEFAULT_CONFIG_FILE env var).
+            from_etc_dir: If True (default), resolve relative paths from --etc-dir.
+                          If False, resolve relative paths from current working directory.
+                          Absolute paths ignore this parameter.
 
         Returns:
             Self for method chaining
 
         Example:
+            # Load default config (infra.yaml) from --etc-dir
+            app = AppBuilder("myapp").with_config_file().build()
+
+            # Load specific file from --etc-dir
             app = (AppBuilder("myapp")
-                .config("etc/app.yaml")
-                .logging
-                    .with_hot_reload(True)  # Can now use default path
-                    .done()
+                .with_config_file("app.yaml")
+                .build())
+
+            # Load absolute path
+            app = (AppBuilder("myapp")
+                .with_config_file("/etc/myapp/config.yaml")
+                .build())
+
+            # Load relative to cwd
+            app = (AppBuilder("myapp")
+                .with_config_file("./local.yaml", from_etc_dir=False)
                 .build())
         """
-        self._config = Config(path)
-        self._config_path = path
+        import os
+        from pathlib import Path
+
+        from appinfra.config import DEFAULT_CONFIG_FILENAME
+
+        if path is None:
+            path = DEFAULT_CONFIG_FILENAME
+
+        is_absolute = os.path.isabs(path)
+
+        if is_absolute or not from_etc_dir:
+            # Load immediately
+            self._config = Config(path)
+            self._config_path = path
+            self._config_from_etc_dir = False
+            # Set etc_dir and config_file for hot-reload support
+            path_obj = Path(path).resolve()
+            self._etc_dir = str(path_obj.parent)
+            self._config_file = path_obj.name
+        else:
+            # Defer loading - will be resolved from --etc-dir at runtime
+            self._config_path = path
+            self._config_from_etc_dir = True
+
         return self
 
     def with_config(self, config: Config | DotDict) -> "AppBuilder":
@@ -379,34 +414,32 @@ class AppBuilder:
             self._config_path = config._config_path
         return self
 
-    def with_config_builder(self, builder: ConfigBuilder) -> "AppBuilder":
-        """Set configuration using a config builder."""
-        self._config = builder.build()
-        return self
-
     def with_main_cls(self, cls: type) -> "AppBuilder":
         """Set the main application class."""
         self._main_cls = cls
         return self
 
-    def without_auto_config(self) -> "AppBuilder":
+    def with_main_tool(self, tool: str | Tool) -> "AppBuilder":
         """
-        Disable automatic configuration loading from --etc-dir.
+        Set the main tool that runs when no subcommand is specified.
 
-        By default, the application framework will automatically attempt to load
-        configuration from the directory specified by --etc-dir (or auto-detected
-        etc directory) during App.setup(). Use this method to disable this behavior
-        if you want full manual control over configuration loading.
+        Args:
+            tool: Tool name (str) or Tool instance
 
         Returns:
             AppBuilder: Self for method chaining
 
         Example:
-            app = (AppBuilder("myapp")
-                .without_auto_config()  # Disable automatic config loading
-                .build())
+            @builder.tool(name="run")
+            def run_proxy(self):
+                ...
+
+            builder.with_main_tool("run")
+
+            # Or with tool object:
+            builder.with_main_tool(my_tool)
         """
-        self._auto_load_config = False
+        self._main_tool = tool.name if isinstance(tool, Tool) else tool
         return self
 
     def _validate_standard_arg_name(self, name: str) -> None:
@@ -579,36 +612,8 @@ class AppBuilder:
 
         return self._config
 
-    def create_config_builder(self) -> ConfigBuilder:
-        """Create a new configuration builder."""
-        return ConfigBuilder()
-
-    def create_server_config_builder(self) -> ServerConfigBuilder:
-        """Create a new server configuration builder."""
-        return ServerConfigBuilder()
-
-    def create_logging_config_builder(self) -> LoggingConfigBuilder:
-        """Create a new logging configuration builder."""
-        return LoggingConfigBuilder()
-
-    def create_tool_builder(self, name: str) -> ToolBuilder:
-        """Create a new tool builder."""
-        return ToolBuilder(name)
-
-    def create_middleware_builder(self, name: str) -> MiddlewareBuilder:
-        """Create a new middleware builder."""
-        return MiddlewareBuilder(name)
-
-    def create_validation_builder(self) -> ValidationBuilder:
-        """Create a new validation builder."""
-        return ValidationBuilder()
-
-    def create_hook_builder(self) -> HookBuilder:
-        """Create a new hook builder."""
-        return HookBuilder()
-
     # ========================================================================
-    # Focused Configurers (New API - Recommended)
+    # Focused Configurers
     # ========================================================================
 
     @property
@@ -694,6 +699,27 @@ class AppBuilder:
             AdvancedConfigurer instance for method chaining
         """
         return AdvancedConfigurer(self)
+
+    @property
+    def version(self) -> VersionConfigurer:
+        """
+        Access version tracking configuration builder.
+
+        Configures app version and tracks commit hashes of packages
+        that use the appinfra build protocol (_build_info.py).
+
+        Example:
+            app = (AppBuilder("myapp")
+                .version
+                    .with_semver("1.0.0")
+                    .with_package("mylib")
+                    .done()
+                .build())
+
+        Returns:
+            VersionConfigurer instance for method chaining
+        """
+        return VersionConfigurer(self)
 
 
 def create_app_builder(name: str) -> AppBuilder:

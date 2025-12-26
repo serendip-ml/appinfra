@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock, patch
 
 import pytest
+
+pytestmark = pytest.mark.unit
+
+from unittest.mock import MagicMock, patch
 
 from appinfra.ui import prompts
 from appinfra.ui.prompts import (
@@ -585,3 +588,376 @@ class TestQuestionaryIntegration:
         result = password("Password:", confirm=False)
         assert mock_questionary.password.call_count == 1
         assert result == "secretpass"
+
+
+class TestDisplayFallbackPage:
+    """Tests for _display_fallback_page function."""
+
+    def test_display_page_with_items(self):
+        """Test displaying a page of items."""
+        from appinfra.ui.prompts import _display_fallback_page
+
+        with patch("builtins.print") as mock_print:
+            _display_fallback_page(["a", "b", "c"], 0, 3, 1)
+            calls = [c[0][0] for c in mock_print.call_args_list]
+            assert "   1. a" in calls
+            assert "  >2. b" in calls  # default_index=1 gets marker
+            assert "   3. c" in calls
+
+    def test_display_page_with_navigation(self):
+        """Test displaying navigation options."""
+        from appinfra.ui.prompts import _display_fallback_page
+
+        with patch("builtins.print") as mock_print:
+            _display_fallback_page(["a", "b", "c", "d"], 1, 3, 0)
+            calls = [c[0][0] for c in mock_print.call_args_list]
+            assert any("(p)" in c for c in calls)  # Previous page
+            assert any("(n)" in c for c in calls)  # Next page
+
+
+class TestSelectScrollableFallback:
+    """Tests for _select_scrollable_fallback function."""
+
+    def test_select_valid_number(self):
+        """Test selecting by number."""
+        from appinfra.ui.prompts import _select_scrollable_fallback
+
+        with patch("builtins.input", return_value="2"), patch("builtins.print"):
+            result = _select_scrollable_fallback("Choose:", ["a", "b", "c"], 0, 10)
+            assert result == 1  # 0-indexed
+
+    def test_select_empty_returns_default(self):
+        """Test empty input returns default index."""
+        from appinfra.ui.prompts import _select_scrollable_fallback
+
+        with patch("builtins.input", return_value=""), patch("builtins.print"):
+            result = _select_scrollable_fallback("Choose:", ["a", "b"], 1, 10)
+            assert result == 1
+
+    def test_select_next_page(self):
+        """Test navigating to next page."""
+        from appinfra.ui.prompts import _select_scrollable_fallback
+
+        inputs = iter(["n", "1"])
+        with (
+            patch("builtins.input", side_effect=lambda _: next(inputs)),
+            patch("builtins.print"),
+        ):
+            result = _select_scrollable_fallback("Choose:", ["a", "b", "c"], 0, 2)
+            assert result == 0
+
+    def test_select_prev_page(self):
+        """Test navigating to previous page."""
+        from appinfra.ui.prompts import _select_scrollable_fallback
+
+        inputs = iter(["n", "p", "1"])
+        with (
+            patch("builtins.input", side_effect=lambda _: next(inputs)),
+            patch("builtins.print"),
+        ):
+            result = _select_scrollable_fallback("Choose:", ["a", "b", "c", "d"], 0, 2)
+            assert result == 0
+
+    def test_select_invalid_number_retries(self):
+        """Test invalid number prompts again."""
+        from appinfra.ui.prompts import _select_scrollable_fallback
+
+        inputs = iter(["99", "1"])
+        with (
+            patch("builtins.input", side_effect=lambda _: next(inputs)),
+            patch("builtins.print"),
+        ):
+            result = _select_scrollable_fallback("Choose:", ["a", "b"], 0, 10)
+            assert result == 0
+
+    def test_select_invalid_input_retries(self):
+        """Test non-numeric input prompts again."""
+        from appinfra.ui.prompts import _select_scrollable_fallback
+
+        inputs = iter(["abc", "1"])
+        with (
+            patch("builtins.input", side_effect=lambda _: next(inputs)),
+            patch("builtins.print"),
+        ):
+            result = _select_scrollable_fallback("Choose:", ["a", "b"], 0, 10)
+            assert result == 0
+
+    def test_select_eof_returns_none(self):
+        """Test EOFError returns None."""
+        from appinfra.ui.prompts import _select_scrollable_fallback
+
+        with patch("builtins.input", side_effect=EOFError), patch("builtins.print"):
+            result = _select_scrollable_fallback("Choose:", ["a", "b"], 0, 10)
+            assert result is None
+
+    def test_select_keyboard_interrupt_returns_none(self):
+        """Test KeyboardInterrupt returns None."""
+        from appinfra.ui.prompts import _select_scrollable_fallback
+
+        with (
+            patch("builtins.input", side_effect=KeyboardInterrupt),
+            patch("builtins.print"),
+        ):
+            result = _select_scrollable_fallback("Choose:", ["a", "b"], 0, 10)
+            assert result is None
+
+
+class TestFormatTableRows:
+    """Tests for _format_table_rows function."""
+
+    def test_format_basic_table(self):
+        """Test formatting basic table rows."""
+        from appinfra.ui.prompts import _format_table_rows
+
+        rows = [{"a": "1", "b": "2"}, {"a": "10", "b": "20"}]
+        header, formatted = _format_table_rows(rows, ["a", "b"])
+        assert "a" in header
+        assert "b" in header
+        assert len(formatted) == 2
+        assert "1" in formatted[0]
+        assert "10" in formatted[1]
+
+    def test_format_with_custom_spacing(self):
+        """Test formatting with custom column spacing."""
+        from appinfra.ui.prompts import _format_table_rows
+
+        rows = [{"x": "val"}]
+        header, formatted = _format_table_rows(rows, ["x"], column_spacing=4)
+        assert header == "x  "  # Column width based on content
+
+
+class TestResultToRow:
+    """Tests for _result_to_row function."""
+
+    def test_result_to_row_found(self):
+        """Test converting result to row dict."""
+        from appinfra.ui.prompts import _result_to_row
+
+        formatted = ["row1", "row2"]
+        rows = [{"id": 1}, {"id": 2}]
+        result = _result_to_row("row2", formatted, rows)
+        assert result == {"id": 2}
+
+    def test_result_to_row_none(self):
+        """Test None result returns None."""
+        from appinfra.ui.prompts import _result_to_row
+
+        result = _result_to_row(None, ["a"], [{"id": 1}])
+        assert result is None
+
+    def test_result_to_row_not_found(self):
+        """Test result not in formatted returns None."""
+        from appinfra.ui.prompts import _result_to_row
+
+        result = _result_to_row("missing", ["a", "b"], [{"id": 1}, {"id": 2}])
+        assert result is None
+
+
+class TestSelectTableFallback:
+    """Tests for _select_table_fallback function."""
+
+    def test_select_table_fallback_selects_row(self):
+        """Test fallback returns selected row dict."""
+        from appinfra.ui.prompts import _select_table_fallback
+
+        with patch("builtins.input", return_value="1"), patch("builtins.print"):
+            result = _select_table_fallback(
+                "Choose:",
+                "id  name",
+                ["1   a", "2   b"],
+                [{"id": "1", "name": "a"}, {"id": "2", "name": "b"}],
+                0,
+                10,
+            )
+            assert result == {"id": "1", "name": "a"}
+
+    def test_select_table_fallback_cancelled(self):
+        """Test fallback returns None when cancelled."""
+        from appinfra.ui.prompts import _select_table_fallback
+
+        with patch("builtins.input", side_effect=EOFError), patch("builtins.print"):
+            result = _select_table_fallback(
+                "Choose:", "header", ["row"], [{"id": 1}], 0, 10
+            )
+            assert result is None
+
+
+class TestSelectScrollable:
+    """Tests for select_scrollable function."""
+
+    def test_select_scrollable_non_interactive_raises(self):
+        """Test non-interactive mode raises."""
+        from appinfra.ui.prompts import select_scrollable
+
+        with patch.object(prompts, "_is_interactive", return_value=False):
+            with pytest.raises(NonInteractiveError):
+                select_scrollable("Choose:", ["a", "b"])
+
+    def test_select_scrollable_uses_fallback(self):
+        """Test uses fallback when InquirerPy not available."""
+        from appinfra.ui.prompts import select_scrollable
+
+        with (
+            patch.object(prompts, "_is_interactive", return_value=True),
+            patch.object(prompts, "_get_non_interactive", return_value=False),
+            patch.object(prompts, "INQUIRER_AVAILABLE", False),
+            patch.object(
+                prompts, "_select_scrollable_fallback", return_value=1
+            ) as mock_fb,
+        ):
+            result = select_scrollable("Choose:", ["a", "b", "c"])
+            mock_fb.assert_called_once()
+            assert result == 1
+
+    def test_select_scrollable_with_inquirer(self):
+        """Test uses InquirerPy when available."""
+        from appinfra.ui.prompts import select_scrollable
+
+        with (
+            patch.object(prompts, "_is_interactive", return_value=True),
+            patch.object(prompts, "_get_non_interactive", return_value=False),
+            patch.object(prompts, "INQUIRER_AVAILABLE", True),
+            patch.object(prompts, "_inquirer_select", return_value="b") as mock_inq,
+        ):
+            result = select_scrollable("Choose:", ["a", "b", "c"])
+            mock_inq.assert_called_once()
+            assert result == 1  # Index of "b"
+
+    def test_select_scrollable_cancelled(self):
+        """Test returns None when cancelled."""
+        from appinfra.ui.prompts import select_scrollable
+
+        with (
+            patch.object(prompts, "_is_interactive", return_value=True),
+            patch.object(prompts, "_get_non_interactive", return_value=False),
+            patch.object(prompts, "INQUIRER_AVAILABLE", True),
+            patch.object(prompts, "_inquirer_select", return_value=None),
+        ):
+            result = select_scrollable("Choose:", ["a", "b"])
+            assert result is None
+
+    def test_select_scrollable_result_not_found(self):
+        """Test returns None when result not in choices."""
+        from appinfra.ui.prompts import select_scrollable
+
+        with (
+            patch.object(prompts, "_is_interactive", return_value=True),
+            patch.object(prompts, "_get_non_interactive", return_value=False),
+            patch.object(prompts, "INQUIRER_AVAILABLE", True),
+            patch.object(prompts, "_inquirer_select", return_value="missing"),
+        ):
+            result = select_scrollable("Choose:", ["a", "b"])
+            assert result is None
+
+
+class TestSelectTable:
+    """Tests for select_table function."""
+
+    def test_select_table_non_interactive_raises(self):
+        """Test non-interactive mode raises."""
+        from appinfra.ui.prompts import select_table
+
+        with patch.object(prompts, "_is_interactive", return_value=False):
+            with pytest.raises(NonInteractiveError):
+                select_table("Choose:", [{"id": 1}], ["id"])
+
+    def test_select_table_empty_rows_returns_none(self):
+        """Test empty rows returns None."""
+        from appinfra.ui.prompts import select_table
+
+        with (
+            patch.object(prompts, "_is_interactive", return_value=True),
+            patch.object(prompts, "_get_non_interactive", return_value=False),
+        ):
+            result = select_table("Choose:", [], ["id"])
+            assert result is None
+
+    def test_select_table_uses_fallback(self):
+        """Test uses fallback when InquirerPy not available."""
+        from appinfra.ui.prompts import select_table
+
+        with (
+            patch.object(prompts, "_is_interactive", return_value=True),
+            patch.object(prompts, "_get_non_interactive", return_value=False),
+            patch.object(prompts, "INQUIRER_AVAILABLE", False),
+            patch.object(
+                prompts, "_select_table_fallback", return_value={"id": 1}
+            ) as mock_fb,
+        ):
+            result = select_table("Choose:", [{"id": 1}, {"id": 2}], ["id"])
+            mock_fb.assert_called_once()
+            assert result == {"id": 1}
+
+    def test_select_table_with_inquirer(self):
+        """Test uses InquirerPy when available."""
+        from appinfra.ui.prompts import select_table
+
+        with (
+            patch.object(prompts, "_is_interactive", return_value=True),
+            patch.object(prompts, "_get_non_interactive", return_value=False),
+            patch.object(prompts, "INQUIRER_AVAILABLE", True),
+            patch.object(prompts, "_inquirer_select", return_value="2 ") as mock_inq,
+            patch.object(
+                prompts, "_format_table_rows", return_value=("id", ["1 ", "2 "])
+            ),
+            patch.object(prompts, "_result_to_row", return_value={"id": 2}) as mock_r2r,
+        ):
+            result = select_table("Choose:", [{"id": 1}, {"id": 2}], ["id"])
+            mock_inq.assert_called_once()
+            mock_r2r.assert_called_once()
+            assert result == {"id": 2}
+
+
+class TestInquirerSelect:
+    """Tests for _inquirer_select function."""
+
+    def test_inquirer_select_returns_result(self):
+        """Test returns selected value."""
+        from appinfra.ui.prompts import _inquirer_select
+
+        mock_inq = MagicMock()
+        mock_inq.select.return_value.execute.return_value = "choice_b"
+
+        with (
+            patch.object(prompts, "inq", mock_inq),
+            patch.object(prompts, "InquirerPyStyle", MagicMock()),
+        ):
+            result = _inquirer_select(
+                "Choose:", ["choice_a", "choice_b"], 0, 10, "#005fff", "#ffffff"
+            )
+            assert result == "choice_b"
+
+    def test_inquirer_select_returns_none_on_cancel(self):
+        """Test returns None when cancelled."""
+        from appinfra.ui.prompts import _inquirer_select
+
+        mock_inq = MagicMock()
+        mock_inq.select.return_value.execute.return_value = None
+
+        with (
+            patch.object(prompts, "inq", mock_inq),
+            patch.object(prompts, "InquirerPyStyle", MagicMock()),
+        ):
+            result = _inquirer_select(
+                "Choose:", ["a", "b"], 0, 10, "#005fff", "#ffffff"
+            )
+            assert result is None
+
+
+class TestRequireTermMenu:
+    """Tests for _require_term_menu function."""
+
+    def test_raises_when_not_available(self):
+        """Test raises ImportError when not available."""
+        from appinfra.ui.prompts import _require_term_menu
+
+        with patch.object(prompts, "TERM_MENU_AVAILABLE", False):
+            with pytest.raises(ImportError, match="simple-term-menu"):
+                _require_term_menu()
+
+    def test_no_raise_when_available(self):
+        """Test does not raise when available."""
+        from appinfra.ui.prompts import _require_term_menu
+
+        with patch.object(prompts, "TERM_MENU_AVAILABLE", True):
+            _require_term_menu()  # Should not raise

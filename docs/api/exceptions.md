@@ -46,7 +46,7 @@ class InfraError(Exception):
 
 ```python
 from appinfra.exceptions import InfraError, ConfigError
-from appinfra.app.cfg import Config
+from appinfra.config import Config
 
 try:
     config = Config("nonexistent.yaml")
@@ -61,9 +61,10 @@ except InfraError as e:
 ```python
 from appinfra.exceptions import DatabaseError
 from appinfra.db import PG
+from appinfra.cfg import get_config_file_path
 
 try:
-    pg = PG("etc/infra.yaml", "production")
+    pg = PG(get_config_file_path(), "production")
     with pg.session() as session:
         result = session.execute("INVALID SQL")
 except DatabaseError as e:

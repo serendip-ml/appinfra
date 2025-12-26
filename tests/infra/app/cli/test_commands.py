@@ -56,6 +56,7 @@ class TestSetupSubcommands:
     def test_creates_subparsers_for_tools(self):
         """Test creates subparsers for registered tools."""
         app = Mock()
+        app._main_tool = None  # Explicitly set to skip main tool logic
         app.registry.list_tools.return_value = ["tool1", "tool2"]
 
         tool1 = Mock()
@@ -83,6 +84,7 @@ class TestSetupSubcommands:
     def test_skips_none_tools(self):
         """Test skips tools that return None from registry."""
         app = Mock()
+        app._main_tool = None  # Explicitly set to skip main tool logic
         app.registry.list_tools.return_value = ["exists", "missing"]
 
         existing_tool = Mock()
@@ -102,6 +104,34 @@ class TestSetupSubcommands:
 
         # Should only add parser for existing tool
         assert subparsers.add_parser.call_count == 1
+
+    def test_sets_up_main_tool_defaults(self):
+        """Test sets up main tool defaults when _main_tool is set."""
+        app = Mock()
+        app._main_tool = "main"
+        app.registry.list_tools.return_value = ["main", "other"]
+
+        main_tool = Mock()
+        main_tool.cmd = (["main"], {"help": "Main tool"})
+        other_tool = Mock()
+        other_tool.cmd = (["other"], {"help": "Other tool"})
+
+        app.registry.get_tool.side_effect = lambda name: {
+            "main": main_tool,
+            "other": other_tool,
+        }[name]
+
+        subparsers = Mock()
+        app.parser.add_subparsers.return_value = subparsers
+        app.parser.formatter_class = "FormatterClass"
+
+        handler = CommandHandler(app)
+        handler.setup_subcommands()
+
+        # Should add main tool's args to root parser
+        main_tool.set_args.assert_any_call(app.parser.parser)
+        # Should set defaults on root parser
+        app.parser.parser.set_defaults.assert_called_once_with(tool="main")
 
 
 # =============================================================================
@@ -247,6 +277,7 @@ class TestCommandHandlerIntegration:
         """Test complete command registration and execution workflow."""
         # Setup application mock
         app = Mock()
+        app._main_tool = None  # Explicitly set to skip main tool logic
 
         # Setup tools
         tool1 = Mock()

@@ -8,6 +8,10 @@ against ReDoS (Regular Expression Denial of Service) attacks.
 import re
 import unittest
 
+import pytest
+
+pytestmark = pytest.mark.unit
+
 from appinfra.regex_utils import (
     MAX_PATTERN_LENGTH,
     RegexComplexityError,
@@ -109,6 +113,12 @@ class TestSafeMatch(unittest.TestCase):
         match = safe_match(r"^HELLO", "hello", flags=re.IGNORECASE)
         self.assertIsNotNone(match)
 
+    def test_match_with_timeout_none(self):
+        """Should work when timeout is None (no timeout protection)."""
+        match = safe_match(r"^hello", "hello world", timeout=None)
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(), "hello")
+
 
 class TestSafeSearch(unittest.TestCase):
     """Test safe_search function."""
@@ -129,6 +139,12 @@ class TestSafeSearch(unittest.TestCase):
         """Should return None when pattern not found."""
         match = safe_search(r"xyz", "hello world")
         self.assertIsNone(match)
+
+    def test_search_with_timeout_none(self):
+        """Should work when timeout is None (no timeout protection)."""
+        match = safe_search(r"world", "hello world", timeout=None)
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(), "world")
 
 
 class TestSafeFindall(unittest.TestCase):
@@ -154,6 +170,11 @@ class TestSafeFindall(unittest.TestCase):
         """Should handle capturing groups."""
         matches = safe_findall(r"(\d+)([a-z]+)", "1test2hello3world")
         self.assertEqual(matches, [("1", "test"), ("2", "hello"), ("3", "world")])
+
+    def test_findall_with_timeout_none(self):
+        """Should work when timeout is None (no timeout protection)."""
+        matches = safe_findall(r"\d+", "a1b2c3", timeout=None)
+        self.assertEqual(matches, ["1", "2", "3"])
 
 
 class TestReDoSProtectionIntegration(unittest.TestCase):

@@ -25,6 +25,7 @@ from appinfra.log.formatters import (
     _format_header,
     _format_value,
     _get_cache_key,
+    _visual_len,
 )
 
 # =============================================================================
@@ -89,6 +90,17 @@ class TestHelperFunctions:
         key = _get_cache_key([1, 2, 3], "col", "bold", "name", False)
         assert key is None
 
+    def test_visual_len_plain_text(self):
+        """Test visual length for plain text without ANSI codes."""
+        assert _visual_len("hello") == 5
+        assert _visual_len("") == 0
+
+    def test_visual_len_with_ansi_codes(self):
+        """Test visual length excludes ANSI escape codes."""
+        # Text with color codes: \x1b[32m = green, \x1b[0m = reset
+        colored = "\x1b[32mhello\x1b[0m"
+        assert _visual_len(colored) == 5  # Only "hello" counts
+
     def test_format_header_normal(self):
         """Test format header for normal fields."""
         result = _format_header("\033[34", "test")
@@ -146,15 +158,22 @@ class TestHelperFunctions:
         assert len(formatter._format_cache) == 0
 
     def test_cache_result_respects_max_size(self):
-        """Test cache result respects maximum cache size."""
+        """Test cache result respects maximum cache size with LRU eviction."""
+        import collections
+
         formatter = Mock()
-        formatter._format_cache = {i: f"val{i}" for i in range(100)}
+        # Use OrderedDict because _cache_result uses LRU eviction with move_to_end/popitem
+        formatter._format_cache = collections.OrderedDict(
+            (i, f"val{i}") for i in range(100)
+        )
         formatter._max_cache_size = 100
 
         _cache_result(formatter, ("new_key",), "new_result")
 
-        # Should not add because cache is full
-        assert ("new_key",) not in formatter._format_cache
+        # Should add new key after evicting oldest (key 0)
+        assert ("new_key",) in formatter._format_cache
+        assert 0 not in formatter._format_cache  # Oldest was evicted
+        assert len(formatter._format_cache) == 100  # Size maintained
 
 
 # =============================================================================
@@ -242,19 +261,23 @@ class TestFieldFormatter:
 
 @pytest.mark.unit
 class TestLocationRenderer:
-    """Test LocationRenderer class."""
+    """Test LocationRenderer class.
+
+    LocationRenderer reads location and location_color from the holder's config
+    to support hot-reload.
+    """
 
     def test_init_with_location_zero(self):
         """Test LocationRenderer with location=0."""
         config = LogConfig(location=0, micros=False, colors=True)
         renderer = LocationRenderer(config)
-        assert renderer._config.location == 0
+        assert renderer._location == 0
 
     def test_init_with_location_one(self):
         """Test LocationRenderer with location=1."""
         config = LogConfig(location=1, micros=False, colors=True)
         renderer = LocationRenderer(config)
-        assert renderer._config.location == 1
+        assert renderer._location == 1
 
     def test_render_location_with_location_zero(self, log_record):
         """Test render_location returns empty string when location=0."""
@@ -303,15 +326,16 @@ class TestLocationRenderer:
         # Note: We check for the specific BLACK code, not just the word "BLACK"
         assert ColorManager.BLACK not in result
 
-    def test_location_color_default_black(self, log_record):
-        """Test that location color defaults to BLACK when not specified."""
+    def test_location_color_default_gray(self, log_record):
+        """Test that location color defaults to gray-6 when not specified."""
         config = LogConfig(location=1, micros=False, colors=True)
         renderer = LocationRenderer(config)
-        # Verify default is BLACK
-        assert renderer._location_color == ColorManager.BLACK
+        # Verify default is gray-6
+        expected_gray = ColorManager.create_gray_level(6)
+        assert renderer._location_color == expected_gray
         result = renderer.render_location(log_record)
-        # Should use default BLACK color
-        assert ColorManager.BLACK in result
+        # Should use default gray-6 color
+        assert expected_gray in result
 
     def test_location_color_with_gray_level(self, log_record):
         """Test location color with custom gray level."""
@@ -495,11 +519,11 @@ class TestEdgeCases:
         """Test LocationRenderer with location parameter variations."""
         config = LogConfig(location=0, micros=False, colors=True)
         renderer = LocationRenderer(config)
-        assert renderer._config.location == 0
+        assert renderer._location == 0
 
         config = LogConfig(location=5, micros=False, colors=True)
         renderer = LocationRenderer(config)
-        assert renderer._config.location == 5
+        assert renderer._location == 5
 
     def test_preformatter_micros_precision(self):
         """Test PreFormatter microsecond precision calculation."""

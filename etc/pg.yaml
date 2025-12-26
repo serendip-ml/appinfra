@@ -11,9 +11,11 @@ pgserver:
   name: infra-pg               # Server identifier/name for logging and identification
   host: 127.0.0.1              # PostgreSQL host (default: 127.0.0.1, can be overridden with INFRA_PGSERVER_HOST)
   port: 7432                   # PostgreSQL port (default: 5432, can be overridden with INFRA_PGSERVER_PORT)
-  port_r: 7433                 # PostgreSQL standby (read-only replica) port for replication mode
   user: postgres               # Database username (can be overridden with INFRA_PGSERVER_USER)
   pass: ''                     # Database password (RECOMMENDED: use environment variable)
+  replica:                     # Optional: replication mode configuration
+    enabled: false             # Enable replication targets (pg.server.up.repl, pg.standby)
+    port: 7433                 # Standby server port
 
 # Database Configurations
 # =======================
@@ -60,7 +62,7 @@ dbs:
 
   # Read-only replica database - connects to standby server in replication mode
   unittest_reader:
-    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port_r}/unittest"
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.replica.port}/unittest"
     readonly: true              # Read-only mode - standby server is read-only
     create_db: false            # Don't create database (replicated from primary)
     # Custom pool settings for replica connections
@@ -70,7 +72,7 @@ dbs:
 
   # Main read-only replica - connects to standby server in replication mode
   main_reader:
-    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port_r}/main"
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.replica.port}/main"
     readonly: true              # Read-only mode - standby server is read-only
     create_db: false            # Don't create database (replicated from primary)
     # Custom pool settings for replica connections

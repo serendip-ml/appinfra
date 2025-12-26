@@ -19,6 +19,9 @@ INFRA_DEV_CHECK_SCRIPT ?= $(_MAKEFILE_DEV_DIR)../check.sh
 # Default for optional install extras (empty = base package only)
 INFRA_DEV_INSTALL_EXTRAS ?=
 
+# Default extras for setup (all dev-related extras)
+INFRA_DEV_SETUP_EXTRAS ?= dev,ui,fastapi,validation,hotreload,docs
+
 # Default PYTHON_ENVS to PYTHON if not set (backward compatibility)
 PYTHON_ENVS ?= $(PYTHON)
 
@@ -27,6 +30,8 @@ export INFRA_DEV_PKG_NAME
 export INFRA_DEV_CQ_STRICT
 export INFRA_DEV_PROJECT_ROOT
 export INFRA_DEV_INSTALL_EXTRAS
+export INFRA_DEFAULT_CONFIG_FILE
+export INFRA_PYTEST_COVERAGE_MARKERS
 
 # Python test wrapper with warning suppression
 PYTHON_TEST = PYTHONWARNINGS="ignore::ResourceWarning,ignore::RuntimeWarning" ${PYTHON}
@@ -39,50 +44,22 @@ doctor:: ## Run project health checks
 
 ##@ Development
 
-setup:: ## sets up dev environment with all dependencies using ~/.venv
+setup:: ## sets up dev environment with all dependencies for all PYTHON_ENVS
 	@echo "* setting up dev environment..."
-	@if command -v appinfra >/dev/null 2>&1 && [ -f "$$(appinfra scripts-path)/install_deps.py" ]; then \
-		$(PYTHON) "$$(appinfra scripts-path)/install_deps.py"; \
-	else \
-		echo "  (using pip install -e .[dev] fallback)"; \
-		$(PYTHON) -m pip install -q -e ".[dev]"; \
-	fi
+	@for pyenv in $(PYTHON_ENVS); do \
+		if [ -x "$$pyenv" ]; then \
+			echo "  → $$pyenv"; \
+			if command -v appinfra >/dev/null 2>&1 && [ -f "$$(appinfra scripts-path)/install_deps.py" ]; then \
+				$$pyenv "$$(appinfra scripts-path)/install_deps.py"; \
+			else \
+				$$pyenv -m pip install -q -e ".[$(INFRA_DEV_SETUP_EXTRAS)]"; \
+			fi; \
+		else \
+			echo "  → $$pyenv (skipped, not found)"; \
+		fi; \
+	done
 	@echo "* setup done"
 .PHONY: setup
-
-install:: areyousure ## installs $(INFRA_DEV_PKG_NAME) to all environments in PYTHON_ENVS
-	@echo "* installing $(INFRA_DEV_PKG_NAME) to all environments..."
-	@for pyenv in $(PYTHON_ENVS); do \
-		if [ -x "$$pyenv" ]; then \
-			echo "  → $$pyenv"; \
-			if [ -n "$(INFRA_DEV_INSTALL_EXTRAS)" ]; then \
-				$$pyenv -m pip install -q ".[$(INFRA_DEV_INSTALL_EXTRAS)]"; \
-			else \
-				$$pyenv -m pip install -q .; \
-			fi; \
-		else \
-			echo "  → $$pyenv (skipped, not found)"; \
-		fi; \
-	done
-	@echo "* install done"
-.PHONY: install
-
-install.e:: areyousure ## installs $(INFRA_DEV_PKG_NAME) (editable) to all environments in PYTHON_ENVS
-	@echo "* installing $(INFRA_DEV_PKG_NAME) (editable) to all environments..."
-	@for pyenv in $(PYTHON_ENVS); do \
-		if [ -x "$$pyenv" ]; then \
-			echo "  → $$pyenv"; \
-			if [ -n "$(INFRA_DEV_INSTALL_EXTRAS)" ]; then \
-				$$pyenv -m pip install -q -e ".[$(INFRA_DEV_INSTALL_EXTRAS)]"; \
-			else \
-				$$pyenv -m pip install -q -e .; \
-			fi; \
-		else \
-			echo "  → $$pyenv (skipped, not found)"; \
-		fi; \
-	done
-	@echo "* install.e done"
-.PHONY: install.e
 
 ##@ Code Quality
 

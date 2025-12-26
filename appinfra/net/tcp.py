@@ -94,7 +94,7 @@ class _Server(socketserver.TCPServer):
             super().__init__(*args, **kwargs)
             self._lg.debug("TCP server initialized successfully")
         except Exception as e:
-            self._lg.error(f"Failed to initialize TCP server: {e}")
+            self._lg.error("failed to initialize TCP server", extra={"exception": e})
             raise ServerStartupError(f"Server initialization failed: {e}") from e
 
     def allow_reuse_address(self) -> bool:  # type: ignore[override]
@@ -150,7 +150,7 @@ def _run_http_server_with_cleanup(
         except KeyboardInterrupt:
             lg.info("keyboard interrupt, exiting server...")
         except Exception as e:
-            lg.error(f"HTTP server error: {e}")
+            lg.error("HTTP server error", extra={"exception": e})
             raise ServerShutdownError(f"HTTP server error: {e}") from e
         finally:
             try:
@@ -158,7 +158,7 @@ def _run_http_server_with_cleanup(
                 httpd.server_close()
                 lg.info("closed server")
             except Exception as e:
-                lg.error(f"Error during server shutdown: {e}")
+                lg.error("error during server shutdown", extra={"exception": e})
 
 
 def _cleanup_ticker_process(proc: multiprocessing.Process | None, lg: Any) -> None:
@@ -173,7 +173,7 @@ def _cleanup_ticker_process(proc: multiprocessing.Process | None, lg: Any) -> No
             lg.warning("ticker process did not terminate gracefully")
             proc.kill()
     except Exception as e:
-        lg.error(f"Error terminating ticker process: {e}")
+        lg.error("error terminating ticker process", extra={"exception": e})
 
 
 class Server:
@@ -269,7 +269,7 @@ class Server:
         try:
             proc = _start_ticker_process(self._handler, self._ticker, manager, self._lg)
         except Exception as e:
-            self._lg.error(f"Failed to start ticker process: {e}")
+            self._lg.error("failed to start ticker process", extra={"exception": e})
             raise ServerStartupError(f"Ticker startup failed: {e}") from e
 
         try:
@@ -277,7 +277,7 @@ class Server:
                 self._lg, self._handler, "0.0.0.0", self._port
             )
         except Exception as e:
-            self._lg.error(f"Failed to start HTTP server: {e}")
+            self._lg.error("failed to start HTTP server", extra={"exception": e})
             raise ServerStartupError(f"HTTP server startup failed: {e}") from e
 
         return proc
@@ -333,7 +333,7 @@ class Server:
             try:
                 _start_ticker_in_process(self._handler, self._lg)
             except Exception as e:
-                self._lg.error(f"Failed to start ticker: {e}")
+                self._lg.error("failed to start ticker", extra={"exception": e})
                 raise ServerStartupError(f"Ticker startup failed: {e}") from e
 
             try:

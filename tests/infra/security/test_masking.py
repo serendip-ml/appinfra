@@ -2,6 +2,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from appinfra.security.masking import SecretMasker, get_masker, reset_masker
 
 

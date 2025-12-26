@@ -36,7 +36,7 @@ _table_counter = 0
 _table_counter_lock = threading.Lock()
 
 # Import required infra modules
-from appinfra.app.cfg import Config
+from appinfra.config import Config
 from appinfra.db.pg.pg import PG
 from appinfra.log.config import LogConfig
 from appinfra.log.factory import LoggerFactory

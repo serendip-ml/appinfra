@@ -1,43 +1,37 @@
 """
-Shutdown manager for handling application shutdown signals and coordination.
+Shutdown manager for handling application shutdown signals.
 
-This module provides centralized shutdown signal handling for graceful
-application termination on SIGTERM and SIGINT signals.
+This module provides signal handling for graceful application termination
+on SIGTERM and SIGINT signals. The signal handler raises KeyboardInterrupt
+to allow proper cleanup before shutdown.
 """
 
-import logging
 import signal
-import sys
-from collections.abc import Callable
 from typing import Any
 
 
 class ShutdownManager:
-    """Manages application shutdown signals and coordination."""
+    """
+    Manages shutdown signal handling.
 
-    def __init__(
-        self,
-        shutdown_callback: Callable[[int], int],
-        timeout: float = 30.0,
-        logger: Any | None = None,
-        start_time: float | None = None,
-    ):
-        """
-        Initialize shutdown manager.
+    Registers handlers for SIGTERM and SIGINT that raise KeyboardInterrupt,
+    allowing the call stack to unwind properly before shutdown. This ensures
+    async cleanup (finally blocks, context managers) completes before the
+    lifecycle logs "done".
 
-        Args:
-            shutdown_callback: Function to call on shutdown (typically lifecycle.shutdown)
-            timeout: Global shutdown timeout in seconds
-            logger: Logger instance for final "done" message
-            start_time: Application start time for elapsed time calculation
-        """
-        self._shutdown_callback = shutdown_callback
-        self._timeout = timeout
-        self._logger = logger
-        self._start_time = start_time
+    Usage:
+        manager = ShutdownManager()
+        manager.register_signal_handlers()
+
+        # Later, check state or get return code:
+        if manager.is_shutting_down():
+            code = manager.get_signal_return_code()
+    """
+
+    def __init__(self) -> None:
+        """Initialize shutdown manager."""
         self._shutting_down = False
-        from typing import Any
-
+        self._signal_return_code: int = 130  # Default to SIGINT
         self._original_handlers: dict[signal.Signals, Any] = {}
 
     def register_signal_handlers(self) -> None:
@@ -51,30 +45,31 @@ class ShutdownManager:
 
     def _handle_signal(self, signum: int, frame: Any) -> None:
         """
-        Handle shutdown signal.
+        Handle shutdown signal by raising KeyboardInterrupt.
+
+        This allows tool code to unwind properly (finally blocks, __aexit__, etc.)
+        before App.main() catches the exception and calls lifecycle.shutdown().
 
         Args:
-            signum: Signal number
-            frame: Current stack frame
+            signum: Signal number (SIGINT=2, SIGTERM=15)
+            frame: Current stack frame (unused)
         """
         if self._shutting_down:
-            # Already shutting down, ignore duplicate signals
-            return
+            return  # Ignore duplicate signals
 
         self._shutting_down = True
-
-        # Determine return code based on signal
-        return_code = 130 if signum == signal.SIGINT else 143  # 143 = SIGTERM
-
-        # Call shutdown callback
-        try:
-            # Perform shutdown (hooks, plugins, databases, log handlers)
-            final_code = self._shutdown_callback(return_code)
-            sys.exit(final_code)
-        except Exception as e:
-            logging.error(f"Shutdown failed: {e}")
-            sys.exit(1)
+        self._signal_return_code = 130 if signum == signal.SIGINT else 143
+        raise KeyboardInterrupt()
 
     def is_shutting_down(self) -> bool:
         """Check if shutdown is in progress."""
         return self._shutting_down
+
+    def get_signal_return_code(self) -> int:
+        """
+        Get the return code for the signal that triggered shutdown.
+
+        Returns:
+            130 for SIGINT (Ctrl+C), 143 for SIGTERM, or 130 as default.
+        """
+        return self._signal_return_code

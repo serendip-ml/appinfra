@@ -332,6 +332,60 @@ Create phased plan:
 
 ## 6. FINAL SCORECARD
 
+### 🚨 MANDATORY: Deduction Evidence Requirement
+
+**YOU CANNOT MAKE A DEDUCTION WITHOUT INLINE PROOF.**
+
+Every deduction MUST include verification evidence in this exact format:
+
+```markdown
+**Deduction (-0.5): [Claim]**
+
+Verification:
+```bash
+[Command you actually ran]
+```
+Result:
+> [Actual output that proves the issue exists]
+
+Therefore: [Brief explanation of why this justifies deduction]
+```
+
+**Examples of VALID deductions:**
+
+```markdown
+**Deduction (-0.5): SECURITY.md missing**
+
+Verification:
+```bash
+ls -la SECURITY.md
+```
+Result:
+> ls: cannot access 'SECURITY.md': No such file or directory
+
+Therefore: Security documentation is missing, which is required for production libraries.
+```
+
+**Examples of INVALID deductions (will be rejected):**
+
+```markdown
+❌ **Deduction (-0.5): Documentation seems sparse**
+   → No verification command shown
+
+❌ **Deduction (-0.5): Error handling could be better**
+   → No specific file:line reference, no evidence
+
+❌ **Deduction (-0.5): No CI/CD configuration**
+   → Must run `ls .github/workflows/` first to prove it
+```
+
+**The Rule:**
+- If you cannot show a command you ran AND its output, you cannot make the deduction
+- "I looked at the code" is not verification - show the grep/read command
+- Pattern-matching assumptions are not evidence - prove it with commands
+
+---
+
 ### ⚠️ MANDATORY: Score Justification Format
 
 **For EACH category, you MUST use this exact format:**
@@ -344,7 +398,11 @@ Create phased plan:
 
 **If score is < 10/10, MUST list:**
 - **Deduction 1 (-0.5):** [Specific issue with file:line reference]
+  - Verification: `[command run]`
+  - Result: [output proving issue]
 - **Deduction 2 (-0.5):** [Specific issue with file:line reference]
+  - Verification: `[command run]`
+  - Result: [output proving issue]
 - **Total deductions:** -X points → Score: Y/10
 ```
 
@@ -411,6 +469,14 @@ Focus analysis on:
 
 ## COMMON PITFALLS TO AVOID
 
+0. **MOST CRITICAL: Verify before deducting**
+   - ❌ "Documentation seems sparse" → Did you count the lines? Read the file?
+   - ❌ "No CI/CD exists" → Did you run `ls .github/workflows/`?
+   - ❌ "Error handling is weak" → Did you read the actual error handling code?
+   - ❌ "Feature X is not documented" → Did you grep for it in docs/?
+   - ✅ Every deduction requires a verification command AND its output
+   - ✅ If you can't prove it with a command, you can't deduct for it
+
 1. **MOST CRITICAL: Actually RUN the tests**
    - ❌ Don't just read test files and assume they pass
    - ❌ Don't trust README coverage claims without verification
@@ -444,3 +510,20 @@ Focus analysis on:
    - ✅ `grep -rn "print(" .` - searches entire repo
    - ❌ `find infra/ -name "*.py"` - misses tests/
    - ✅ `find . -name "*.py"` - finds all Python files
+
+7. **Negative Claims Require Proof** (claiming something is MISSING):
+   - Before claiming "X doesn't exist" or "Y is missing", you MUST run a command to verify
+   - Examples of claims that require verification:
+     - "No CI/CD" → `ls .github/workflows/`
+     - "No security docs" → `ls SECURITY.md` and `grep -r "security" docs/`
+     - "Feature undocumented" → `grep -rn "feature_name" docs/`
+     - "No error handling" → Read the actual code with `Read` tool
+   - If your verification command finds the thing exists, DO NOT make the deduction
+   - Pattern-matching ("this looks like it might be missing") is not evidence
+
+8. **Complexity is not a defect when it's justified**:
+   - Don't deduct for "complexity" if:
+     - The complexity solves a real problem (e.g., subprocess isolation for GIL bypass)
+     - Simpler alternatives are available (e.g., direct mode vs subprocess mode)
+     - The complexity is well-documented
+   - Ask: "Is this complexity necessary and justified?" not "Is this complex?"

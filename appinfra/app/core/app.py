@@ -10,12 +10,16 @@ import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from appinfra.config import Config
 from appinfra.dot_dict import DotDict
 
+if TYPE_CHECKING:
+    from appinfra.config import ConfigWatcher
+    from appinfra.subprocess import SubprocessContext
+
 from ... import time
-from ..cfg import Config
 from ..cli.commands import CommandHandler
 from ..cli.parser import CLIParser
 from ..decorators import DecoratorAPI
@@ -45,7 +49,9 @@ class App(Traceable):
             config: Application configuration (optional)
         """
         super().__init__()
-        self.config: Config | DotDict = config or ConfigLoader.default()
+        # Use empty DotDict if no config provided - defaults are applied later
+        # in ConfigLoader.from_args() to allow YAML config to take precedence
+        self.config: Config | DotDict = config if config is not None else DotDict()
         self.registry: ToolRegistry = ToolRegistry()
         self.parser: CLIParser = CLIParser()
         self.command_handler: CommandHandler = CommandHandler(self)
@@ -62,11 +68,30 @@ class App(Traceable):
             "quiet": True,
         }
 
-        # Decorator API support
-        self._decorators: DecoratorAPI = DecoratorAPI(self)
+        self._decorators: DecoratorAPI = DecoratorAPI(self)  # Decorator API support
+        self._custom_args: list[tuple] = []  # Custom args (from builder)
+        self._main_tool: str | None = None  # Main tool (runs without subcommand)
+        self._config_watcher: ConfigWatcher | None = None  # Hot-reload watcher
 
-        # Custom arguments (added via builder, applied after parser creation)
-        self._custom_args: list[tuple] = []
+    @property
+    def config_watcher(self) -> "ConfigWatcher | None":
+        """Get the config watcher instance (if hot-reload is enabled)."""
+        return self._config_watcher
+
+    def set_main_tool(self, name: str) -> None:
+        """
+        Set the main tool that runs when no subcommand is specified.
+
+        Args:
+            name: Name of the tool to use as main
+
+        Raises:
+            ValueError: If main tool is already set or tool doesn't exist
+        """
+        if self._main_tool is not None:
+            raise ValueError(f"Main tool already set: {self._main_tool}")
+        # Validation that tool exists happens later when registry is populated
+        self._main_tool = name
 
     def add_tool(self, tool: Tool) -> None:
         """
@@ -162,9 +187,9 @@ class App(Traceable):
             "log_level",
             "-l",
             "--log-level",
-            default="info",
+            default=None,
             metavar="LEVEL",
-            help="log level",
+            help="log level (default: from config or 'info')",
         )
 
     def _add_log_location_arg(self) -> None:
@@ -322,12 +347,12 @@ class App(Traceable):
         Load configuration from etc directory and merge with CLI args.
 
         Returns:
-            Auto-load result dict if config was loaded, None otherwise
+            Dict with 'etc_dir' and 'file' if config was loaded, None otherwise
         """
-        # Auto-load configuration from etc directory if enabled
-        auto_load_result = None
-        if getattr(self, "_auto_load_config", True):
-            auto_load_result = self._auto_load_etc_config()
+        # Load deferred config from etc-dir if configured
+        load_result = None
+        if getattr(self, "_config_from_etc_dir", False):
+            load_result = self._load_deferred_config()
 
         # Apply command-line args to config, preserving loaded YAML sections
         # CLI args override anything loaded from etc directory
@@ -336,25 +361,23 @@ class App(Traceable):
             self._parsed_args, existing_config=self.config
         )
 
-        return auto_load_result
+        return load_result
 
-    def _log_config_loading(self, auto_load_result: dict | None) -> None:
+    def _log_config_loading(self, load_result: dict | None) -> None:
         """
         Log configuration loading results.
 
         Args:
-            auto_load_result: Result from auto-loading config files
+            load_result: Result from loading config file
         """
-        if auto_load_result:
+        if load_result:
             self.lg.debug(
-                "auto-loaded config from etc",
+                "loaded config from etc",
                 extra={
-                    "etc_dir": auto_load_result["etc_dir"],
-                    "files": ", ".join(auto_load_result["files"]),
+                    "etc_dir": load_result["etc_dir"],
+                    "file": load_result["file"],
                 },
             )
-        elif getattr(self, "_auto_load_config", True):
-            self.lg.debug("no config files found for auto-loading")
 
     def _check_tool_selection(self) -> None:
         """Check if tool is selected and show help if needed."""
@@ -404,14 +427,6 @@ class App(Traceable):
 
         return result
 
-    @staticmethod
-    def _find_yaml_files(etc_path: "Path") -> list[str]:
-        """Find and return sorted list of YAML files in directory."""
-        return sorted(
-            [f.name for f in etc_path.glob("*.yaml")]
-            + [f.name for f in etc_path.glob("*.yml")]
-        )
-
     def _merge_loaded_and_programmatic_config(
         self, loaded_config: "DotDict"
     ) -> "DotDict":
@@ -434,52 +449,44 @@ class App(Traceable):
             # No programmatic config, just use loaded
             return loaded_config
 
-    def _auto_load_etc_config(self) -> dict | None:
+    def _load_deferred_config(self) -> dict | None:
         """
-        Automatically load configuration from etc directory.
+        Load deferred configuration file from etc directory.
 
-        This method is called during setup() before CLI args are applied.
-        It resolves the etc directory (from --etc-dir argument or auto-detection),
-        loads all YAML files, and sets them as the base config.
-
-        CLI args will be applied afterward to override these values.
-
-        If no etc directory is found or no config files exist, fails silently
-        as not all applications require configuration files.
+        Called when with_config_file() was used with from_etc_dir=True (default).
+        Resolves the config file path relative to --etc-dir.
 
         Returns:
-            Dict with 'etc_dir' and 'files' keys if config was loaded, None otherwise
+            Dict with 'etc_dir' and 'file' if loaded, None otherwise
         """
+
+        from .config import create_config, resolve_etc_dir
+
+        config_filename = getattr(self, "_config_path", None)
+        if not config_filename:
+            return None
+
         try:
-            etc_dir = self._resolve_etc_dir()
-            yaml_files, loaded_config = self._load_etc_config(etc_dir)
+            custom_etc_dir = getattr(self._parsed_args, "etc_dir", None)
+            etc_dir = str(resolve_etc_dir(custom_etc_dir))
+            config_path = Path(etc_dir) / config_filename
+
+            loaded_config = create_config(file_path=str(config_path), lg=None)
             self.config = self._merge_loaded_and_programmatic_config(loaded_config)
-            return {"etc_dir": etc_dir, "files": yaml_files}
+
+            # Store etc_dir and config_file for hot-reload watcher
+            self._etc_dir = etc_dir  # type: ignore[attr-defined]
+            self._config_file = config_filename  # type: ignore[attr-defined]
+            # Update _config_path to resolved absolute path (for backwards compat)
+            self._config_path = str(config_path)  # type: ignore[attr-defined]
+
+            return {"etc_dir": etc_dir, "file": config_filename}
 
         except FileNotFoundError:
             return None
         except Exception:
-            # Fail silently - auto-loading is optional and shouldn't break the app
+            # Fail silently - config loading shouldn't break the app
             return None
-
-    def _resolve_etc_dir(self) -> str:
-        """Resolve etc directory based on --etc-dir argument or fallback chain."""
-        from .config import resolve_etc_dir
-
-        custom_etc_dir = getattr(self._parsed_args, "etc_dir", None)
-        etc_dir = resolve_etc_dir(custom_etc_dir)
-        return str(etc_dir)
-
-    def _load_etc_config(self, etc_dir: str) -> tuple[list[str], "DotDict"]:
-        """Load all YAML config files from etc directory."""
-        from pathlib import Path
-
-        from .config import create_config
-
-        etc_path = Path(etc_dir)
-        yaml_files = self._find_yaml_files(etc_path)
-        loaded_config = create_config(dir_name=etc_dir, load_all=True, lg=None)
-        return yaml_files, loaded_config
 
     def run_no_tool(self) -> int:
         """
@@ -505,10 +512,17 @@ class App(Traceable):
             return self.run()
 
         except KeyboardInterrupt:
-            # Fallback for edge cases where signal handler didn't catch it
+            # Handle interrupt - signal handler raises KeyboardInterrupt to allow
+            # tool code to unwind before shutdown (fixes async cleanup log ordering)
             if hasattr(self, "lifecycle") and self.lifecycle.logger:
                 self.lg.info("... interrupted by user")
-                return self.lifecycle.shutdown(130)
+                # Use signal return code if available (130 for SIGINT, 143 for SIGTERM)
+                return_code = 130
+                if self.lifecycle._shutdown_manager:
+                    return_code = (
+                        self.lifecycle._shutdown_manager.get_signal_return_code()
+                    )
+                return self.lifecycle.shutdown(return_code)
             return 130
         except Exception as e:
             if hasattr(self, "lifecycle") and self.lifecycle.logger:
@@ -517,7 +531,7 @@ class App(Traceable):
                 self.lifecycle.shutdown(1)
             else:
                 # Fallback to root logger if app logger not available
-                logging.error(f"app error: {e}")
+                logging.error("app error", extra={"exception": e})
             raise  # Always re-raise to preserve stack trace
 
     def run(self) -> int:
@@ -608,3 +622,71 @@ class App(Traceable):
         from typing import cast
 
         return cast(logging.Logger, self.lifecycle.logger)
+
+    def subprocess_context(self, handle_signals: bool = True) -> "SubprocessContext":
+        """
+        Create a SubprocessContext for use in child processes.
+
+        Creates a fresh logger for the subprocess and wires up config hot-reload.
+        Use this in worker processes spawned via multiprocessing.
+
+        Usage:
+            with app.subprocess_context() as ctx:
+                while ctx.running:
+                    # do work
+                    pass
+
+        Args:
+            handle_signals: Whether to install signal handlers (default True)
+
+        Returns:
+            SubprocessContext configured with fresh logger and config watcher
+        """
+        from appinfra.log import LoggerFactory
+        from appinfra.log.config import LogConfig
+        from appinfra.subprocess import SubprocessContext
+
+        # Create fresh logger for subprocess (forked memory is isolated)
+        config_dict = (
+            self.config.to_dict()
+            if hasattr(self.config, "to_dict")
+            else dict(self.config)
+        )
+        log_config = LogConfig.from_config(config_dict, "logging")
+        lg = LoggerFactory.create_root(log_config)
+
+        return SubprocessContext(
+            lg=lg,
+            etc_dir=getattr(self, "_etc_dir", None),
+            config_file=getattr(self, "_config_file", None),
+            handle_signals=handle_signals,
+        )
+
+    def create_config_watcher(self) -> "ConfigWatcher | None":
+        """
+        Create a ConfigWatcher for config hot-reload.
+
+        Returns None if etc_dir or config_file are not configured.
+
+        Usage:
+            watcher = app.create_config_watcher()
+            if watcher:
+                reloader = LogConfigReloader(lg)
+                watcher.configure(config_file, on_change=reloader)
+                watcher.start()
+
+        Returns:
+            ConfigWatcher or None if not configured
+        """
+        from typing import cast as type_cast
+
+        from appinfra.config import ConfigWatcher
+        from appinfra.log import Logger
+
+        etc_dir = getattr(self, "_etc_dir", None)
+        config_file = getattr(self, "_config_file", None)
+
+        if etc_dir is None or config_file is None:
+            return None
+
+        return ConfigWatcher(lg=type_cast(Logger, self.lg), etc_dir=etc_dir)

@@ -9,10 +9,12 @@ from .advanced import AdvancedConfigurer
 from .logging import LoggingConfigurer
 from .server import ServerConfigurer
 from .tool import ToolConfigurer
+from .version import VersionConfigurer
 
 __all__ = [
     "ToolConfigurer",
     "ServerConfigurer",
     "LoggingConfigurer",
     "AdvancedConfigurer",
+    "VersionConfigurer",
 ]

@@ -17,17 +17,19 @@ from unittest.mock import Mock
 
 import pytest
 
-from appinfra.app.cfg import (
+from appinfra.config import (
+    MAX_CONFIG_SIZE_BYTES,
     Config,
-    _check_file_size,
-    _preserve_config_attributes,
-    _restore_config_attributes,
-    get_config_path,
+    get_config_file_path,
     get_default_config,
     get_etc_dir,
     get_project_root,
 )
-from appinfra.app.constants import MAX_CONFIG_SIZE_BYTES
+from appinfra.config.config import (
+    _check_file_size,
+    _preserve_config_attributes,
+    _restore_config_attributes,
+)
 
 # =============================================================================
 # Fixtures
@@ -734,19 +736,19 @@ class TestUtilityFunctions:
         except FileNotFoundError:
             pytest.skip("Not running in infra project directory")
 
-    def test_get_config_path_with_default(self):
-        """Test get_config_path with default filename."""
+    def test_get_config_file_path_with_default(self):
+        """Test get_config_file_path with default filename."""
         try:
-            config_path = get_config_path()
+            config_path = get_config_file_path()
             assert config_path.name == "infra.yaml"
             assert config_path.parent.name == "etc"
         except FileNotFoundError:
             pytest.skip("Not running in infra project directory")
 
-    def test_get_config_path_with_custom_file(self):
-        """Test get_config_path with custom filename."""
+    def test_get_config_file_path_with_custom_file(self):
+        """Test get_config_file_path with custom filename."""
         try:
-            config_path = get_config_path("custom.yaml")
+            config_path = get_config_file_path("custom.yaml")
             assert config_path.name == "custom.yaml"
             assert config_path.parent.name == "etc"
         except FileNotFoundError:
@@ -1134,3 +1136,84 @@ database:
         # Should raise DotDictPathNotFoundError when trying to substitute ${nonexistent.key}
         with pytest.raises(DotDictPathNotFoundError):
             Config(str(config_file))
+
+
+# =============================================================================
+# Test Config.reload()
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestConfigReload:
+    """Test Config.reload() method."""
+
+    def test_reload_reloads_from_disk(self, tmp_path):
+        """Test reload() re-reads the config file."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("value: original")
+
+        config = Config(str(config_file))
+        assert config.value == "original"
+
+        # Modify the file
+        config_file.write_text("value: updated")
+
+        # Reload should pick up the change
+        config.reload()
+        assert config.value == "updated"
+
+    def test_reload_returns_self(self, tmp_path):
+        """Test reload() returns self for chaining."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("value: test")
+
+        config = Config(str(config_file))
+        result = config.reload()
+
+        assert result is config
+
+    def test_reload_raises_without_config_path(self):
+        """Test reload() raises RuntimeError if config wasn't loaded from file."""
+        from appinfra.dot_dict import DotDict
+
+        # Create a Config-like object without _config_path
+        # Note: This is an edge case - normally Config always has _config_path
+        config = Config.__new__(Config)
+        DotDict.__init__(config)  # Initialize as empty DotDict
+
+        with pytest.raises(RuntimeError, match="not loaded from a file"):
+            config.reload()
+
+    def test_reload_preserves_config_options(self, tmp_path):
+        """Test reload() preserves enable_env_overrides, env_prefix, etc."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("value: original")
+
+        config = Config(
+            str(config_file),
+            enable_env_overrides=False,
+            env_prefix="CUSTOM_",
+            resolve_paths=False,
+        )
+
+        config_file.write_text("value: updated")
+        config.reload()
+
+        # Options should be preserved
+        assert config._enable_env_overrides is False
+        assert config._env_prefix == "CUSTOM_"
+        assert config._resolve_paths is False
+        # Value should be updated
+        assert config.value == "updated"
+
+    def test_reload_chain_with_get(self, tmp_path):
+        """Test reload() can be chained with get()."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("database:\n  host: localhost")
+
+        config = Config(str(config_file))
+        config_file.write_text("database:\n  host: remotehost")
+
+        # Chain reload with get
+        host = config.reload().get("database.host")
+        assert host == "remotehost"

@@ -59,6 +59,17 @@ with ProgressLogger(logger, "Syncing...", total=10, justify="right") as pl:
         pl.update(message=f"Syncing {pkg}...")
 ```
 
+### Full-Width Mode
+
+Use `expand=True` to make the progress bar fill the terminal width:
+
+```python
+# Progress bar expands to fill available width
+with ProgressLogger(logger, "Processing...", total=100, expand=True) as pl:
+    for item in items:
+        pl.update()
+```
+
 ### Switching Modes
 
 ```python
@@ -82,6 +93,8 @@ class ProgressLogger:
         total: int | None = None,  # None = spinner, int = progress bar
         spinner: str = "dots",     # Spinner style: "dots", "arc", "moon", etc.
         justify: str = "left",     # "left" or "right" (anchors bar to right edge)
+        expand: bool = False,      # True = progress bar fills terminal width
+        bar_style: str = "bar.complete",  # Bar color: "green", "blue", etc.
     ): ...
 
     # Logging methods (pause display, log, resume)
@@ -165,6 +178,44 @@ secret = password("Enter API key:")
 features = multiselect("Enable features:", ["logging", "metrics", "tracing"])
 ```
 
+### Scrollable Selection
+
+Arrow-key navigable selection with configurable page height. Requires `pip install appinfra[ui]`.
+
+```python
+from appinfra.ui import select_scrollable, select_table
+
+# Scrollable list selection
+servers = [f"server-{i:03d}" for i in range(50)]
+idx = select_scrollable("Select server:", servers, max_height=10)
+if idx is not None:
+    print(f"Selected: {servers[idx]}")
+
+# Table-style selection with columns
+processes = [
+    {"pid": "1234", "name": "nginx", "status": "running"},
+    {"pid": "1235", "name": "postgres", "status": "running"},
+]
+selected = select_table(
+    "Select process:",
+    processes,
+    columns=["pid", "name", "status"],
+    max_height=5,
+)
+if selected:
+    print(f"Selected: {selected['name']}")
+```
+
+**Controls:**
+- Arrow keys: Navigate up/down
+- Enter: Select item
+- Q or ESC: Cancel (returns `None`)
+
+**Parameters:**
+- `max_height`: Maximum visible rows before scrolling (default: 10)
+- `highlight_color`: Background color for selected row (default: `#005fff`)
+- `highlight_text`: Text color for selected row (default: `#ffffff`)
+
 ## Exports
 
 ```python
@@ -191,7 +242,10 @@ from appinfra.ui import (
     text,
     password,
     select,
+    select_scrollable,  # Arrow-key scrollable selection
+    select_table,       # Table-style scrollable selection
     multiselect,
     NonInteractiveError,
+    INQUIRER_AVAILABLE, # True if InquirerPy is installed
 )
 ```

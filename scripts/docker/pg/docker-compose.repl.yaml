@@ -1,32 +1,6 @@
+# PostgreSQL Replication Mode (Primary + Standby)
 services:
-  # Single instance mode (default)
-  postgres:
-    profiles: ["single"]
-    container_name: ${NAME:?}
-    image: postgres:${VERSION:?}
-    command:
-      - postgres
-      - -c
-      - max_connections=500
-      - -c
-      - shared_preload_libraries=pg_stat_statements
-      - -c
-      - join_collapse_limit=1
-      - -c
-      - autovacuum=true
-    restart: always
-    volumes:
-      - "$PWD:$PWD"
-    working_dir: $PWD
-    ports:
-      - ${PORT:?}:${PORT}
-    environment:
-      - POSTGRES_HOST_AUTH_METHOD=trust
-      - PGPORT=${PORT}
-
-  # Replication mode: Primary server
   postgres-primary:
-    profiles: ["replication"]
     container_name: ${NAME:?}-primary
     image: postgres:${VERSION:?}
     command:
@@ -66,9 +40,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Replication mode: Standby server (read-only replica)
   postgres-standby:
-    profiles: ["replication"]
     container_name: ${NAME:?}-standby
     image: postgres:${VERSION:?}
     restart: always

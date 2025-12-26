@@ -76,7 +76,7 @@ class ServeTool(Tool):
             return 130  # Standard exit code for SIGINT
         except Exception as e:
             if self.lg:
-                self.lg.error(f"Server error: {e}")
+                self.lg.error("server error", extra={"exception": e})
             self._server.stop()
             return 1
 

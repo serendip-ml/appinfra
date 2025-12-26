@@ -90,17 +90,14 @@ class LifecycleManager:
         # Start hot-reload watcher if configured
         self._start_hot_reload_watcher(config)
 
+        # Trigger startup hooks
+        self._trigger_startup_hooks()
+
     def _create_shutdown_manager(self, config: Any) -> None:
         """Create and register shutdown manager."""
         from .shutdown import ShutdownManager
 
-        shutdown_timeout = getattr(config, "shutdown_timeout", 30.0)
-        self._shutdown_manager = ShutdownManager(
-            self.shutdown,
-            shutdown_timeout,
-            logger=self._logger,
-            start_time=self._start_time,
-        )
+        self._shutdown_manager = ShutdownManager()
         self._shutdown_manager.register_signal_handlers()
 
     def _get_hot_reload_config(self, config: Any) -> Any | None:
@@ -115,12 +112,17 @@ class LifecycleManager:
         enabled = getattr(hot_reload_config, "enabled", False)
         return hot_reload_config if enabled else None
 
-    def _resolve_hot_reload_config_path(self, hot_reload_config: Any) -> str | None:
-        """Resolve config path from hot_reload config or application."""
-        config_path = getattr(hot_reload_config, "config_path", None)
-        if config_path is None and hasattr(self.application, "_config_path"):
-            config_path = self.application._config_path
-        return config_path
+    def _resolve_hot_reload_config(self) -> tuple[str, str] | None:
+        """Resolve etc_dir and config_file from application.
+
+        Returns:
+            Tuple of (etc_dir, config_file) if available, None otherwise
+        """
+        etc_dir = getattr(self.application, "_etc_dir", None)
+        config_file = getattr(self.application, "_config_file", None)
+        if etc_dir is not None and config_file is not None:
+            return (etc_dir, config_file)
+        return None
 
     def _start_hot_reload_watcher(self, config: Any) -> None:
         """Start config file watcher if hot-reload is enabled."""
@@ -128,59 +130,84 @@ class LifecycleManager:
         if hot_reload_config is None:
             return
 
-        config_path = self._resolve_hot_reload_config_path(hot_reload_config)
-        if config_path is None:
+        config_info = self._resolve_hot_reload_config()
+        if config_info is None:
             if self._lifecycle_logger:
                 self._lifecycle_logger.warning(
-                    "hot-reload enabled but no config path available"
+                    "hot-reload enabled but no config path available - "
+                    "use with_config_file() to set config path"
                 )
             return
 
-        self._configure_and_start_watcher(hot_reload_config, config_path)
+        etc_dir, config_file = config_info
+        self._configure_and_start_watcher(hot_reload_config, etc_dir, config_file)
 
     def _configure_and_start_watcher(
-        self, hot_reload_config: Any, config_path: str
+        self, hot_reload_config: Any, etc_dir: str, config_file: str
     ) -> None:
         """Configure and start the hot-reload watcher."""
         try:
-            from appinfra.log.watcher import LogConfigWatcher
-
-            section = getattr(hot_reload_config, "section", "logging")
-            debounce_ms = getattr(hot_reload_config, "debounce_ms", 500)
-
-            watcher = LogConfigWatcher.get_instance()
-            watcher.configure(config_path, section=section, debounce_ms=debounce_ms)
-            watcher.start()
-
-            if self._lifecycle_logger:
-                self._lifecycle_logger.debug(
-                    "hot-reload watcher started",
-                    extra={"config_path": str(config_path)},
-                )
+            watcher = self._create_watcher(hot_reload_config, etc_dir, config_file)
+            self.application._config_watcher = watcher
+            self._log_watcher_started(etc_dir, config_file)
         except ImportError:
-            if self._lifecycle_logger:
-                self._lifecycle_logger.warning(
-                    "hot-reload enabled but watchdog not installed. "
-                    "Install with: pip install appinfra[hotreload]"
-                )
+            self._log_watchdog_missing()
         except Exception as e:
-            if self._lifecycle_logger:
-                self._lifecycle_logger.error(
-                    "failed to start hot-reload watcher", extra={"exception": e}
-                )
+            self._log_watcher_error(e)
+
+    def _create_watcher(
+        self, hot_reload_config: Any, etc_dir: str, config_file: str
+    ) -> Any:
+        """Create and configure the config watcher."""
+        from appinfra.config import ConfigWatcher
+        from appinfra.log import LogConfigReloader
+
+        debounce_ms = getattr(hot_reload_config, "debounce_ms", 500)
+
+        assert self._logger is not None
+        reloader = LogConfigReloader(self._logger, section="logging")
+
+        assert self._lifecycle_logger is not None
+        watcher = ConfigWatcher(lg=self._lifecycle_logger, etc_dir=etc_dir)
+        watcher.configure(config_file, debounce_ms=debounce_ms, on_change=reloader)
+        watcher.start()
+        return watcher
+
+    def _log_watcher_started(self, etc_dir: str, config_file: str) -> None:
+        """Log that the watcher started successfully."""
+        if self._lifecycle_logger:
+            self._lifecycle_logger.debug(
+                "hot-reload watcher started",
+                extra={"etc_dir": etc_dir, "config_file": config_file},
+            )
+
+    def _log_watchdog_missing(self) -> None:
+        """Log warning about missing watchdog dependency."""
+        if self._lifecycle_logger:
+            self._lifecycle_logger.warning(
+                "hot-reload enabled but watchdog not installed. "
+                "Install with: pip install appinfra[hotreload]"
+            )
+
+    def _log_watcher_error(self, e: Exception) -> None:
+        """Log error when watcher fails to start."""
+        if self._lifecycle_logger:
+            self._lifecycle_logger.error(
+                "failed to start hot-reload watcher", extra={"exception": e}
+            )
 
     def _stop_hot_reload_watcher(self) -> None:
         """Stop config file watcher if running."""
-        try:
-            from appinfra.log.watcher import LogConfigWatcher
+        watcher = self.application._config_watcher
+        if watcher is None:
+            return
 
-            watcher = LogConfigWatcher.get_instance()
+        try:
             if watcher.is_running():
                 watcher.stop()
                 if self._lifecycle_logger:
                     self._lifecycle_logger.debug("hot-reload watcher stopped")
-        except ImportError:
-            pass  # watchdog not installed, nothing to stop
+            self.application._config_watcher = None
         except Exception as e:
             if self._lifecycle_logger:
                 self._lifecycle_logger.error(
@@ -210,7 +237,7 @@ class LifecycleManager:
                 extra={
                     "after": time.since(start_t),
                     "tool": tool.name,
-                    "error": str(e),
+                    "exception": e,
                 },
             )
             raise LifecycleError(f"Failed to setup tool '{tool.name}': {e}") from e
@@ -238,7 +265,7 @@ class LifecycleManager:
         except Exception as e:
             self._lifecycle_logger.error(
                 "tool execution failed",
-                extra={"tool": tool.name, "error": str(e)},
+                extra={"tool": tool.name, "exception": e},
             )
             raise LifecycleError(f"Tool '{tool.name}' execution failed: {e}") from e
 
@@ -330,13 +357,33 @@ class LifecycleManager:
         try:
             phase_func()
         except TimeoutError as e:
-            self._lifecycle_logger.warning(f"shutdown timeout: {e}")
+            self._lifecycle_logger.warning("shutdown timeout", extra={"exception": e})
         except Exception as e:
-            self._lifecycle_logger.error(f"shutdown phase '{phase_name}' failed: {e}")
+            self._lifecycle_logger.error(
+                "shutdown phase failed", extra={"phase": phase_name, "exception": e}
+            )
         finally:
             # Cancel alarm and restore handler
             signal.alarm(0)
             signal.signal(signal.SIGALRM, old_handler)
+
+    def _trigger_startup_hooks(self) -> None:
+        """Trigger startup hooks."""
+        if not self._hook_manager:
+            return
+
+        if self._hook_manager.has_hooks("startup"):
+            self._lifecycle_logger.trace("triggering startup hooks...")
+            try:
+                from ..builder.hook import HookContext
+
+                context = HookContext(application=self.application)
+                self._hook_manager.trigger_hook("startup", context)
+                self._lifecycle_logger.debug("startup hooks completed")
+            except Exception as e:
+                self._lifecycle_logger.error(
+                    "startup hooks failed", extra={"exception": e}
+                )
 
     def _shutdown_hooks(self) -> None:
         """Trigger shutdown hooks."""

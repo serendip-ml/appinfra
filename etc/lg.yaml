@@ -3,105 +3,61 @@
 # This file contains logging configuration for the infrastructure framework
 # See docs/LOGGING_BUILDER_GUIDE.md for comprehensive documentation
 
-# Logging Configuration
-# =====================
-# Supports multiple handlers with different formats and configurations
-# Global settings apply to all handlers by default, handlers can override specific settings
 logging:
-  # Global logging settings (defaults for all handlers)
-  level: info                  # Global log level: trace, debug, info, warning, error, critical, false (disabled)
-  location: false              # Show file locations (false = disabled, integer = depth level)
-  location_color: grey-6       # Color for code locations (null = default black)
-                               # Supported: black, red, green, yellow, blue, magenta, cyan, white
-                               # Gray levels: gray-0 (darkest) to gray-23 (lightest), e.g. "gray-12"
-                               # Case insensitive, e.g. "CYAN", "Gray-15", "yellow"
+  # Global display settings (affect all handlers uniformly)
+  level: info                  # Log level: trace, debug, info, warning, error, critical, false
+  location: 0                  # File location depth: 0 = disabled, 1+ = show N stack frames
+  location_color: grey-6       # Color for locations: black, red, green, yellow, blue, magenta,
+                               # cyan, white, or gray-0 (darkest) to gray-23 (lightest)
+  micros: false                # Show microsecond precision in timestamps
 
-  # Topic-based level overrides (optional - allows fine-grained control by logger pattern)
-  # Uncomment to enable topic-based logging:
+  # Topic-based level overrides (fine-grained control by logger pattern)
   # topics:
   #   "/appinfra/db/*": debug       # All database loggers → debug
-  #   "/appinfra/db/queries": trace # More specific: queries → trace (overrides above)
+  #   "/appinfra/db/queries": trace # More specific: queries → trace
   #   "/appinfra/**": info          # All framework loggers → info
-  #   "/myapp/*": warning        # Application loggers → warning
   # Pattern syntax:
-  #   - "*" matches single path segment (e.g., "/appinfra/db/*" matches "/appinfra/db/pg" but not "/appinfra/db/pg/queries")
-  #   - "**" matches any depth (e.g., "/appinfra/**" matches all descendants)
-  #   - Exact paths for precise matching (e.g., "/appinfra/db/queries")
-  # Precedence: CLI args > API calls > YAML config
-  # Within same precedence: more specific pattern wins
+  #   - "*" matches single segment, "**" matches any depth
+  #   - More specific patterns take precedence
 
   # Handler configurations
   handlers:
-    # Handlers are now defined as a dictionary with arbitrary names chosen by the user
     console_text:
-      type: console              # Handler type (console, file, database, rotating_file, timed_rotating_file)
-      enabled: true              # Enable this handler
-      level: trace               # More detailed than global - should be restricted to INFO
-      format: text               # Format: text, json
-      stream: stdout             # Output stream: stdout, stderr
-      colors: true               # Enable colored output
-      location: 0                # Location depth (inherits from global if not specified)
-      location_color: null       # Color for locations (null = inherit from global, or color name)
-      micros: false              # Show microseconds (overwrites global setting)
+      type: console
+      enabled: true
+      level: trace               # Handler-specific level filter
+      format: text
+      stream: stdout
+      colors: true
 
     console_json:
-      type: console              # Handler type (console, file, database, rotating_file, timed_rotating_file)
-      enabled: false             # Enable this handler
-      level: info                # More restrictive than global - keeps WARNING level
-      format: json               # Format: text, json
-      stream: stderr             # Output stream: stdout, stderr
-      location: 0                # Location depth (inherits from global if not specified)
-      location_color: null       # Color for locations (null = inherit from global, or color name)
-      micros: true               # Show microseconds (overwrites global setting)
+      type: console
+      enabled: false
+      level: info
+      format: json
+      stream: stderr
 
     file:
-      type: file                 # Handler type
-      enabled: false             # Enable file logging
-      level: trace               # More detailed than global - should be restricted to INFO
-      format: text               # Format: text, json (set to json for JSON output)
-      file: "logs/app.log"       # Output file path (same for both text and JSON)
-      rotation: size             # Rotation: none, size, timed
-      max_size: "50MB"           # Max file size before rotation
-      backup_count: 5            # Number of backup files to keep
+      type: file
+      enabled: false
+      level: trace
+      format: text
+      file: "logs/app.log"
+      rotation: size             # none, size, timed
+      max_size: "50MB"
+      backup_count: 5
 
     database:
-      type: database             # Handler type
-      enabled: false             # Enable database logging
-      level: warning             # Override global level - only log warnings+
-      format: json               # Format: text, json (json recommended for database logging)
-      table: error_logs          # Database table name
-      db: main                   # Database connection to use
-      batch_size: 10             # Batch size for database inserts
-      flush_interval: 30         # Flush interval in seconds
-
-      # Critical error handling - ensures exceptions are immediately flushed
+      type: database
+      enabled: false
+      level: warning
+      format: json
+      table: error_logs
+      db: main
+      batch_size: 10
+      flush_interval: 30
       critical_flush:
-        enabled: true                # Enable critical error immediate flush (default: true)
-        trigger_fields: ["exception"] # Fields in 'extra' that trigger immediate flush
-        timeout: 5.0                 # Max time to wait for critical flush in seconds (default: 5.0)
-        fallback_to_console: true    # If DB flush fails, log to console (default: true)
-
-
-# Runtime Logging Overrides (Global)
-# ===================================
-# These settings can be used to override the main logging configuration during runtime
-# Simply uncomment and modify as needed
-# logging:
-#   # Runtime override of global settings
-#   level: "info"                # Runtime log level override
-#   location: 0                  # Runtime location depth override
-#   location_color: "cyan"       # Runtime location color override (color name or gray-N)
-#   micros: false                # Runtime microseconds override
-#
-#   # Runtime override of specific handler settings
-#   handlers:
-#     console:
-#       enabled: true
-#       colors: true
-#       location_color: "cyan"     # Override location color for this handler
-#     json_file:
-#       enabled: true
-#       file: "logs/runtime.json"
-#     database:
-#       enabled: true
-#       level: "warning"
+        enabled: true
+        trigger_fields: ["exception"]
+        timeout: 5.0
+        fallback_to_console: true

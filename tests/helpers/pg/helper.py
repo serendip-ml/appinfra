@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from typing import Any, cast
 
-from appinfra.app.cfg import Config
+from appinfra.config import Config
 from appinfra.db.pg import PG
 
 from .helper_core import PGTestHelperCore

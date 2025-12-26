@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from appinfra.app.cfg import Config
+from appinfra.config import Config
 from appinfra.yaml import Loader
 from tests.security.payloads.injection import SHELL_INJECTION, YAML_CODE_EXECUTION
 

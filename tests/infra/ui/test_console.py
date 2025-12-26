@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import os
-from io import StringIO
-from unittest.mock import patch
 
 import pytest
+
+pytestmark = pytest.mark.unit
+
+from io import StringIO
+from unittest.mock import patch
 
 from appinfra.ui.console import (
     APPINFRA_THEME,

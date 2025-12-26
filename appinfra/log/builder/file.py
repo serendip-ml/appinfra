@@ -17,6 +17,14 @@ from ..formatters import LogFormatter
 from .builder import LoggingBuilder
 from .interface import HandlerConfig
 
+
+def _create_formatter(config: LogConfig, logger: Any = None) -> LogFormatter:
+    """Create formatter with hot-reload support if logger has holder."""
+    if logger is not None and hasattr(logger, "_holder") and logger._holder is not None:
+        return LogFormatter(logger._holder)
+    return LogFormatter(config)
+
+
 if TYPE_CHECKING:
     from typing import Self
 
@@ -54,7 +62,7 @@ class FileHandlerConfig(HandlerConfig):
             level = getattr(logging, level.upper(), logging.INFO)
         handler.setLevel(level)
 
-        formatter = LogFormatter(config)
+        formatter = _create_formatter(config, logger)
         handler.setFormatter(formatter)
         return handler
 
@@ -98,7 +106,7 @@ class RotatingFileHandlerConfig(HandlerConfig):
             level = getattr(logging, level.upper(), logging.INFO)
         handler.setLevel(level)
 
-        formatter = LogFormatter(config)
+        formatter = _create_formatter(config, logger)
         handler.setFormatter(formatter)
         return handler
 
@@ -148,7 +156,7 @@ class TimedRotatingFileHandlerConfig(HandlerConfig):
             level = getattr(logging, level.upper(), logging.INFO)
         handler.setLevel(level)
 
-        formatter = LogFormatter(config)
+        formatter = _create_formatter(config, logger)
         handler.setFormatter(formatter)
         return handler
 

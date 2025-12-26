@@ -1,0 +1,24 @@
+# PostgreSQL Single Instance Mode
+services:
+  postgres:
+    container_name: ${NAME:?}
+    image: postgres:${VERSION:?}
+    command:
+      - postgres
+      - -c
+      - max_connections=500
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - join_collapse_limit=1
+      - -c
+      - autovacuum=true
+    restart: always
+    volumes:
+      - "$PWD:$PWD"
+    working_dir: $PWD
+    ports:
+      - ${PORT:?}:${PORT}
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+      - PGPORT=${PORT}

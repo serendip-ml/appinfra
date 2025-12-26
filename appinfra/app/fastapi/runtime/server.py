@@ -14,6 +14,7 @@ from .subprocess import SubprocessManager
 if TYPE_CHECKING:
     from .adapter import FastAPIAdapter
 
+# Module-level logger for main process Server class methods
 logger = logging.getLogger("fastapi.server")
 
 # Guard imports for optional dependency
@@ -42,6 +43,30 @@ def _build_uvicorn_log_config(config: ApiConfig) -> dict[str, Any]:
     }
 
 
+def _create_subprocess_logger(config: ApiConfig) -> Any:
+    """Create appinfra logger for subprocess hot-reload support."""
+    from appinfra.log import LoggerFactory
+    from appinfra.log.config import LogConfig
+
+    setup_subprocess_logging(
+        config.log_file, log_level=config.uvicorn.log_level.upper()
+    )
+    log_config = LogConfig.from_params(level=config.uvicorn.log_level, location=1)
+    return LoggerFactory.create_root(log_config)
+
+
+def _register_ipc_lifecycle_events(app: Any, ipc_channel: Any) -> None:
+    """Register FastAPI lifecycle events for IPC polling."""
+
+    @app.on_event("startup")
+    async def startup() -> None:
+        await ipc_channel.start_polling()
+
+    @app.on_event("shutdown")
+    async def shutdown() -> None:
+        await ipc_channel.stop_polling()
+
+
 def _uvicorn_subprocess_entry(
     adapter: FastAPIAdapter,
     config: ApiConfig,
@@ -54,35 +79,29 @@ def _uvicorn_subprocess_entry(
     Runs inside subprocess: sets up logging, creates IPC channel,
     builds FastAPI app, and runs uvicorn (blocking).
     """
-    # Lazy imports inside subprocess
     import uvicorn
+
+    from appinfra.subprocess import SubprocessContext
 
     from .ipc import IPCChannel
 
-    # Setup logging isolation FIRST
-    setup_subprocess_logging(
-        config.log_file,
-        log_level=config.uvicorn.log_level.upper(),
-    )
+    lg = _create_subprocess_logger(config)
 
-    # Create IPC channel and build app
-    assert config.ipc is not None  # We're in subprocess mode
-    ipc_channel = IPCChannel(request_q, response_q, config.ipc)
-    app = adapter.build(ipc_channel=ipc_channel)
+    with SubprocessContext(
+        lg=lg,
+        etc_dir=config.etc_dir,
+        config_file=config.config_file,
+        handle_signals=False,  # uvicorn handles SIGTERM/SIGINT
+    ):
+        assert config.ipc is not None  # We're in subprocess mode
+        ipc_channel = IPCChannel(request_q, response_q, config.ipc)
+        app = adapter.build(ipc_channel=ipc_channel)
 
-    # Setup lifecycle events for IPC polling
-    @app.on_event("startup")
-    async def startup() -> None:
-        await ipc_channel.start_polling()
+        _register_ipc_lifecycle_events(app, ipc_channel)
 
-    @app.on_event("shutdown")
-    async def shutdown() -> None:
-        await ipc_channel.stop_polling()
-
-    # Run uvicorn (blocking)
-    uvicorn_kwargs = config.uvicorn.to_uvicorn_kwargs()
-    uvicorn_kwargs["log_config"] = _build_uvicorn_log_config(config)
-    uvicorn.run(app, host=config.host, port=config.port, **uvicorn_kwargs)
+        uvicorn_kwargs = config.uvicorn.to_uvicorn_kwargs()
+        uvicorn_kwargs["log_config"] = _build_uvicorn_log_config(config)
+        uvicorn.run(app, host=config.host, port=config.port, **uvicorn_kwargs)
 
 
 class Server:

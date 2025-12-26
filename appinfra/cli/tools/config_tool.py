@@ -11,9 +11,9 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
-from appinfra.app.cfg import Config
 from appinfra.app.tools import Tool, ToolConfig
 from appinfra.app.tracing.traceable import Traceable
+from appinfra.config import Config
 
 
 class ConfigTool(Tool):
@@ -101,10 +101,10 @@ class ConfigTool(Tool):
             # Filter out internal Config attributes (start with underscore)
             return {k: v for k, v in data.items() if not k.startswith("_")}
         except yaml.YAMLError as e:
-            self.lg.error(f"YAML parse error: {e}")  # type: ignore[union-attr]
+            self.lg.error("YAML parse error", extra={"exception": e})  # type: ignore[union-attr]
             return None
         except Exception as e:
-            self.lg.error(f"Failed to load config: {e}")  # type: ignore[union-attr]
+            self.lg.error("failed to load config", extra={"exception": e})  # type: ignore[union-attr]
             return None
 
     def _filter_section(self, data: dict[str, Any]) -> dict[str, Any] | None:

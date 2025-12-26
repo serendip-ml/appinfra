@@ -1,10 +1,12 @@
 # Environment Variable Overrides for Configuration
 
-This document describes how to use environment variables to override configuration values from `infra.yaml`.
+This document describes how to use environment variables to override configuration values from
+`infra.yaml`.
 
 ## Overview
 
-The `infra.cfg.Config` class now supports environment variable overrides, allowing you to modify configuration values without changing the YAML file. This is particularly useful for:
+The `infra.cfg.Config` class now supports environment variable overrides, allowing you to modify
+configuration values without changing the YAML file. This is particularly useful for:
 
 - Development environments
 - Testing scenarios
@@ -238,7 +240,8 @@ To access: `config.test.my.key` (not `config.test.my_key`)
 
 ### Variable Substitution
 
-Environment variable overrides are applied before variable substitution (`${variable_name}`), so overridden values can be used in variable references:
+Environment variable overrides are applied before variable substitution (`${variable_name}`), so
+overridden values can be used in variable references:
 
 ```yaml
 # YAML
@@ -265,6 +268,33 @@ Environment variable paths are case-insensitive:
 INFRA_LOGGING_LEVEL=debug
 INFRA_Logging_Level=debug
 INFRA_LOGGING_level=debug
+```
+
+## Framework Environment Variables
+
+These environment variables control framework behavior (not config value overrides):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INFRA_DEFAULT_CONFIG_FILE` | `infra.yaml` | Default config filename used by `with_config_file()` and `get_config_file_path()` |
+
+**Note:** Because this env var starts with `INFRA_`, it can interfere with config keys named
+`default`. If your config has a `default` key, the env var will be interpreted as
+`config.default.config.file`.
+Use a different key name in your config to avoid this collision.
+
+### Example: Custom Config Filename
+
+```bash
+# Use app.yaml instead of infra.yaml as default
+export INFRA_DEFAULT_CONFIG_FILE=app.yaml
+```
+
+```python
+from appinfra.app.builder import AppBuilder
+
+# Now loads etc/app.yaml instead of etc/infra.yaml
+app = AppBuilder("myapp").with_config_file().build()
 ```
 
 ## Best Practices
@@ -297,4 +327,5 @@ print("Final configuration:", config.dict())
 
 ## Examples
 
-See `examples/environment_variable_overrides_example.py` for a comprehensive demonstration of the environment variable override functionality.
+See `examples/environment_variable_overrides_example.py` for a comprehensive demonstration of the
+environment variable override functionality.

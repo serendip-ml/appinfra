@@ -404,3 +404,88 @@ class TestProgressLoggerRichNotAvailable:
                 pl.log("Test message")
 
             mock_logger.log.assert_called_once()
+
+
+@pytest.mark.unit
+class TestProgressLoggerJustification:
+    """Tests for ProgressLogger progress bar justification."""
+
+    def test_justify_right_creates_expanded_progress(self, mock_logger):
+        """Test justify='right' creates progress bar with expanded text column."""
+        mock_console = MagicMock()
+        mock_progress = MagicMock()
+        mock_progress.add_task.return_value = 0
+
+        with (
+            patch("appinfra.ui.progress_logger._is_interactive", return_value=True),
+            patch("appinfra.ui.progress_logger.RICH_AVAILABLE", True),
+            patch("appinfra.ui.progress_logger.RichConsole", return_value=mock_console),
+            patch(
+                "appinfra.ui.progress_logger.RichProgress", return_value=mock_progress
+            ) as mock_progress_class,
+        ):
+            pl = ProgressLogger(mock_logger, total=100, justify="right")
+            pl.__enter__()
+
+            # Verify RichProgress was called with expand=True
+            call_kwargs = mock_progress_class.call_args.kwargs
+            assert call_kwargs.get("expand") is True
+
+            pl.__exit__(None, None, None)
+
+
+@pytest.mark.unit
+class TestProgressLoggerUpdateWithMessage:
+    """Tests for ProgressLogger update with message in progress bar mode."""
+
+    def test_update_with_message_in_progress_mode(self, mock_logger):
+        """Test update with message updates description in progress bar mode."""
+        mock_console = MagicMock()
+        mock_progress = MagicMock()
+        mock_progress.add_task.return_value = 0
+
+        with (
+            patch("appinfra.ui.progress_logger._is_interactive", return_value=True),
+            patch("appinfra.ui.progress_logger.RICH_AVAILABLE", True),
+            patch("appinfra.ui.progress_logger.RichConsole", return_value=mock_console),
+            patch(
+                "appinfra.ui.progress_logger.RichProgress", return_value=mock_progress
+            ),
+        ):
+            pl = ProgressLogger(mock_logger, total=100)
+            with pl:
+                pl.update(message="New message", advance=1)
+
+            # Should update with both description and advance
+            mock_progress.update.assert_called_with(
+                0, description="New message", advance=1
+            )
+
+
+@pytest.mark.unit
+class TestProgressLoggerStartDisplayEdgeCases:
+    """Tests for _start_display edge cases."""
+
+    def test_start_display_noop_when_not_interactive(self, mock_logger):
+        """Test _start_display returns early when not interactive."""
+        with patch("appinfra.ui.progress_logger._is_interactive", return_value=False):
+            pl = ProgressLogger(mock_logger)
+            # Call _start_display directly - should be no-op
+            pl._start_display()
+            assert pl._status is None
+            assert pl._progress is None
+
+    def test_start_display_noop_when_no_console(self, mock_logger):
+        """Test _start_display returns early when console not set."""
+        with (
+            patch("appinfra.ui.progress_logger._is_interactive", return_value=True),
+            patch("appinfra.ui.progress_logger.RICH_AVAILABLE", True),
+        ):
+            pl = ProgressLogger(mock_logger)
+            # Force interactive but no console
+            pl._interactive = True
+            pl._console = None
+            # Call _start_display directly - should be no-op
+            pl._start_display()
+            assert pl._status is None
+            assert pl._progress is None

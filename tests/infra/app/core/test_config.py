@@ -365,11 +365,14 @@ class TestCreateConfig:
         """Test uses default file name when not specified (lines 217-218)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create infra.yaml (default name)
-            (Path(tmpdir) / "infra.yaml").write_text("default: true\n")
+            # Use "loaded" instead of "default" to avoid collision with
+            # INFRA_DEFAULT_CONFIG_FILE env var (would be interpreted as
+            # config.default.config.file override)
+            (Path(tmpdir) / "infra.yaml").write_text("loaded: true\n")
 
             config = create_config(dir_name=tmpdir)
 
-            assert config.default is True
+            assert config.loaded is True
 
     def test_with_file_name_in_dir(self):
         """Test loading specific file from directory (lines 220-224)."""

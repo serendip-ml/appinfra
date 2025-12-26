@@ -13,12 +13,28 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class ChildLogConfig:
+    """
+    Immutable configuration for child loggers.
+
+    Child loggers only control their log level. Global settings like location,
+    colors, and micros are read from the registry's root config.
+    """
+
+    level: int | bool = logging.INFO  # int for normal levels, False to disable logging
+
+
+@dataclass(frozen=True)
 class LogConfig:
     """
-    Immutable configuration for loggers.
+    Immutable configuration for root loggers.
 
     This class holds all configuration parameters for a logger instance,
     ensuring consistency and preventing accidental modifications.
+
+    Note: Child loggers use ChildLogConfig which only contains level.
+    Global display settings (location, colors, micros) are read from the
+    registry's root config for hot-reload support.
     """
 
     level: int | bool = logging.INFO  # int for normal levels, False to disable logging
@@ -122,7 +138,7 @@ class LogConfig:
             LogConfig instance
 
         Example:
-            from appinfra.app.cfg import Config
+            from appinfra.config import Config
             config = Config("etc/infra.yaml")
             log_config = LogConfig.from_config(config.dict(), "test.logging")
         """

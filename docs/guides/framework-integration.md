@@ -62,6 +62,7 @@ include $(infra)/make/Makefile.env
 include $(infra)/make/Makefile.help
 include $(infra)/make/Makefile.utils
 include $(infra)/make/Makefile.dev
+include $(infra)/make/Makefile.install  # Optional: only if building a package
 include $(infra)/make/Makefile.pytest
 include $(infra)/make/Makefile.clean
 ```
@@ -81,6 +82,7 @@ include $(infra)/make/Makefile.utils    # Utilities (areyousure, etc.)
 
 # 3. Feature modules (order flexible)
 include $(infra)/make/Makefile.dev      # Requires: env, utils
+include $(infra)/make/Makefile.install  # Optional: only if building a package
 include $(infra)/make/Makefile.pytest   # Requires: env
 include $(infra)/make/Makefile.docs     # Requires: env
 include $(infra)/make/Makefile.pg       # Requires: env, utils
@@ -134,7 +136,7 @@ infra := $(shell appinfra scripts-path)
 INFRA_DEV_PKG_NAME := myproject
 INFRA_DEV_CQ_STRICT := true
 INFRA_PYTEST_TESTS_DIR := tests
-INFRA_DOCS_CONFIG := etc/mkdocs.yaml
+INFRA_DOCS_CONFIG_FILE := mkdocs.yaml
 
 # Hide unused features
 INFRA_DISABLE_GROUPS := pg. cicd.

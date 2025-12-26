@@ -380,6 +380,9 @@ class DocsFindTool(Tool):
         self._print_matches(
             matches, context, max_matches, pattern, word_boundary, no_color
         )
+        self.out.write(
+            "Tip: View with 'appinfra docs show <topic>' (e.g., 'docs show hot-reload-logging')"
+        )
         return 0
 
     def _collect_matches(
@@ -417,7 +420,12 @@ class DocsFindTool(Tool):
         for file_path in directory.rglob(glob):
             file_matches = self._search_file(file_path, pattern, word_boundary)
             if file_matches:
-                rel_path = file_path.relative_to(get_package_root())
+                # Use path relative to docs dir for docs (so paths work with 'docs show')
+                docs_dir = get_docs_dir()
+                if file_path.is_relative_to(docs_dir):
+                    rel_path = file_path.relative_to(docs_dir)
+                else:
+                    rel_path = file_path.relative_to(get_package_root())
                 matches.append((str(rel_path), file_matches))
 
     def _print_matches(
@@ -473,6 +481,17 @@ class DocsFindTool(Tool):
                 f"    ... and {len(file_matches) - max_matches} more matches"
             )
 
+    def _read_file_lines(self, match_path: str) -> list[str] | None:
+        """Read file lines, trying package root then docs dir."""
+        try:
+            file_path = get_package_root() / match_path
+            if not file_path.exists():
+                file_path = get_docs_dir() / match_path
+            with open(file_path, encoding="utf-8", errors="ignore") as f:
+                return f.readlines()
+        except Exception:
+            return None
+
     def _print_matches_with_context(
         self,
         match_path: str,
@@ -484,11 +503,8 @@ class DocsFindTool(Tool):
         no_color: bool = False,
     ) -> None:
         """Print matches with surrounding context lines."""
-        try:
-            file_path = get_package_root() / match_path
-            with open(file_path, encoding="utf-8", errors="ignore") as f:
-                all_lines = f.readlines()
-        except Exception:
+        all_lines = self._read_file_lines(match_path)
+        if all_lines is None:
             self._print_matches_simple(
                 file_matches, max_matches, pattern, word_boundary, no_color
             )

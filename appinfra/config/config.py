@@ -200,6 +200,27 @@ class Config(DotDict):
         self.set(**config_data)
         self.set(**self._resolve(self.dict()))
 
+    def reload(self) -> "Config":
+        """Reload configuration from disk.
+
+        Re-reads all source files, re-applies variable substitution
+        and environment overrides.
+
+        Note:
+            Not thread-safe. Callers must coordinate access if config is
+            shared across threads during reload.
+
+        Returns:
+            Self for chaining.
+
+        Raises:
+            RuntimeError: If Config was not loaded from a file.
+        """
+        if not hasattr(self, "_config_path") or self._config_path is None:
+            raise RuntimeError("Config was not loaded from a file")
+        self._load(str(self._config_path))
+        return self
+
     def _resolve(self, content: Any) -> Any:
         """
         Recursively resolve variable substitutions in configuration content.
@@ -466,11 +487,19 @@ class Config(DotDict):
         """
         current = data
         for part in path[:-1]:
-            if part not in current or not isinstance(current.get(part), dict):
+            if (
+                current is None
+                or part not in current
+                or not isinstance(current.get(part), dict)
+            ):
+                if current is None:
+                    return  # Cannot set value in None
                 current[part] = {}
             current = current[part]
 
         # Convert value to appropriate type
+        if current is None:
+            return  # Cannot set value in None
         converted_value = self._convert_env_value(value)
         current[path[-1]] = converted_value
 
@@ -561,7 +590,7 @@ class Config(DotDict):
                 lg.error(f"Invalid configuration: {e}")
         """
         try:
-            from ..config import PYDANTIC_AVAILABLE, validate_config
+            from . import PYDANTIC_AVAILABLE, validate_config
 
             if not PYDANTIC_AVAILABLE:
                 # Pydantic not installed - skip validation
@@ -641,20 +670,33 @@ def get_etc_dir() -> Path:
     return get_project_root() / "etc"
 
 
-def get_config_path(config_file: str = "infra.yaml") -> Path:
+# Default config filename - can be overridden via INFRA_DEFAULT_CONFIG_FILE env var
+DEFAULT_CONFIG_FILENAME: str = os.environ.get("INFRA_DEFAULT_CONFIG_FILE", "infra.yaml")
+
+
+def get_config_file_path(config_file: str | None = None) -> Path:
     """
     Get the path to a configuration file in the etc directory.
 
     Args:
-        config_file: Name of the configuration file (default: "infra.yaml")
+        config_file: Name of the configuration file. If None, uses DEFAULT_CONFIG_FILENAME
+                     (which can be overridden via INFRA_DEFAULT_CONFIG_FILE env var).
 
     Returns:
         Path to the configuration file
 
     Raises:
         FileNotFoundError: If the project root cannot be found
+
+    Example:
+        # Uses default (infra.yaml or INFRA_DEFAULT_CONFIG_FILE env var)
+        path = get_config_file_path()
+
+        # Explicit filename
+        path = get_config_file_path("app.yaml")
     """
-    return get_etc_dir() / config_file
+    filename = config_file if config_file is not None else DEFAULT_CONFIG_FILENAME
+    return get_etc_dir() / filename
 
 
 # Constants for common paths
@@ -665,7 +707,7 @@ DEFAULT_CONFIG_FILE: Path | None
 try:
     PROJECT_ROOT = get_project_root()
     ETC_DIR = get_etc_dir()
-    DEFAULT_CONFIG_FILE = get_config_path("infra.yaml")
+    DEFAULT_CONFIG_FILE = get_config_file_path()
 except FileNotFoundError:
     # Set to None if project root cannot be found (e.g., during package installation)
     PROJECT_ROOT = None

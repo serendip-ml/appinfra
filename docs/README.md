@@ -110,21 +110,29 @@ logger.info("Hello world", extra={"user_id": "123"})
 ### Configuration
 
 ```python
-from appinfra.app.cfg import Config
+from appinfra.config import Config, get_config_file_path
 
-config = Config("etc/infra.yaml")
+# Recommended: Use get_config_file_path() for automatic etc/ directory resolution
+config = Config(get_config_file_path())  # Finds etc/infra.yaml automatically
 print(config.logging.level)  # Environment vars can override YAML values
+
+# Within a tool (respects --etc-dir if provided):
+# config is already available via self.config
 ```
 
 ### Database
 
 ```python
 from appinfra.db import PG
+from appinfra.config import get_config_file_path
 import sqlalchemy
 
-pg = PG("etc/infra.yaml", "main")
+# Recommended: Use get_config_file_path() for automatic resolution
+pg = PG(get_config_file_path(), "main")
 with pg.session() as session:
     result = session.execute(sqlalchemy.text("SELECT 1"))
+
+# Within a tool: use self.config which already has the loaded config
 ```
 
 ## Project Scaffolding
@@ -199,7 +207,7 @@ database:
 **Usage:**
 
 ```python
-from appinfra.app.cfg import Config
+from appinfra.config import Config
 
 # Default: path resolution enabled
 config = Config('etc/config.yaml')

@@ -17,7 +17,7 @@ import pytest
 # =============================================================================
 
 # Register integration test fixtures
-pytest_plugins = ["tests.fixtures.pg_integration"]
+pytest_plugins = ["tests.fixtures.pg_integration", "tests.fixtures.logging"]
 
 
 # =============================================================================

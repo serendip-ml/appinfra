@@ -75,9 +75,6 @@ class LoggerFactory:
 
     @staticmethod
     def derive(parent: Logger, name: str) -> Logger: ...
-
-    @staticmethod
-    def create_with_separator(name: str, prefix: str = "") -> Logger: ...
 ```
 
 ## File Logging with Rotation
@@ -228,6 +225,26 @@ def on_error(record):
 CallbackRegistry.register("error", my_callback)
 ```
 
+## LogConfigReloader
+
+Callback for hot-reloading logger configuration. Used with `ConfigWatcher`:
+
+```python
+from appinfra.log import LogConfigReloader
+from appinfra.config import ConfigWatcher
+
+# Create reloader for root logger
+reloader = LogConfigReloader(root_logger, section="logging")
+
+# Use with ConfigWatcher (etc_dir in constructor, config_file in configure)
+watcher = ConfigWatcher(lg=lifecycle_logger, etc_dir="/etc/myapp")
+watcher.configure("config.yaml", on_change=reloader)
+watcher.start()
+```
+
+The reloader updates the logger's holder (shared with all child loggers) and level manager when
+config changes.
+
 ## Hot-Reload Configuration
 
 Automatically reload logging settings when config files change:
@@ -237,8 +254,8 @@ from appinfra.app.builder import AppBuilder
 
 app = (
     AppBuilder("my-service")
-    .config("etc/config.yaml")
-    .logging()
+    .with_config_file("config.yaml")
+    .logging
         .with_hot_reload(True)  # Enable hot-reload
         .done()
     .build()
