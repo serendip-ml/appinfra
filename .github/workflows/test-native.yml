@@ -4,9 +4,9 @@ name: Tests (Native Platforms)
 # Re-enable when cross-platform compatibility is addressed
 # on:
 #   push:
-#     branches: [master, develop]
+#     branches: [main, develop]
 #   pull_request:
-#     branches: [master, develop]
+#     branches: [main, develop]
 #   workflow_dispatch:
 
 on:
