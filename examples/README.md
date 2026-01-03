@@ -171,7 +171,7 @@ make pg
 cd /path/to/appinfra
 
 # Run from project root
-~/.venv/bin/python examples/01_basics/hello_world.py
+python examples/01_basics/hello_world.py
 ```
 
 ## Contributing Examples

@@ -168,6 +168,58 @@ have complete type hints. Any file without type hints would FAIL mypy with this 
 
 ---
 
+## 🚫 BASELINE GATES - Check These First
+
+**Before grading quality, verify baseline requirements exist. Missing baselines cap the maximum
+possible grade.**
+
+### Gate 1: Legal Requirements
+```bash
+ls -la LICENSE && head -5 LICENSE
+```
+
+| Result | Action |
+|--------|--------|
+| LICENSE missing or empty | **STOP. Grade capped at F.** Cannot legally use/distribute. |
+| LICENSE exists with valid text | Proceed to Gate 2 |
+
+### Gate 2: Tests Must Pass
+```bash
+make test.all
+```
+
+| Result | Action |
+|--------|--------|
+| Tests fail (non-zero exit) | **Grade capped at D.** Document failures, investigate cause. |
+| Tests pass with >50% skipped | Note as concern, proceed with caution |
+| Tests pass normally | Proceed to Gate 3 |
+
+### Gate 3: Core Files Exist
+```bash
+ls README.md pyproject.toml
+ls -d tests/ 2>/dev/null || ls -d test/ 2>/dev/null
+```
+
+| Missing Item | Impact |
+|--------------|--------|
+| README.md | Documentation grade capped at 5/10 |
+| pyproject.toml | Dependencies grade capped at 5/10 |
+| No test directory | Testing grade is 0/10 |
+
+### Gate 4: Can Import Package
+```bash
+~/.venv/bin/python -c "import appinfra; print(appinfra.__version__)"
+```
+
+| Result | Action |
+|--------|--------|
+| Import fails | **Grade capped at D.** Package is broken. |
+| Import succeeds | Proceed to full grading |
+
+**Only proceed to comprehensive grading if all gates pass or you've documented the cap.**
+
+---
+
 ## ⚠️ IMPORTANT VERIFICATION REQUIREMENT
 
 Before grading type hint coverage:
@@ -185,9 +237,37 @@ Grade each category on a 10-point scale with detailed justification:
 ### Architecture & Design
 - Design patterns used (Builder, Factory, Protocol, etc.)
 - Module organization and cohesion
-- Abstraction quality
+- Abstraction quality (see rubric below)
 - Technical debt (deprecated APIs, global state)
-- API consistency
+- API consistency (see rubric below)
+
+**Rubric: Abstraction Quality**
+| Score | Criteria | Verification |
+|-------|----------|--------------|
+| Excellent | No leaky abstractions; users never need to understand internals | `grep -r "internal\|private\|_" <pkg>/__init__.py` - internals not exported |
+| Good | Rare leaks; internals documented when exposed | Check if internal details appear in public API docs |
+| Acceptable | Some leaks but workarounds documented | Users can accomplish tasks without reading source |
+| Poor | Users must read source to use effectively | Examples require understanding of internals |
+
+**Rubric: API Consistency**
+| Score | Criteria | Verification |
+|-------|----------|--------------|
+| Excellent | Similar operations have identical signatures; naming is predictable | `grep -rn "def " <pkg>/ \| head -30` - check naming patterns |
+| Good | Mostly consistent with documented exceptions | Inconsistencies are intentional and documented |
+| Acceptable | Some inconsistencies but learnable | Can predict API after learning a few examples |
+| Poor | Inconsistent naming, signatures vary unpredictably | Each function feels like a different library |
+
+**How to verify:**
+```bash
+# Check for consistent naming patterns
+grep -rn "def get_\|def fetch_\|def retrieve_" <package>/  # Should use ONE pattern
+
+# Check for consistent return types
+grep -rn "-> None:\|-> bool:\|-> int:" <package>/  # Similar functions should return similar types
+
+# Check __all__ exports for clean public API
+grep -A20 "__all__" <package>/__init__.py
+```
 
 ### Code Quality
 - Type hints coverage
@@ -264,9 +344,24 @@ Grade each category on a 10-point scale with detailed justification:
 
 ### Dependencies & Compatibility
 - Python version support (check if supporting EOL versions)
-- Dependency pinning
+- Dependency pinning (version ranges with upper bounds)
 - CI/CD matrix testing
 - Platform compatibility
+- **Dependency security** - Check for known vulnerabilities:
+  ```bash
+  # Check for known CVEs in dependencies
+  pip audit 2>/dev/null || pip install pip-audit && pip audit
+
+  # Alternative: safety check
+  safety check 2>/dev/null || echo "safety not installed"
+  ```
+- **License compatibility** - Ensure dependency licenses are compatible:
+  ```bash
+  # List dependency licenses
+  pip-licenses --format=markdown 2>/dev/null || echo "pip-licenses not installed"
+
+  # Watch for: GPL in MIT/Apache projects, incompatible combinations
+  ```
 
 ## 2. CRITICAL ISSUES
 
@@ -332,6 +427,49 @@ Create phased plan:
 
 ## 6. FINAL SCORECARD
 
+### 📊 Category Weights (MANDATORY)
+
+Use these exact weights when calculating the final score:
+
+| Category | Weight | Rationale |
+|----------|--------|-----------|
+| Architecture & Design | 15% | Foundation quality affects everything |
+| Code Quality | 20% | Largest category - daily developer experience |
+| Security | 15% | Critical for production use |
+| Testing | 15% | Confidence in correctness |
+| Documentation | 10% | Important but less than code itself |
+| Production Readiness | 15% | Real-world deployment concerns |
+| Dependencies & Compatibility | 10% | Ecosystem integration |
+| **Total** | **100%** | |
+
+**Calculating Final Score:**
+```
+Final = (Arch × 0.15) + (Quality × 0.20) + (Security × 0.15) +
+        (Testing × 0.15) + (Docs × 0.10) + (ProdReady × 0.15) + (Deps × 0.10)
+```
+
+---
+
+### 🚨 MANDATORY: Severity-Based Deduction Scale
+
+**Deductions MUST match issue severity. Not all issues are equal.**
+
+| Severity | Deduction | Criteria | Examples |
+|----------|-----------|----------|----------|
+| **Critical** | -2.0 to -3.0 | Blocks usage, legal/security risk | Missing LICENSE, security vuln, tests fail, data loss risk |
+| **Major** | -1.0 to -1.5 | Significant gap in production readiness | No CI/CD, missing critical docs, no error handling |
+| **Moderate** | -0.5 to -1.0 | Notable weakness but workable | Incomplete docs, minor security gaps, some coverage gaps |
+| **Minor** | -0.25 to -0.5 | Polish issues, best practices | Missing auto-generated docs, style inconsistencies |
+| **Trivial** | -0.1 to -0.25 | Nitpicks | Typos, minor formatting, optional enhancements |
+
+**Severity Assessment Questions:**
+1. Does this block someone from using the project? → Critical
+2. Would this cause problems in production? → Major
+3. Does this make the project harder to use/maintain? → Moderate
+4. Is this a nice-to-have improvement? → Minor/Trivial
+
+---
+
 ### 🚨 MANDATORY: Deduction Evidence Requirement
 
 **YOU CANNOT MAKE A DEDUCTION WITHOUT INLINE PROOF.**
@@ -339,7 +477,7 @@ Create phased plan:
 Every deduction MUST include verification evidence in this exact format:
 
 ```markdown
-**Deduction (-0.5): [Claim]**
+**Deduction (-X.X) [SEVERITY]: [Claim]**
 
 Verification:
 ```bash
@@ -348,13 +486,28 @@ Verification:
 Result:
 > [Actual output that proves the issue exists]
 
+Severity Justification: [Why this severity level]
 Therefore: [Brief explanation of why this justifies deduction]
 ```
 
 **Examples of VALID deductions:**
 
 ```markdown
-**Deduction (-0.5): SECURITY.md missing**
+**Deduction (-2.0) [CRITICAL]: No LICENSE file**
+
+Verification:
+```bash
+ls -la LICENSE
+```
+Result:
+> ls: cannot access 'LICENSE': No such file or directory
+
+Severity Justification: Legal blocker - cannot use or distribute without license
+Therefore: Project cannot be legally used until license is added.
+```
+
+```markdown
+**Deduction (-0.5) [MODERATE]: SECURITY.md missing**
 
 Verification:
 ```bash
@@ -363,17 +516,18 @@ ls -la SECURITY.md
 Result:
 > ls: cannot access 'SECURITY.md': No such file or directory
 
-Therefore: Security documentation is missing, which is required for production libraries.
+Severity Justification: Important for production but not a blocker
+Therefore: Security reporting process should be documented.
 ```
 
 **Examples of INVALID deductions (will be rejected):**
 
 ```markdown
 ❌ **Deduction (-0.5): Documentation seems sparse**
-   → No verification command shown
+   → No verification command shown, no severity
 
 ❌ **Deduction (-0.5): Error handling could be better**
-   → No specific file:line reference, no evidence
+   → No specific file:line reference, no evidence, vague
 
 ❌ **Deduction (-0.5): No CI/CD configuration**
    → Must run `ls .github/workflows/` first to prove it
@@ -383,6 +537,7 @@ Therefore: Security documentation is missing, which is required for production l
 - If you cannot show a command you ran AND its output, you cannot make the deduction
 - "I looked at the code" is not verification - show the grep/read command
 - Pattern-matching assumptions are not evidence - prove it with commands
+- Severity MUST be justified - why is this Critical vs Minor?
 
 ---
 
@@ -436,6 +591,52 @@ Therefore: Security documentation is missing, which is required for production l
 ❌ **WRONG:** Arbitrary "nothing is perfect" deductions
 ✅ **RIGHT:** Every deduction tied to a specific, verifiable issue
 
+### 📊 Score Calibration Guide
+
+**What each score level means (use this to calibrate):**
+
+| Score | Grade | Meaning | Characteristics |
+|-------|-------|---------|-----------------|
+| 10/10 | A+ | Exemplary | Could be a reference implementation; no meaningful improvements identified |
+| 9-9.5/10 | A | Excellent | Production-ready with minor polish opportunities |
+| 8-8.5/10 | A-/B+ | Very Good | Production-ready but has notable gaps to address |
+| 7-7.5/10 | B | Good | Functional, needs work before production use |
+| 6-6.5/10 | B-/C+ | Acceptable | Significant gaps but fundamentally sound |
+| 5-5.5/10 | C | Mediocre | Major issues, not recommended for production |
+| <5/10 | D/F | Poor | Fundamental problems, needs substantial rework |
+
+**Calibration Questions:**
+- Would I recommend this for a production project? → 8+ if yes
+- Are there any blockers to using this? → <7 if yes
+- Is this better than typical open-source projects? → 8+ if yes
+- Would a senior engineer approve this code? → 7+ if yes
+
+**The 10/10 Rule (Resolving the Paradox):**
+
+There is NO "nothing is perfect" deduction. The scoring rules are:
+
+1. **If you find no verifiable issues → Score is 10/10**
+   - You cannot deduct points without evidence
+   - "I feel like there should be something wrong" is not a valid deduction
+
+2. **Before giving 10/10, verify you looked thoroughly:**
+   - Did you run the tests? Check coverage gaps?
+   - Did you grep for security issues (print, yaml.load, eval)?
+   - Did you check all documentation exists?
+   - Did you verify CI/CD, type hints, function sizes?
+
+3. **10/10 means "no verified issues found" not "perfect in theory"**
+   - A category can be 10/10 if rigorous verification found nothing wrong
+   - This is achievable for well-maintained projects
+
+**Calibration Against Reference Projects:**
+- requests library: ~9.5/10 (excellent API, minor gaps)
+- Flask: ~9.0/10 (great design, some complexity)
+- pytest: ~9.5/10 (exemplary testing, plugin system)
+- A new/unmaintained project: typically 6-7/10
+
+---
+
 ### Final Scorecard Format
 
 Summary table with:
@@ -445,6 +646,10 @@ Summary table with:
 - Overall grade
 
 **Include the completed consistency check table in the report to prove you did it.**
+
+**Calibration statement (required):**
+> "This project scores [X/10] overall, which places it in the [Exemplary/Excellent/Good/etc.] tier.
+> Compared to similar projects, it is [above average/average/below average] because [reason]."
 
 ## IMPORTANT INSTRUCTIONS
 
@@ -459,12 +664,22 @@ Summary table with:
 - **Measure metrics** - Count files, lines, calculate ratios from actual commands
 - **Document test failures** - If any tests fail, this is CRITICAL for grading
 
-Focus analysis on:
-- `infra/app/` - Application framework
-- `infra/log/` - Logging system
-- `infra/db/` - Database layer
-- `infra/net/` - Network components
-- `infra/time/` - Time utilities
+**Discover project structure first:**
+```bash
+# Find the main package directory (look for __init__.py with exports)
+find . -name "__init__.py" -path "*/[a-z]*/*" | head -10
+
+# Common patterns:
+# - src/packagename/  (src layout)
+# - packagename/      (flat layout)
+# - Check pyproject.toml for [tool.setuptools.packages.find]
+```
+
+Focus analysis on the discovered package structure, typically:
+- `<package>/app/` - Application framework (if exists)
+- `<package>/log/` - Logging system (if exists)
+- `<package>/db/` - Database layer (if exists)
+- `<package>/` - Core modules
 - Root configuration files (pyproject.toml, README.md, etc.)
 
 ## COMMON PITFALLS TO AVOID

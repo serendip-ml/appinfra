@@ -1,6 +1,7 @@
 # Docker Development Guide
 
-This guide explains how to use Docker for local development and testing. The Docker setup provides identical environments for local development and CI, eliminating "works on my machine" issues.
+This guide explains how to use Docker for local development and testing. The Docker setup provides
+identical environments for local development and CI, eliminating "works on my machine" issues.
 
 ## Quick Start
 
@@ -241,7 +242,8 @@ scripts/docker/deploy/
 2. **Dependencies stage:** Install Python packages from pyproject.toml (cached)
 3. **Runtime stage:** Copy source code (rebuilds on code changes)
 
-**Key benefit:** Dependency layer is cached unless pyproject.toml changes, making rebuilds fast (~5-10s).
+**Key benefit:** Dependency layer is cached unless pyproject.toml changes, making rebuilds fast
+(~5-10s).
 
 ### Volume Mounts
 
@@ -407,7 +409,8 @@ A: Yes! Docker runs Linux containers via WSL2. Commands work identically.
 A: We support 3.11, 3.12, 3.13. To add 3.14, create `docker-compose.override.py3.14.yml`.
 
 **Q: Why not use the `act` tool to test GitHub Actions locally?**
-A: `act` has limitations (service containers, environment differences). Docker Compose is simpler and more reliable.
+A: `act` has limitations (service containers, environment differences). Docker Compose is simpler
+and more reliable.
 
 **Q: Can I run this without GitHub?**
 A: Yes! That's the whole point. Zero GitHub dependency for local testing.

@@ -35,7 +35,7 @@ Example Usage:
 
     # Combine individual dates and ranges
     dates = [datetime.date(2025, 12, 1), datetime.date(2025, 12, 5)]
-    ranges = [(datetime.date(2025, 12, 10), datetime.date(2025, 12, 15))]
+    ranges = [(datetime.date(2025, 12, 10), datetime.date(2025, 12, 1))]
     all_dates = dates_from_lists(dates, ranges)
     lg.info(f"Total dates: {len(all_dates)}")
 """
