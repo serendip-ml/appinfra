@@ -168,6 +168,8 @@ directory = ".build/coverage-annotate"
 
 [tool.setuptools_scm]
 # Version derived from git tags (e.g., v0.1.0 -> 0.1.0)
+# Fallback for builds without git (e.g., Docker)
+fallback_version = "0.0.0.dev0"
 
 [tool.setuptools.packages.find]
 where = ["."]
