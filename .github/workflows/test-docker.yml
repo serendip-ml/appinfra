@@ -116,7 +116,7 @@ jobs:
                         build
 
       - name: Create coverage output directory
-        run: mkdir -p scripts/cicd/coverage-output && chmod 777 scripts/cicd/coverage-output
+        run: mkdir -p scripts/cicd/.coverage && chmod 777 scripts/cicd/.coverage
 
       - name: Start postgres and create test database
         working-directory: scripts/cicd
@@ -134,13 +134,12 @@ jobs:
         run: |
           docker compose -f docker-compose.yml \
                         -f docker-compose.override.py3.12.yml \
-                        run --rm cicd-test python -m pytest tests/ -m "unit or e2e" \
-                        -qq --tb=short --cov=appinfra --cov-report=term --cov-report=xml:coverage-output/coverage.xml
+                        run --rm cicd-test make test.coverage
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: scripts/cicd/coverage-output/coverage.xml
+          files: scripts/cicd/.coverage/coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
           verbose: true
