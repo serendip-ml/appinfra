@@ -29,6 +29,9 @@ services:
       - ../../scripts:/workspace/scripts:ro
       - ../../etc:/workspace/etc:ro
 
+      # Coverage output (read-write) - for CI coverage reports
+      - ./coverage-output:/workspace/coverage-output
+
       # Named volumes for caching (improves performance)
       - pytest-cache:/workspace/.pytest_cache
       - mypy-cache:/workspace/.mypy_cache
