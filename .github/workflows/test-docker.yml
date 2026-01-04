@@ -123,7 +123,7 @@ jobs:
         run: |
           docker compose -f docker-compose.yml \
                         -f docker-compose.override.py3.12.yml \
-                        run --rm cicd-test pytest tests/ -m "unit or e2e" \
+                        run --rm cicd-test python -m pytest tests/ -m "unit or e2e" \
                         --cov=appinfra --cov-report=term --cov-report=xml:coverage-output/coverage.xml
 
       - name: Upload coverage to Codecov
