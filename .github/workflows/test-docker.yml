@@ -116,7 +116,7 @@ jobs:
                         build
 
       - name: Create coverage output directory
-        run: mkdir -p scripts/cicd/coverage-output
+        run: mkdir -p scripts/cicd/coverage-output && chmod 777 scripts/cicd/coverage-output
 
       - name: Run tests with coverage
         working-directory: scripts/cicd
@@ -124,7 +124,7 @@ jobs:
           docker compose -f docker-compose.yml \
                         -f docker-compose.override.py3.12.yml \
                         run --rm cicd-test python -m pytest tests/ -m "unit or e2e" \
-                        --cov=appinfra --cov-report=term --cov-report=xml:coverage-output/coverage.xml
+                        -qq --tb=short --cov=appinfra --cov-report=term --cov-report=xml:coverage-output/coverage.xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

@@ -265,8 +265,8 @@ class TestDeprecatedStackLevel:
             old_function()  # This line should be in the warning
 
             # The warning's filename should be this test file
-            # Use realpath to normalize paths (handles pytest path resolution)
-            assert os.path.realpath(w[0].filename) == os.path.realpath(__file__)
+            # Use samefile to handle symlinks and path normalization
+            assert os.path.samefile(w[0].filename, __file__)
 
 
 # =============================================================================

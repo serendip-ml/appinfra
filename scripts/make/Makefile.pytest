@@ -134,7 +134,7 @@ test.ci:: ## runs tests appropriate for CI (unit + integration)
 
 test.coverage:: ## runs tests with coverage analysis (configurable via INFRA_PYTEST_COVERAGE_MARKERS)
 	@echo "* running tests with coverage analysis..."
-	@$(call run_pytest,tests/ $(_COVERAGE_MARKER_ARG) -qq --tb=short --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=term)
+	@$(call run_pytest,tests/ $(_COVERAGE_MARKER_ARG) -qq --no-header --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=term)
 	@echo "* coverage analysis completed"
 .PHONY: test.coverage
 
