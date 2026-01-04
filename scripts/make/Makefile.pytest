@@ -134,8 +134,9 @@ test.ci:: ## runs tests appropriate for CI (unit + integration)
 
 test.coverage:: ## runs tests with coverage analysis (configurable via INFRA_PYTEST_COVERAGE_MARKERS)
 	@echo "* running tests with coverage analysis..."
-	@$(call run_pytest,tests/ $(_COVERAGE_MARKER_ARG) -qq --no-header --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=term)
-	@echo "* coverage analysis completed"
+	@rm -rf .coverage && mkdir -p .coverage
+	@COVERAGE_FILE=.coverage/data $(call run_pytest,tests/ $(_COVERAGE_MARKER_ARG) -qq --no-header --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=term --cov-report=xml:.coverage/coverage.xml)
+	@echo "* coverage analysis completed (XML report: .coverage/coverage.xml)"
 .PHONY: test.coverage
 
 test.coverage.v:: ## runs tests with coverage analysis (verbose, shows missing lines)
@@ -149,12 +150,6 @@ test.coverage.html:: ## generates HTML coverage report
 	@$(call run_pytest,tests/ $(_COVERAGE_MARKER_ARG) --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=html)
 	@echo "* HTML coverage report generated in .htmlcov/ directory"
 .PHONY: test.coverage.html
-
-test.coverage.xml:: ## generates XML coverage report for CI
-	@echo "* running tests with coverage analysis..."
-	@$(call run_pytest,tests/ $(_COVERAGE_MARKER_ARG) --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=xml)
-	@echo "* XML coverage report generated as coverage.xml"
-.PHONY: test.coverage.xml
 
 test.coverage.json:: ## generates JSON coverage report
 	@echo "* running tests with coverage analysis..."
