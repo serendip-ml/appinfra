@@ -2,9 +2,9 @@ name: Tests (Docker Compose)
 
 on:
   push:
-    branches: [master, develop]
+    branches: [main, develop]
   pull_request:
-    branches: [master, develop]
+    branches: [main, develop]
   workflow_dispatch:  # Allow manual trigger
 
 # Cancel previous runs if new commits are pushed
