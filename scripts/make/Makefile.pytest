@@ -40,8 +40,8 @@ endef
 ##@ Testing
 
 test.unit:: ## runs unit tests (fast, isolated, mocked dependencies)
-	@echo "* running unit tests... (quiet)"
-	@$(call run_pytest,tests/ -m unit -q)
+	@echo "* running unit tests..."
+	@$(call run_pytest,tests/ -m unit -qq --tb=short)
 	@echo "* unit tests done"
 .PHONY: test.unit
 
@@ -52,8 +52,8 @@ test.unit.v:: ## runs unit tests (verbose)
 .PHONY: test.unit.v
 
 test.integration:: ## runs integration tests (real dependencies)
-	@echo "* running integration tests... (quiet)"
-	@$(call run_pytest,tests/ -m integration -q)
+	@echo "* running integration tests..."
+	@$(call run_pytest,tests/ -m integration -qq --tb=short)
 	@echo "* integration tests done"
 .PHONY: test.integration
 
@@ -64,8 +64,8 @@ test.integration.v:: ## runs integration tests (verbose)
 .PHONY: test.integration.v
 
 test.perf:: ## runs performance tests (benchmarks, load tests)
-	@echo "* running performance tests... (quiet)"
-	@$(call run_pytest,tests/ -m performance -q)
+	@echo "* running performance tests..."
+	@$(call run_pytest,tests/ -m performance -qq --tb=short)
 	@echo "* performance tests done"
 .PHONY: test.perf
 
@@ -76,8 +76,8 @@ test.perf.v:: ## runs performance tests (verbose)
 .PHONY: test.perf.v
 
 test.security:: ## runs security tests (injection, validation, XSS)
-	@echo "* running security tests... (quiet)"
-	@$(call run_pytest,tests/ -m security -q)
+	@echo "* running security tests..."
+	@$(call run_pytest,tests/ -m security -qq --tb=short)
 	@echo "* security tests done"
 .PHONY: test.security
 
@@ -88,8 +88,8 @@ test.security.v:: ## runs security tests (verbose)
 .PHONY: test.security.v
 
 test.e2e:: ## runs end-to-end tests (full system workflows)
-	@echo "* running end-to-end tests... (quiet)"
-	@$(call run_pytest,tests/ -m e2e -q)
+	@echo "* running end-to-end tests..."
+	@$(call run_pytest,tests/ -m e2e -qq --tb=short)
 	@echo "* end-to-end tests done"
 .PHONY: test.e2e
 
@@ -115,8 +115,8 @@ test.slow:: test.integration test.perf test.e2e ## runs slow tests (integration,
 .PHONY: test.slow
 
 test:: ## runs all tests
-	@echo "* running all tests... (quiet)"
-	@$(call run_pytest,tests/ -q)
+	@echo "* running all tests..."
+	@$(call run_pytest,tests/ -qq --tb=short)
 	@echo "* all tests completed"
 .PHONY: test
 
@@ -128,13 +128,13 @@ test.v:: ## runs all tests (verbose)
 
 test.ci:: ## runs tests appropriate for CI (unit + integration)
 	@echo "* running CI test suite..."
-	@$(call run_pytest,tests/ -m "unit or integration" -q)
+	@$(call run_pytest,tests/ -m "unit or integration" -qq --tb=short)
 	@echo "* CI test suite completed"
 .PHONY: test.ci
 
 test.coverage:: ## runs tests with coverage analysis (configurable via INFRA_PYTEST_COVERAGE_MARKERS)
 	@echo "* running tests with coverage analysis..."
-	@$(call run_pytest,tests/ $(_COVERAGE_MARKER_ARG) -q --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=term)
+	@$(call run_pytest,tests/ $(_COVERAGE_MARKER_ARG) -qq --tb=short --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=term)
 	@echo "* coverage analysis completed"
 .PHONY: test.coverage
 
