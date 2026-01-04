@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "appinfra"
 dynamic = ["version"]
 description = "Infrastructure framework for Python applications"
+readme = "README.md"
 authors = [
     {name = "serendip-ml (github.com/serendip-ml)"}
 ]
