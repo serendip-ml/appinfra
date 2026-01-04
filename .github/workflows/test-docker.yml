@@ -118,17 +118,6 @@ jobs:
       - name: Create coverage output directory
         run: mkdir -p scripts/cicd/.coverage && chmod 777 scripts/cicd/.coverage
 
-      - name: Start postgres and create test database
-        working-directory: scripts/cicd
-        run: |
-          docker compose -f docker-compose.yml \
-                        -f docker-compose.override.py3.12.yml \
-                        up -d pg
-          sleep 3
-          docker compose -f docker-compose.yml \
-                        -f docker-compose.override.py3.12.yml \
-                        exec -T pg psql -U postgres -c "CREATE DATABASE unittest;" || true
-
       - name: Run tests with coverage
         working-directory: scripts/cicd
         run: |
