@@ -86,7 +86,7 @@ ignore = [
 known-first-party = ["appinfra"]
 
 [tool.ruff.lint.per-file-ignores]
-"examples/**/*.py" = [
+"appinfra/examples/**/*.py" = [
     "E402",  # Module import not at top (examples modify sys.path)
     "F841",  # Unused variables (demonstration code)
     "F821",  # Undefined names (examples may use forward references)
@@ -118,7 +118,7 @@ known-first-party = ["appinfra"]
 "appinfra/config/schemas.py" = ["N815"]  # Pydantic fields match logging.handlers naming
 "appinfra/db/db.py" = ["N818"]  # Exception naming convention (historical)
 "appinfra/cli/cli.py" = ["E402"]  # sys.path modification before imports (script mode)
-"examples/06_advanced/tcp_server.py" = ["N802"]  # do_GET HTTP method
+"appinfra/examples/06_advanced/tcp_server.py" = ["N802"]  # do_GET HTTP method
 "appinfra/app/fastapi/**/*.py" = ["F821"]  # Forward references for TYPE_CHECKING imports
 "appinfra/app/fastapi/plugin.py" = ["F821"]  # Forward reference to AppBuilder, App
 
