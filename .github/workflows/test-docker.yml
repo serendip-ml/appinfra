@@ -66,19 +66,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
-          key: docker-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('pyproject.toml', 'scripts/cicd/Dockerfile') }}
+          key: docker-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('pyproject.toml', 'appinfra/scripts/cicd/Dockerfile') }}
           restore-keys: |
             docker-${{ runner.os }}-py${{ matrix.python-version }}-
 
       - name: Build Docker image
-        working-directory: scripts/cicd
+        working-directory: appinfra/scripts/cicd
         run: |
           docker compose -f docker-compose.yml \
                         -f docker-compose.override.py${{ matrix.python-version }}.yml \
                         build
 
       - name: Run tests
-        working-directory: scripts/cicd
+        working-directory: appinfra/scripts/cicd
         run: |
           docker compose -f docker-compose.yml \
                         -f docker-compose.override.py${{ matrix.python-version }}.yml \
@@ -86,7 +86,7 @@ jobs:
 
       - name: Cleanup Docker resources
         if: always()
-        working-directory: scripts/cicd
+        working-directory: appinfra/scripts/cicd
         run: docker compose down -v
 
   # Coverage job: run tests with coverage analysis (depends on lint)
@@ -104,22 +104,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
-          key: docker-${{ runner.os }}-py3.12-${{ hashFiles('pyproject.toml', 'scripts/cicd/Dockerfile') }}
+          key: docker-${{ runner.os }}-py3.12-${{ hashFiles('pyproject.toml', 'appinfra/scripts/cicd/Dockerfile') }}
           restore-keys: |
             docker-${{ runner.os }}-py3.12-
 
       - name: Build Docker image
-        working-directory: scripts/cicd
+        working-directory: appinfra/scripts/cicd
         run: |
           docker compose -f docker-compose.yml \
                         -f docker-compose.override.py3.12.yml \
                         build
 
       - name: Create coverage output directory
-        run: mkdir -p scripts/cicd/.coverage && chmod 777 scripts/cicd/.coverage
+        run: mkdir -p appinfra/scripts/cicd/.coverage && chmod 777 appinfra/scripts/cicd/.coverage
 
       - name: Create test database
-        working-directory: scripts/cicd
+        working-directory: appinfra/scripts/cicd
         run: |
           docker compose -f docker-compose.yml \
                         -f docker-compose.override.py3.12.yml \
@@ -130,7 +130,7 @@ jobs:
                         exec -T postgres psql -U postgres -c "CREATE DATABASE unittest;" || true
 
       - name: Run tests with coverage
-        working-directory: scripts/cicd
+        working-directory: appinfra/scripts/cicd
         run: |
           docker compose -f docker-compose.yml \
                         -f docker-compose.override.py3.12.yml \
@@ -139,12 +139,12 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: scripts/cicd/.coverage/coverage.xml
+          files: appinfra/scripts/cicd/.coverage/coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
           verbose: true
 
       - name: Cleanup Docker resources
         if: always()
-        working-directory: scripts/cicd
+        working-directory: appinfra/scripts/cicd
         run: docker compose down -v
