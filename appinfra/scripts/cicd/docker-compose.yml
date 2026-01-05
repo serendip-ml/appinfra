@@ -2,8 +2,8 @@ services:
   # CI/CD test runner service
   cicd-test:
     build:
-      context: ../../  # Project root (infra/)
-      dockerfile: scripts/cicd/Dockerfile
+      context: ../../..  # Project root
+      dockerfile: appinfra/scripts/cicd/Dockerfile
       args:
         PYTHON_VERSION: ${PYTHON_VERSION:-3.12}
     image: infra-test:py${PYTHON_VERSION:-3.12}
@@ -21,13 +21,13 @@ services:
     # Source code mounted read-only for safety (prevents accidental modifications)
     # Output directories mounted read-write for artifacts
     volumes:
-      # Source code (read-only) - paths relative to scripts/cicd directory
-      - ../../appinfra:/workspace/appinfra:ro
-      - ../../tests:/workspace/tests:ro
-      - ../../pyproject.toml:/workspace/pyproject.toml:ro
-      - ../../Makefile:/workspace/Makefile:ro
-      - ../../scripts:/workspace/scripts:ro
-      - ../../etc:/workspace/etc:ro
+      # Source code (read-only) - paths relative to appinfra/scripts/cicd directory
+      - ../../../appinfra:/workspace/appinfra:ro
+      - ../../../tests:/workspace/tests:ro
+      - ../../../pyproject.toml:/workspace/pyproject.toml:ro
+      - ../../../Makefile:/workspace/Makefile:ro
+      - ../../../appinfra/scripts:/workspace/scripts:ro
+      - ../../../appinfra/etc:/workspace/etc:ro
 
       # Coverage output (read-write) - for CI coverage reports
       - ./.coverage:/workspace/.coverage
