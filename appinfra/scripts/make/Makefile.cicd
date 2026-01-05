@@ -12,24 +12,57 @@ CICD_INCLUDED := true
 # Configuration
 INFRA_CICD_PYTHON_VERSION ?= 3.12
 
-CICD_DIR := $(local)/scripts/cicd
+# Use real path (not symlink) to ensure Docker context resolves correctly
+CICD_DIR := $(local)/appinfra/scripts/cicd
 
 ##@ CI/CD (Docker Compose)
 
-cicd.test:: ## Run complete CI checks in Docker (summaries + failures only, Python 3.12)
-	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.12.yml run --build --rm cicd-test bash -c "make check.summary"
+# These targets mirror the GitHub CI workflow exactly:
+# - Lint runs natively (fast, like CI's lint job)
+# - Tests run in Docker on all Python versions (like CI's test matrix)
+
+cicd.test:: ## Run full CI: lint (native) + tests on all Python versions (Docker)
+	@echo "=== Running lint checks (native, mirrors CI lint job) ==="
+	@$(MAKE) fmt.check
+	@$(MAKE) lint
+	@$(MAKE) type
+	@$(MAKE) cq.strict
+	@echo ""
+	@echo "=== Running tests on Python 3.11 (Docker) ==="
+	@cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.11.yml run --build --rm cicd-test make test.all
+	@echo ""
+	@echo "=== Running tests on Python 3.12 (Docker) ==="
+	@cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.12.yml run --build --rm cicd-test make test.all
+	@echo ""
+	@echo "=== Running tests on Python 3.13 (Docker) ==="
+	@cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.13.yml run --build --rm cicd-test make test.all
 .PHONY: cicd.test
 
-cicd.test.v:: ## Run complete CI checks in Docker with verbose output (Python 3.12)
-	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.12.yml run --build --rm cicd-test bash -c "make check.raw"
-.PHONY: cicd.test.v
+cicd.test.quick:: ## Quick CI: lint (native) + tests on Python 3.12 only (Docker)
+	@echo "=== Running lint checks (native) ==="
+	@$(MAKE) fmt.check
+	@$(MAKE) lint
+	@$(MAKE) type
+	@$(MAKE) cq.strict
+	@echo ""
+	@echo "=== Running tests on Python 3.12 (Docker) ==="
+	@cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.12.yml run --build --rm cicd-test make test.all
+.PHONY: cicd.test.quick
 
-cicd.test.py311:: ## Run complete CI checks in Docker (Python 3.11)
-	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.11.yml run --build --rm cicd-test bash -c "make check.summary"
+cicd.test.docker:: ## Run all checks inside Docker (Python 3.12, for debugging)
+	@cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.12.yml run --build --rm cicd-test make check.summary
+.PHONY: cicd.test.docker
+
+cicd.test.py311:: ## Run tests on Python 3.11 only (Docker, no lint)
+	@cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.11.yml run --build --rm cicd-test make test.all
 .PHONY: cicd.test.py311
 
-cicd.test.py313:: ## Run complete CI checks in Docker (Python 3.13)
-	cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.13.yml run --build --rm cicd-test bash -c "make check.summary"
+cicd.test.py312:: ## Run tests on Python 3.12 only (Docker, no lint)
+	@cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.12.yml run --build --rm cicd-test make test.all
+.PHONY: cicd.test.py312
+
+cicd.test.py313:: ## Run tests on Python 3.13 only (Docker, no lint)
+	@cd $(CICD_DIR) && docker compose -f docker-compose.yml -f docker-compose.override.py3.13.yml run --build --rm cicd-test make test.all
 .PHONY: cicd.test.py313
 
 cicd.shell:: ## Open interactive shell in Docker container (Python 3.12)
