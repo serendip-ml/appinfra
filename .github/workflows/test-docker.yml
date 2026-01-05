@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]  # Only on merge to main (avoids duplicate runs with PRs)
   pull_request:
     branches: [main, develop]
   workflow_dispatch:  # Allow manual trigger
