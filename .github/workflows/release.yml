@@ -56,16 +56,6 @@ jobs:
           git tag -a "${{ steps.next_version.outputs.new_tag }}" -m "Release ${{ steps.next_version.outputs.new_tag }}"
           git push origin "${{ steps.next_version.outputs.new_tag }}"
 
-      - name: Resolve symlinks for packaging
-        run: |
-          # Replace symlinks with actual directories for packaging
-          for link in docs examples scripts etc; do
-            rm "appinfra/$link"
-            cp -r "$link" "appinfra/$link"
-          done
-          echo "Resolved symlinks:"
-          ls -la appinfra/
-
       - name: Build package
         env:
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.next_version.outputs.new_version }}
