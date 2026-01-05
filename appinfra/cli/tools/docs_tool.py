@@ -38,10 +38,11 @@ def find_doc(docs_dir: Path, topic: str) -> Path | None:
         docs_dir / f"{topic}.md",
         docs_dir / "guides" / f"{topic}.md",
         docs_dir / "api" / f"{topic}.md",
+        docs_dir / topic,  # For files without .md extension (e.g., LICENSE)
     ]
 
     for candidate in candidates:
-        if candidate.exists():
+        if candidate.exists() and candidate.is_file():
             return candidate
 
     # Fuzzy match - normalize and search
@@ -226,6 +227,10 @@ class DocsListTool(Tool):
                 if skip_index and md_file.stem == "index":
                     continue
                 self.out.write(f"  {md_file.stem:<35} {extract_title(md_file)}")
+            # Also list LICENSE if present (non-.md file)
+            license_file = directory / "LICENSE"
+            if license_file.exists() and license_file.is_file():
+                self.out.write(f"  {'LICENSE':<35} Project License")
         self.out.write()
 
     def _list_examples(self) -> None:
