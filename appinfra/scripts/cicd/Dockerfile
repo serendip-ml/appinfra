@@ -62,13 +62,13 @@ RUN cp -r /root/.venv /home/testuser/.venv && \
 
 # Copy source code
 # These layers rebuild on every code change, but dependencies are cached
+# Note: appinfra/ now contains docs/, examples/, scripts/, etc/ as real directories
 COPY appinfra/ ./appinfra/
 COPY tests/ ./tests/
 COPY Makefile ./
-COPY scripts/ ./scripts/
-COPY etc/ ./etc/
-# Copy docs to appinfra/docs/ (symlink doesn't work in Docker COPY)
-COPY docs/ ./appinfra/docs/
+# scripts and etc are symlinks at root, copy from real locations
+COPY appinfra/scripts/ ./scripts/
+COPY appinfra/etc/ ./etc/
 
 # Create output directories and caches with proper ownership
 # Important: Create cache directories before switching to testuser
