@@ -154,7 +154,7 @@ Defines multiple named database connections with various settings.
 ```yaml
 dbs:
   main:
-    url: "postgresql://${pgserver.user}:${pgserver.pass}@$127.0.0.1:${pgserver.port}/main"
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@$127.0.0.1:${pgserver.port}/infra_main"
     create_db: true              # Create database if it doesn't exist
     readonly: false              # Enable read-only mode
     # Pool configuration (defaults defined in infra/db/pg/pg.py)
@@ -162,7 +162,7 @@ dbs:
     max_overflow: 10             # Maximum overflow connections (default: 10)
 
   test:
-    url: "postgresql://${pgserver.user}:${pgserver.pass}@127.0.0.1:${pgserver.port}/unittest"
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@127.0.0.1:${pgserver.port}/infra_test"
     readonly: false
     create_db: true
     # Custom pool settings
@@ -170,7 +170,7 @@ dbs:
     max_overflow: 10
 
   unittest_ro:
-    url: "postgresql://${pgserver.user}:${pgserver.pass}@127.0.0.1:${pgserver.port}/unittest"
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@127.0.0.1:${pgserver.port}/infra_test"
     readonly: true               # Read-only database
     create_db: false
     # Custom pool settings for read-only
@@ -330,7 +330,7 @@ The configuration supports variable substitution using `${variable_name}` syntax
 ```yaml
 dbs:
   main:
-    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/main"
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/infra_main"
 ```
 
 **Available Variables:**
@@ -460,9 +460,9 @@ dbs: !include './databases.yaml'
 
 # databases.yaml
 main:
-  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/main"
+  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/infra_main"
 test:
-  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/test"
+  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/infra_test"
 ```
 
 **Note:** Variable substitution happens after all includes are resolved, so variables work across

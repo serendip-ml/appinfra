@@ -10,6 +10,17 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Added
+- SQLite database support (`appinfra.db.sqlite`) for lightweight/embedded use cases
+- pgvector extension support (`appinfra.db.pg.vector`) for embedding storage and similarity search
+- SQLite integration fixtures for fast DB tests (no external server needed)
+- Session-start cleanup for stale debug tables (prevents orphaned tables from accumulating)
+- Session detachment utilities (`appinfra.db.utils`) for background processing
+- Test for debug table retention-on-failure behavior
+
+### Changed
+- Database names standardized to `infra_main` and `infra_test` to avoid global name conflicts
+
 ## [0.1.3] - 2026-01-05
 
 ### Added

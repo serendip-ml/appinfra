@@ -26,7 +26,7 @@ def mock_logger():
 @pytest.fixture
 def memory_config():
     """Create in-memory SQLite config."""
-    config = Mock()
+    config = Mock(spec=["url"])
     config.url = "sqlite:///:memory:"
     return config
 

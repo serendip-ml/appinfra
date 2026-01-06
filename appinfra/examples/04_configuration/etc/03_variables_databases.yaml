@@ -2,7 +2,7 @@
 # Note: ${pgserver.*} variables are defined in the main file
 
 main:
-  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/main"
+  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/infra_main"
 
 test:
-  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/test"
+  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/infra_test"
