@@ -38,6 +38,31 @@ def _log_test_failure(self, table_name):
         )
 
 
+def _run_test_with_debug_table(self, test_method, table_name_prefix, custom_schema):
+    """Run test with debug table, handling cleanup on success/failure."""
+    session = None
+    table_name = None
+    cleanup_needed = False
+
+    try:
+        session, table_name, cleanup_needed = _create_debug_table_for_test(
+            self.test_helper, table_name_prefix, custom_schema
+        )
+        self.session = session
+        self.table_name = table_name
+
+        test_method(self)
+        cleanup_needed = True
+    except Exception:
+        cleanup_needed = False
+        if table_name:
+            _log_test_failure(self, table_name)
+        raise
+    finally:
+        if session is not None and table_name is not None:
+            self.test_helper.cleanup_debug_table(session, table_name, cleanup_needed)
+
+
 class PGTestCaseHelper(unittest.TestCase):
     """
     Base test class for PostgreSQL testing with automatic debug table management.
@@ -253,24 +278,9 @@ class PGTestCaseHelper(unittest.TestCase):
 
         def decorator(test_method):
             def wrapper(self):
-                session, table_name, cleanup_needed = _create_debug_table_for_test(
-                    self.test_helper, table_name_prefix, custom_schema
+                _run_test_with_debug_table(
+                    self, test_method, table_name_prefix, custom_schema
                 )
-
-                self.session = session
-                self.table_name = table_name
-
-                try:
-                    test_method(self)
-                    cleanup_needed = True
-                except Exception:
-                    cleanup_needed = False
-                    _log_test_failure(self, table_name)
-                    raise
-                finally:
-                    self.test_helper.cleanup_debug_table(
-                        session, table_name, cleanup_needed
-                    )
 
             return wrapper
 
