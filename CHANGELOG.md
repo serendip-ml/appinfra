@@ -10,6 +10,8 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-01-05
+
 ### Added
 - `DotDict.require()` method - raises `DotDictPathNotFoundError` if path not found
 
@@ -21,6 +23,11 @@ For API stability guarantees and deprecation policy, see
 - LICENSE now displays properly on GitHub (converted from symlink to real file)
 - `appinfra docs show LICENSE` command now works correctly
 - Removed obsolete symlink resolution step from release workflow
+- CONTRIBUTING.md symlink now points directly to `appinfra/docs/` for single-click navigation
+
+### Documentation
+- Added missing `select_table` parameters (`default_index`, `column_spacing`) to UI docs
+- Added shared arguments pattern for tool hierarchies (base class and mixin patterns)
 
 ## [0.1.2] - 2026-01-05
 
@@ -60,7 +67,8 @@ For API stability guarantees and deprecation policy, see
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/serendip-ml/appinfra/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/serendip-ml/appinfra/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/serendip-ml/appinfra/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/serendip-ml/appinfra/releases/tag/v0.1.0
