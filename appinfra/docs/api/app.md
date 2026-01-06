@@ -151,6 +151,63 @@ class MainTool(Tool):
         self.add_tool(SubTool2(self))
 ```
 
+### Shared Arguments Pattern
+
+When multiple subtools need common arguments (e.g., `--input`, `--output`), use a base class:
+
+```python
+from appinfra.app.tools import Tool, ToolConfig
+
+class BaseProcessTool(Tool):
+    """Base class with shared processing arguments."""
+
+    def add_args(self, parser):
+        # Common args for all processing subtools
+        parser.add_argument("--input", "-i", help="Input file")
+        parser.add_argument("--output", "-o", help="Output file")
+        super().add_args(parser)
+
+class ValidateTool(BaseProcessTool):
+    def __init__(self, parent=None):
+        super().__init__(parent, ToolConfig(name="validate", help_text="Validate input"))
+
+    def add_args(self, parser):
+        super().add_args(parser)  # Inherit common args
+        parser.add_argument("--strict", action="store_true", help="Strict mode")
+
+    def run(self, **kwargs):
+        self.lg.info(f"Validating {self.args.input}")
+        return 0
+
+class TransformTool(BaseProcessTool):
+    def __init__(self, parent=None):
+        super().__init__(parent, ToolConfig(name="transform", help_text="Transform data"))
+
+    def add_args(self, parser):
+        super().add_args(parser)  # Inherit common args
+        parser.add_argument("--format", choices=["json", "csv"], default="json")
+
+    def run(self, **kwargs):
+        self.lg.info(f"Transforming {self.args.input} -> {self.args.output}")
+        return 0
+```
+
+**Alternative: Mixin Pattern**
+
+```python
+class CommonArgsMixin:
+    """Mixin for common arguments."""
+
+    def add_common_args(self, parser):
+        parser.add_argument("--verbose", "-v", action="store_true")
+        parser.add_argument("--dry-run", action="store_true")
+
+class MyTool(CommonArgsMixin, Tool):
+    def add_args(self, parser):
+        self.add_common_args(parser)  # Add mixin args
+        parser.add_argument("--input", required=True)
+```
+
 ### ToolRegistry
 
 Centralized tool registration and discovery.

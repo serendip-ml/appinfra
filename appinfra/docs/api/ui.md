@@ -212,7 +212,9 @@ if selected:
 - Q or ESC: Cancel (returns `None`)
 
 **Parameters:**
+- `default_index`: Initially highlighted row, 0-based (default: 0)
 - `max_height`: Maximum visible rows before scrolling (default: 10)
+- `column_spacing`: Spaces between columns (default: 2)
 - `highlight_color`: Background color for selected row (default: `#005fff`)
 - `highlight_text`: Text color for selected row (default: `#ffffff`)
 
