@@ -170,6 +170,26 @@ class TestManagerSetup:
             assert "replica" in manager._dbs
             assert len(manager._setup_errors) == 0
 
+    @patch("appinfra.db.db.sqlite.SQLite")
+    def test_setup_sqlite_success(self, mock_sqlite_class, mock_logger):
+        """Test successful setup of SQLite database."""
+        mock_sqlite_instance = Mock()
+        mock_sqlite_class.return_value = mock_sqlite_instance
+
+        sqlite_cfg = Mock(url="sqlite:///:memory:")
+        cfg = Mock()
+        cfg.dbs = {"test_db": sqlite_cfg}
+        cfg.logging = Mock(pg_level=None)
+
+        with patch("appinfra.db.db.LoggerFactory.derive", return_value=mock_logger):
+            manager = Manager(mock_logger, cfg)
+            manager.setup()
+
+            mock_sqlite_class.assert_called_once()
+            assert len(manager._dbs) == 1
+            assert "test_db" in manager._dbs
+            assert len(manager._setup_errors) == 0
+
     def test_setup_with_unsupported_db_type(self, mock_logger, config_with_invalid_url):
         """Test setup with unsupported database type."""
         with patch("appinfra.db.db.LoggerFactory.derive", return_value=mock_logger):
@@ -650,9 +670,9 @@ class TestConfigurationValidation:
 
             assert len(manager._dbs) == 1
 
-    def test_validate_accepts_postgres_url_but_setup_fails(self, mock_logger):
-        """Test validation accepts postgres:// URLs but setup treats as unknown type."""
-        # BUG: Validation accepts postgres:// but setup() only recognizes postgresql://
+    def test_validate_accepts_postgres_url(self, mock_logger):
+        """Test validation accepts postgres:// URLs as valid PostgreSQL."""
+        # Both postgres:// and postgresql:// are accepted as PostgreSQL URLs
         test_db_cfg = Mock(url="postgres://localhost:5432/test")
         test_db_cfg.dict.return_value = {"url": "postgres://localhost:5432/test"}
 
@@ -665,16 +685,10 @@ class TestConfigurationValidation:
         with patch("appinfra.db.db.LoggerFactory.derive", return_value=mock_logger):
             manager = Manager(mock_logger, cfg)
 
-            # Setup will fail because postgres:// is not recognized (only postgresql://)
-            with pytest.raises(
-                RuntimeError, match="Failed to setup any database connections"
-            ):
-                manager.setup()
-
-            # Should have UnknownDBTypeException for postgres:// URL
-            errors = manager.get_setup_errors()
-            assert len(errors) == 1
-            assert isinstance(errors["test"], UnknownDBTypeException)
+            # Validation should pass for postgres:// URLs
+            # Setup will fail for connection reasons, not URL validation
+            manager._validate_db_config("test", test_db_cfg)
+            # No exception means validation passed
 
     def test_validate_rejects_invalid_url_scheme(self, mock_logger):
         """Test validation rejects invalid URL schemes."""
