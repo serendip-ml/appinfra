@@ -11,6 +11,7 @@ and .advanced() to access specialized configuration builders.
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from appinfra.config import Config
@@ -306,7 +307,9 @@ class AppBuilder:
         """Initialize the application builder."""
         self._name: str | None = name
         self._config: Config | DotDict | None = None
-        self._config_path: str | None = None  # Track config file path for hot-reload
+        self._config_path: str | Path | None = (
+            None  # Track config file path for hot-reload
+        )
         self._config_from_etc_dir: bool = False  # Whether to resolve from --etc-dir
         self._server_config: ServerConfig | None = None
         self._logging_config: LoggingConfig | None = None

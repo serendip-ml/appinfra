@@ -10,13 +10,17 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Added
+- `DotDict.require()` method - raises `DotDictPathNotFoundError` if path not found
+
+### Changed
+- `DotDict` now subclasses `dict` - `isinstance(dotdict, dict)` returns `True`
+- Removed SECURITY.md symlink from repository root (still available via `appinfra docs`)
+
 ### Fixed
 - LICENSE now displays properly on GitHub (converted from symlink to real file)
 - `appinfra docs show LICENSE` command now works correctly
 - Removed obsolete symlink resolution step from release workflow
-
-### Changed
-- Removed SECURITY.md symlink from repository root (still available via `appinfra docs`)
 
 ## [0.1.2] - 2026-01-05
 
