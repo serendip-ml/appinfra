@@ -11,12 +11,38 @@ For API stability guarantees and deprecation policy, see
 ## [Unreleased]
 
 ### Added
-- API stability policy documentation (`docs/guides/api-stability.md`)
-- Output abstraction for testable CLI tools (`appinfra.cli.output`)
-- FastAPI integration module with subprocess isolation and IPC
+- `DotDict.require()` method - raises `DotDictPathNotFoundError` if path not found
 
 ### Changed
-- Improved FastAPI optional dependency handling with cleaner stub classes
+- `DotDict` now subclasses `dict` - `isinstance(dotdict, dict)` returns `True`
+- Removed SECURITY.md symlink from repository root (still available via `appinfra docs`)
+
+### Fixed
+- LICENSE now displays properly on GitHub (converted from symlink to real file)
+- `appinfra docs show LICENSE` command now works correctly
+- Removed obsolete symlink resolution step from release workflow
+
+## [0.1.2] - 2026-01-05
+
+### Fixed
+- Wheel builds now work correctly (reversed symlink direction: real files in `appinfra/`, symlinks at root)
+- Duplicate CI checks on develop branch PRs
+- Docker build context and paths for new project structure
+- Coverage job configuration (postgres service, cleanup, output paths)
+
+### Changed
+- Restructured CI workflow: lint gate runs first, then parallel test matrix
+- Shortened workflow and job names for cleaner GitHub UI
+- Consolidated coverage output under `.coverage/` directory
+- Aligned `make cicd.test` with GitHub CI workflow
+
+## [0.1.1] - 2026-01-03
+
+### Added
+- README as PyPI project description
+
+### Changed
+- Lowered performance test threshold for CI environments
 
 ## [0.1.0] - 2026-01-02
 
@@ -34,4 +60,7 @@ For API stability guarantees and deprecation policy, see
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
+[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/serendip-ml/appinfra/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/serendip-ml/appinfra/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/serendip-ml/appinfra/releases/tag/v0.1.0

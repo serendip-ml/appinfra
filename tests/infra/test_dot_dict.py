@@ -352,3 +352,68 @@ class TestDotDictIntegration:
         dd = DotDict().set(name="John").set(age=30)
         assert dd.name == "John"
         assert dd.age == 30
+
+
+# =============================================================================
+# Test dict Subclass Behavior
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestDotDictIsDict:
+    """Test that DotDict is a proper dict subclass."""
+
+    def test_isinstance_dict(self):
+        """Test that isinstance(DotDict(), dict) returns True."""
+        dd = DotDict()
+        assert isinstance(dd, dict)
+
+    def test_isinstance_dict_with_data(self):
+        """Test isinstance with data."""
+        dd = DotDict(name="John", age=30)
+        assert isinstance(dd, dict)
+
+    def test_nested_dotdict_isinstance(self):
+        """Test that nested DotDicts are also dicts."""
+        dd = DotDict(database={"host": "localhost"})
+        assert isinstance(dd.database, dict)
+
+
+# =============================================================================
+# Test require() Method
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestDotDictRequire:
+    """Test DotDict require() method."""
+
+    def test_require_existing_key(self):
+        """Test require() returns value for existing key."""
+        dd = DotDict(name="John")
+        assert dd.require("name") == "John"
+
+    def test_require_nested_path(self):
+        """Test require() with nested path."""
+        dd = DotDict(database={"host": "localhost", "port": 5432})
+        assert dd.require("database.host") == "localhost"
+
+    def test_require_missing_key_raises(self):
+        """Test require() raises DotDictPathNotFoundError for missing key."""
+        dd = DotDict(name="John")
+        with pytest.raises(DotDictPathNotFoundError) as exc_info:
+            dd.require("age")
+        assert exc_info.value.path == "age"
+        assert "age" in str(exc_info.value)
+
+    def test_require_missing_nested_path_raises(self):
+        """Test require() raises for missing nested path."""
+        dd = DotDict(database={"host": "localhost"})
+        with pytest.raises(DotDictPathNotFoundError) as exc_info:
+            dd.require("database.user")
+        assert exc_info.value.path == "database.user"
+
+    def test_require_none_value_succeeds(self):
+        """Test require() succeeds when value is None (key exists)."""
+        dd = DotDict(value=None)
+        assert dd.require("value") is None

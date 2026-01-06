@@ -47,19 +47,20 @@ print(config.logging.level)  # "debug" (from env)
 
 ## DotDict
 
-Dictionary with attribute-style access and dot-notation paths.
+Dictionary subclass with attribute-style access and dot-notation paths.
+
+Since DotDict subclasses `dict`, `isinstance(dotdict, dict)` returns `True`.
 
 ```python
-class DotDict:
+class DotDict(dict):
     def __init__(self, **kwargs): ...
 
-    def get(self, path: str, default=None) -> Any: ...  # Returns None if not found
+    def get(self, path: str, default=None) -> Any: ...  # Dot-path access, returns None if not found
+    def require(self, path: str) -> Any: ...            # Like get(), but raises if path missing
     def has(self, path: str) -> bool: ...               # Check if path exists
     def set(self, **kwargs) -> DotDict: ...
     def dict(self) -> dict: ...
-    def keys() -> KeysView: ...
-    def values() -> ValuesView: ...
-    def items() -> ItemsView: ...
+    def to_dict(self) -> dict: ...                      # Recursive conversion to plain dicts
 ```
 
 **Usage:**
@@ -76,16 +77,29 @@ config = DotDict(
 data = {"database": {"host": "localhost"}}
 config = DotDict(**data)
 
+# isinstance check works (DotDict is a dict subclass)
+isinstance(config, dict)  # True
+isinstance(config.database, dict)  # True
+
 # Attribute access
 print(config.database.host)  # "localhost"
 
 # Dictionary access
 print(config["database"]["port"])  # 5432
 
-# Get with path (returns None if not found, like dict.get())
-value = config.get("database.host")      # "localhost"
-missing = config.get("database.missing") # None
-fallback = config.get("missing", "default")  # "default"
+# Dot-path get (cleaner than chained .get() calls)
+# Instead of: config.get("database", {}).get("host", {}).get("port")
+value = config.get("database.host")           # "localhost"
+port = config.get("database.port", 5432)      # 5432
+missing = config.get("database.missing")      # None
+
+# Require - raises DotDictPathNotFoundError if path missing
+from appinfra.dot_dict import DotDictPathNotFoundError
+try:
+    host = config.require("database.host")    # "localhost"
+    user = config.require("database.user")    # Raises!
+except DotDictPathNotFoundError as e:
+    print(f"Missing required config: {e.path}")
 
 # Check if path exists (useful when None could be a valid value)
 if config.has("database.password"):
@@ -95,7 +109,8 @@ if config.has("database.password"):
 config.database.username = "postgres"
 
 # Convert to dict
-data = config.dict()
+data = config.dict()       # One level conversion
+data = config.to_dict()    # Recursive conversion
 ```
 
 ## RateLimiter

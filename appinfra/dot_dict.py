@@ -8,36 +8,39 @@ dot-notation path traversal.
 
 import builtins
 import datetime
-from collections.abc import ItemsView, KeysView, ValuesView
 from typing import Any
 
 from . import time as timeutils
 from .dict import DictInterface
 
 
-class DotDict(DictInterface):
+class DotDict(dict, DictInterface):
     """
-    Dictionary-like object with attribute-style access and nested structure support.
+    Dictionary subclass with attribute-style access and nested structure support.
 
     Provides a convenient way to work with configuration data and other structured
     information using both dictionary-style and attribute-style access patterns.
     Supports automatic conversion of nested dictionaries to DotDict instances.
+
+    Since DotDict subclasses dict, isinstance(dotdict, dict) returns True.
     """
 
     # Keys that would shadow critical methods and are not allowed.
-    # Only includes methods that are commonly called (dict, to_dict, set, clear, get, has).
-    # Excludes dict-like methods (keys, values, items) since these are common config keys
-    # and users typically access config data as attributes, not by calling these methods.
     _RESERVED_KEYS = frozenset(
         {
             "set",
-            "clear",
-            "dict",
             "to_dict",
+            "dict",
             "get",
             "has",
+            "require",
+            "clear",
         }
     )
+
+    # Dict method names that can be used as data keys via attribute access.
+    # When accessing these as attributes, data takes priority over methods.
+    _DATA_PRIORITY_ATTRS = frozenset({"keys", "values", "items"})
 
     def __init__(self, **kwargs: Any) -> None:
         """
@@ -46,7 +49,54 @@ class DotDict(DictInterface):
         Args:
             **kwargs: Initial key-value pairs to set
         """
+        super().__init__()
         self.set(**kwargs)
+
+    def __getattribute__(self, name: str) -> Any:
+        """
+        Get attribute, prioritizing data over methods for certain names.
+
+        For keys, values, items - if the name exists as data, return the data.
+        Otherwise, fall through to normal attribute resolution.
+
+        Args:
+            name: Attribute name to get
+
+        Returns:
+            Value associated with the name
+        """
+        # For data-priority attrs, check if key exists in dict data first
+        if name in DotDict._DATA_PRIORITY_ATTRS:
+            if dict.__contains__(self, name):
+                return dict.__getitem__(self, name)
+        return super().__getattribute__(name)
+
+    def __getattr__(self, key: str) -> Any:
+        """
+        Get value by attribute-style access (fallback for missing attributes).
+
+        Args:
+            key: Attribute name to get
+
+        Returns:
+            Value associated with the key
+
+        Raises:
+            AttributeError: If key doesn't exist (enables getattr(obj, key, default))
+        """
+        if dict.__contains__(self, key):
+            return dict.__getitem__(self, key)
+        raise AttributeError(f"'{type(self).__name__}' has no attribute '{key}'")
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        """
+        Set value by attribute-style access.
+
+        Args:
+            key: Attribute name to set
+            value: Value to set
+        """
+        self._set_item(key, value)
 
     def set(self, **kwargs: Any) -> "DotDict":
         """
@@ -86,23 +136,21 @@ class DotDict(DictInterface):
                 f"Key '{key}' is reserved and cannot be used (would shadow method)"
             )
 
-        # Handle nested dictionaries
-        if isinstance(val, dict):
-            setattr(self, key, DotDict(**val))
+        # Handle nested dictionaries (but not DotDict instances)
+        if isinstance(val, dict) and not isinstance(val, DotDict):
+            super().__setitem__(key, DotDict(**val))
         # Handle lists with potential nested structures
         elif isinstance(val, list):
-            setattr(self, key, list(map(self._map_entry, val)))
+            super().__setitem__(key, list(map(self._map_entry, val)))
         # Handle simple values
         else:
-            setattr(self, key, val)
+            super().__setitem__(key, val)
 
     def clear(self) -> None:
         """
-        Clear all attributes from the object.
+        Clear all items from the dictionary.
         """
-        keys = [k for k in self.__dict__.keys()]
-        for k in keys:
-            delattr(self, k)
+        super().clear()
 
     @staticmethod
     def _map_entry(entry: Any) -> Any:
@@ -119,15 +167,19 @@ class DotDict(DictInterface):
             return DotDict(**entry)
         return entry
 
-    def dict(self) -> dict[str, Any]:
+    def dict(self) -> builtins.dict[str, Any]:
         """
-        Convert the object to a dictionary representation.
+        Convert the object to a plain dictionary representation.
+
+        Only converts one level - nested DotDicts are converted to plain dicts,
+        but their contents are not recursively processed.
 
         Returns:
             dict: Dictionary representation with nested DotDict instances converted
         """
-        result = {}
-        for key, val in self.__dict__.items():
+        result: builtins.dict[str, Any] = {}
+        # Use super().items() to always get dict method, not data
+        for key, val in super().items():
             result[key] = val.dict() if isinstance(val, DotDict) else val
         return result
 
@@ -140,8 +192,9 @@ class DotDict(DictInterface):
         Returns:
             dict: Fully converted dictionary with no DotDict instances
         """
-        result: dict[str, Any] = {}
-        for key, val in self.__dict__.items():
+        result: builtins.dict[str, Any] = {}
+        # Use super().items() to always get dict method, not data
+        for key, val in super().items():
             if isinstance(val, DotDict):
                 result[key] = val.to_dict()
             elif isinstance(val, list):
@@ -149,7 +202,7 @@ class DotDict(DictInterface):
                     item.to_dict() if isinstance(item, DotDict) else item
                     for item in val
                 ]
-            elif isinstance(val, dict):
+            elif isinstance(val, builtins.dict):
                 # Handle plain dicts that might contain DotDicts
                 result[key] = {
                     k: v.to_dict() if isinstance(v, DotDict) else v
@@ -159,56 +212,23 @@ class DotDict(DictInterface):
                 result[key] = val
         return result
 
-    def keys(self) -> KeysView[str]:
-        """
-        Get all keys in the object.
-
-        Returns:
-            dict_keys: Object keys
-        """
-        return self.__dict__.keys()
-
-    def values(self) -> ValuesView[Any]:
-        """
-        Get all values in the object.
-
-        Returns:
-            dict_values: Object values
-        """
-        return self.__dict__.values()
-
-    def items(self) -> ItemsView[str, Any]:
-        """
-        Get all key-value pairs in the object.
-
-        Returns:
-            dict_items: Object key-value pairs
-        """
-        return self.__dict__.items()
-
-    def __contains__(self, key: Any) -> bool:
-        """
-        Check if key exists in the object.
-
-        Args:
-            key: Key to check
-
-        Returns:
-            bool: True if key exists
-        """
-        return key in self.__dict__
-
     def __getitem__(self, key: str) -> Any:
         """
         Get value by key with dictionary-style access.
+
+        Returns None for missing keys instead of raising KeyError,
+        matching the historical DotDict behavior.
 
         Args:
             key: Key to get
 
         Returns:
-            Value or None: Object value or None if key doesn't exist
+            Value or None if key doesn't exist
         """
-        return getattr(self, key) if key in self.__dict__ else None
+        try:
+            return super().__getitem__(key)
+        except KeyError:
+            return None
 
     def __setitem__(self, key: str, val: Any) -> None:
         """
@@ -218,27 +238,16 @@ class DotDict(DictInterface):
             key: Key to set
             val: Value to set
         """
-        if key in self.__dict__:
-            delattr(self, key)
         self._set_item(key, val)
 
-    def __len__(self) -> int:
+    def __repr__(self) -> str:
         """
-        Get the length of the object.
+        Get repr of the object.
 
         Returns:
-            int: Number of items in the object
+            str: Repr showing DotDict with contents
         """
-        return len(self.dict())
-
-    def __str__(self) -> str:
-        """
-        Get string representation of the object.
-
-        Returns:
-            str: String representation of the object as a dictionary
-        """
-        return str(self.dict())
+        return f"DotDict({super().__repr__()})"
 
     def has(self, path: str) -> bool:
         """
@@ -253,16 +262,14 @@ class DotDict(DictInterface):
         if not path:
             return False
 
-        cur = self.__dict__
+        cur: Any = self
         for item in path.split("."):
             if not item:  # Skip empty components
                 continue
-            if not isinstance(cur, dict) or item not in cur:
+            if isinstance(cur, dict) and item in cur:
+                cur = cur[item]
+            else:
                 return False
-            cur = cur[item]
-            # If cur is a DotDict, get its __dict__ for next iteration
-            if hasattr(cur, "__dict__"):
-                cur = cur.__dict__
         return True
 
     def get(self, path: str, default: Any = None, max_steps_up: int = 0) -> Any:
@@ -282,8 +289,8 @@ class DotDict(DictInterface):
         if not path:
             return default
 
-        cur = self.__dict__
-        history = []
+        cur: Any = self
+        history: list[Any] = []
         components = [
             item for item in path.split(".") if item
         ]  # Filter empty components
@@ -292,9 +299,6 @@ class DotDict(DictInterface):
             if isinstance(cur, dict) and item in cur:
                 history.append(cur)
                 cur = cur[item]
-                # If cur is a DotDict, get its __dict__ for next iteration
-                if hasattr(cur, "__dict__") and i < len(components) - 1:
-                    cur = cur.__dict__
                 if i == len(components) - 1:
                     return cur
             elif i == len(components) - 1:
@@ -302,14 +306,35 @@ class DotDict(DictInterface):
                 for j in range(min(max_steps_up, len(history))):
                     if isinstance(history[-j - 1], dict) and item in history[-j - 1]:
                         return history[-j - 1][item]
+                break
             else:
                 break
         return default
 
+    def require(self, path: str) -> Any:
+        """
+        Get value by dot-separated path, raising an error if not found.
+
+        Unlike get(), this method raises DotDictPathNotFoundError if the path
+        doesn't exist, making it clear when a configuration value is required.
+
+        Args:
+            path (str): Dot-separated path to get (e.g., "database.host")
+
+        Returns:
+            Value at the path
+
+        Raises:
+            DotDictPathNotFoundError: If the path doesn't exist
+        """
+        if not self.has(path):
+            raise DotDictPathNotFoundError(self, path)
+        return self.get(path)
+
 
 class DotDictPathNotFoundError(Exception):
     """
-    Exception raised when a path is not found in a DotDict.
+    Exception raised when a required path is not found in a DotDict.
 
     Attributes:
         obj: The DotDict instance where the path was not found
@@ -326,3 +351,4 @@ class DotDictPathNotFoundError(Exception):
         """
         self.obj = obj
         self.path = path
+        super().__init__(f"Required path '{path}' not found")
