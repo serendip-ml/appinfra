@@ -1,1 +1,1 @@
-docs/guides/contributing.md
+appinfra/docs/guides/contributing.md
