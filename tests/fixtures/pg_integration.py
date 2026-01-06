@@ -128,6 +128,52 @@ def pg_connection(pg_config, pg_logger):
         pytest.skip(f"Cannot connect to test database: {e}")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def pg_cleanup_stale_debug_tables(pg_connection):
+    """
+    Clean up all debug tables from previous test runs at session start.
+
+    This ensures no orphaned tables accumulate from:
+    - Previous failed tests (now stale)
+    - Hard kills / crashes
+    - Interrupted test runs
+
+    Tables from the CURRENT session's failed tests are still retained
+    for debugging until the next test run.
+
+    Args:
+        pg_connection: PG connection fixture
+    """
+    import sqlalchemy
+
+    session = pg_connection.session()
+    try:
+        result = session.execute(
+            sqlalchemy.text(
+                """
+                SELECT tablename FROM pg_tables
+                WHERE schemaname = 'public'
+                AND tablename ~ '_[0-9]{10}_'
+                """
+            )
+        )
+        tables = [row[0] for row in result.fetchall()]
+
+        for table in tables:
+            session.execute(sqlalchemy.text(f'DROP TABLE IF EXISTS "{table}" CASCADE'))
+
+        if tables:
+            session.commit()
+            logging.info(
+                f"Cleaned up {len(tables)} stale debug tables from previous runs"
+            )
+    except Exception as e:
+        session.rollback()
+        logging.warning(f"Failed to clean up stale debug tables: {e}")
+    finally:
+        session.close()
+
+
 @pytest.fixture
 def pg_config_ro():
     """
