@@ -127,7 +127,7 @@ jobs:
           sleep 3
           docker compose -f docker-compose.yml \
                         -f docker-compose.override.py3.12.yml \
-                        exec -T postgres psql -U postgres -c "CREATE DATABASE unittest;" || true
+                        exec -T postgres psql -U postgres -c "CREATE DATABASE infra_test;" || true
 
       - name: Run tests with coverage
         working-directory: appinfra/scripts/cicd

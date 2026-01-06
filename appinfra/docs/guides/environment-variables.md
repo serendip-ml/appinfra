@@ -249,7 +249,7 @@ pgserver:
   port: 7432
 dbs:
   main:
-    url: "postgresql://user:pass@localhost:${pgserver.port}/main"
+    url: "postgresql://user:pass@localhost:${pgserver.port}/infra_main"
 ```
 
 ```bash
@@ -257,7 +257,7 @@ dbs:
 export INFRA_PGSERVER_PORT=5432
 ```
 
-The URL will use the overridden port: `postgresql://user:pass@localhost:5432/main`
+The URL will use the overridden port: `postgresql://user:pass@localhost:5432/infra_main`
 
 ### Case Sensitivity
 

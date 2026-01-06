@@ -2,13 +2,13 @@
 Database management module for handling multiple database connections.
 
 This module provides a database manager that can handle multiple database
-connections of different types, currently supporting PostgreSQL.
+connections of different types, supporting PostgreSQL and SQLite.
 """
 
 from typing import Any
 
 from ..log import LoggerFactory
-from . import pg
+from . import pg, sqlite
 
 
 class UnknownDBTypeException(Exception):
@@ -35,19 +35,39 @@ class UnknownDBTypeException(Exception):
 
 def _setup_postgresql_database(
     name: str, db_cfg: Any, lg: Any, lg_level: Any, dbs_dict: dict
-) -> bool:
+) -> None:
     """Set up a PostgreSQL database connection."""
     dbs_dict[name] = pg.PG(lg, db_cfg, query_lg_level=lg_level)
     lg.debug("registered pg", extra={"db": name} | db_cfg.dict())
-    return True
 
 
-def _handle_unknown_db_type(name: str, url: str, lg: Any, setup_errors: dict) -> bool:
+def _setup_sqlite_database(name: str, db_cfg: Any, lg: Any, dbs_dict: dict) -> None:
+    """Set up a SQLite database connection."""
+    dbs_dict[name] = sqlite.SQLite(lg, db_cfg)
+    lg.debug("registered sqlite", extra={"db": name, "url": db_cfg.url})
+
+
+def _handle_unknown_db_type(name: str, url: str, lg: Any, setup_errors: dict) -> None:
     """Handle unsupported database types."""
     error_msg = f"unsupported database type in URL: {url}"
     lg.error(error_msg, extra={"db": name, "url": url})
     setup_errors[name] = UnknownDBTypeException(url)
-    return False
+
+
+def _setup_single_database(
+    name: str, cfg: Any, lg: Any, lg_level: Any, dbs: dict, errors: dict
+) -> bool:
+    """Set up a single database connection based on URL type."""
+    url = cfg.url
+    if url.startswith("postgresql") or url.startswith("postgres://"):
+        _setup_postgresql_database(name, cfg, lg, lg_level, dbs)
+        return True
+    elif url.startswith("sqlite"):
+        _setup_sqlite_database(name, cfg, lg, dbs)
+        return True
+    else:
+        _handle_unknown_db_type(name, url, lg, errors)
+        return False
 
 
 def _check_setup_results(successful_count: int, setup_errors: dict, lg: Any) -> None:
@@ -125,13 +145,10 @@ class Manager:
         for name, cfg in self._cfg.dbs.items():
             try:
                 self._validate_db_config(name, cfg)
-
-                if cfg.url.startswith("postgresql"):
-                    _setup_postgresql_database(name, cfg, self._lg, lg_level, self._dbs)
+                if _setup_single_database(
+                    name, cfg, self._lg, lg_level, self._dbs, self._setup_errors
+                ):
                     successful_setups += 1
-                else:
-                    _handle_unknown_db_type(name, cfg.url, self._lg, self._setup_errors)
-
             except Exception as e:
                 error_msg = f"failed to setup database '{name}': {e}"
                 self._lg.error(error_msg, extra={"db": name, "exception": e})
@@ -157,10 +174,12 @@ class Manager:
         if not isinstance(cfg.url, str):
             raise ValueError(f"Database '{name}' URL must be a string")
 
-        # Validate URL format
-        if not cfg.url.startswith(("postgresql://", "postgres://")):
+        # Validate URL format - accept PostgreSQL or SQLite
+        valid_prefixes = ("postgresql://", "postgres://", "sqlite://", "sqlite:///")
+        if not cfg.url.startswith(valid_prefixes):
             raise ValueError(
-                f"Database '{name}' URL must start with 'postgresql://' or 'postgres://'"
+                f"Database '{name}' URL must start with a supported prefix: "
+                f"postgresql://, postgres://, or sqlite://"
             )
 
     def db(self, name: str) -> Any:
