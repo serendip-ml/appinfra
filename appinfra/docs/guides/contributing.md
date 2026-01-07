@@ -1,3 +1,21 @@
+---
+title: Contributing Guide
+keywords:
+  - check-funcs
+  - funcsize
+  - function size
+  - line limit
+  - cq cf
+  - code quality
+  - exempt
+  - ignore
+  - max-lines
+  - development setup
+aliases:
+  - developer-guide
+  - dev-setup
+---
+
 # Contributing Guide
 
 Guide for developers who want to contribute to appinfra or use it in development mode.

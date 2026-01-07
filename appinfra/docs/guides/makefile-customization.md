@@ -1,3 +1,19 @@
+---
+title: Customizing Framework Makefiles
+keywords:
+  - makefile
+  - make targets
+  - extend
+  - override
+  - customize
+  - INFRA_DEV_
+  - double-colon
+  - downstream
+aliases:
+  - makefile-extend
+  - make-customize
+---
+
 # Customizing Framework Makefiles
 
 The infra framework is designed to be extended by downstream applications. This guide explains how

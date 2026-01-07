@@ -1,3 +1,19 @@
+---
+title: Hot-Reload Logging Configuration
+keywords:
+  - hot reload
+  - live reload
+  - dynamic config
+  - runtime logging
+  - watchdog
+  - file watcher
+  - log level
+  - reload config
+aliases:
+  - live-logging
+  - dynamic-logging
+---
+
 # Hot-Reload Logging Configuration
 
 Automatically reload logging configuration when config files change, without restarting your

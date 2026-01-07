@@ -1,3 +1,19 @@
+---
+title: LoggingBuilder Guide
+keywords:
+  - logging
+  - logger
+  - fluent API
+  - configure logging
+  - log format
+  - log output
+  - console logging
+  - file logging
+aliases:
+  - logger-builder
+  - log-config
+---
+
 # LoggingBuilder Guide
 
 Fluent API for configuring loggers with various output destinations and formatting options.

@@ -9,6 +9,7 @@ file inclusion via the !include tag and secrets validation via !secret tag.
 import datetime
 import re
 import warnings
+from collections.abc import Hashable
 from pathlib import Path
 from typing import Any
 
@@ -372,7 +373,7 @@ class Loader(yaml.SafeLoader):
 
         return key, value
 
-    def construct_mapping(self, node: Any, deep: bool = False) -> dict[str, Any]:
+    def construct_mapping(self, node: Any, deep: bool = False) -> dict[Hashable, Any]:
         """
         Construct a mapping with automatic key conversion and source tracking.
 

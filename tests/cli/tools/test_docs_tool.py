@@ -30,6 +30,7 @@ from appinfra.cli.tools.docs_tool import (
     get_docs_dir,
     get_examples_dir,
     get_package_root,
+    parse_frontmatter,
 )
 
 # =============================================================================
@@ -244,6 +245,61 @@ class TestFindExample:
 
             result = find_example(examples_dir, "nonexistent")
             assert result is None
+
+
+@pytest.mark.unit
+class TestParseFrontmatter:
+    """Test parse_frontmatter helper function."""
+
+    def test_returns_empty_dict_for_no_frontmatter(self):
+        """Test returns empty dict when no frontmatter present."""
+        content = "# Title\n\nSome content"
+        result = parse_frontmatter(content)
+        assert result == {}
+
+    def test_returns_empty_dict_for_empty_frontmatter(self):
+        """Test returns empty dict for empty frontmatter."""
+        content = "---\n---\n# Title"
+        result = parse_frontmatter(content)
+        assert result == {}
+
+    def test_parses_simple_frontmatter(self):
+        """Test parses simple key-value frontmatter."""
+        content = "---\ntitle: My Doc\nauthor: Test\n---\n# Content"
+        result = parse_frontmatter(content)
+        assert result["title"] == "My Doc"
+        assert result["author"] == "Test"
+
+    def test_parses_keywords_list(self):
+        """Test parses keywords as list."""
+        content = "---\nkeywords: [foo, bar, baz]\n---\n# Content"
+        result = parse_frontmatter(content)
+        assert result["keywords"] == ["foo", "bar", "baz"]
+
+    def test_parses_keywords_yaml_list(self):
+        """Test parses keywords in YAML list format."""
+        content = "---\nkeywords:\n  - foo\n  - bar\n---\n# Content"
+        result = parse_frontmatter(content)
+        assert result["keywords"] == ["foo", "bar"]
+
+    def test_parses_aliases(self):
+        """Test parses aliases list."""
+        content = "---\naliases: [alias1, alias2]\n---\n# Content"
+        result = parse_frontmatter(content)
+        assert result["aliases"] == ["alias1", "alias2"]
+
+    def test_handles_invalid_yaml(self):
+        """Test handles invalid YAML gracefully."""
+        content = "---\ninvalid: yaml: content:\n---\n# Content"
+        result = parse_frontmatter(content)
+        # Should return empty dict or partial result, not raise
+        assert isinstance(result, dict)
+
+    def test_handles_unclosed_frontmatter(self):
+        """Test handles unclosed frontmatter delimiter."""
+        content = "---\ntitle: Test\n# Content without closing"
+        result = parse_frontmatter(content)
+        assert result == {}
 
 
 @pytest.mark.unit
@@ -616,6 +672,9 @@ class TestDocsFindTool:
             args.max_matches = 10
             args.docs_only = False
             args.examples_only = False
+            args.no_color = True
+            args.fuzzy = False
+            args.threshold = 0.6
             tool._parsed_args = args
 
             with patch(
@@ -651,6 +710,9 @@ class TestDocsFindTool:
             args.max_matches = 10
             args.docs_only = False
             args.examples_only = False
+            args.no_color = True
+            args.fuzzy = False
+            args.threshold = 0.6
             tool._parsed_args = args
 
             with patch(
@@ -689,6 +751,9 @@ class TestDocsFindTool:
             args.max_matches = 10
             args.docs_only = False
             args.examples_only = False
+            args.no_color = True
+            args.fuzzy = False
+            args.threshold = 0.6
             tool._parsed_args = args
 
             with patch(
@@ -728,6 +793,9 @@ class TestDocsFindTool:
             args.max_matches = 3  # Only show 3 matches
             args.docs_only = False
             args.examples_only = False
+            args.no_color = True
+            args.fuzzy = False
+            args.threshold = 0.6
             tool._parsed_args = args
 
             with patch(
@@ -767,6 +835,9 @@ class TestDocsFindTool:
             args.max_matches = 10
             args.docs_only = True  # Only search docs
             args.examples_only = False
+            args.no_color = True
+            args.fuzzy = False
+            args.threshold = 0.6
             tool._parsed_args = args
 
             with patch(
@@ -806,6 +877,9 @@ class TestDocsFindTool:
             args.max_matches = 10
             args.docs_only = False
             args.examples_only = True  # Only search examples
+            args.no_color = True
+            args.fuzzy = False
+            args.threshold = 0.6
             tool._parsed_args = args
 
             with patch(
@@ -842,6 +916,8 @@ class TestDocsFindTool:
             args.docs_only = False
             args.examples_only = False
             args.no_color = False  # Highlighting enabled
+            args.fuzzy = False
+            args.threshold = 0.6
             tool._parsed_args = args
 
             with patch(
@@ -879,6 +955,8 @@ class TestDocsFindTool:
             args.docs_only = False
             args.examples_only = False
             args.no_color = True  # Highlighting disabled
+            args.fuzzy = False
+            args.threshold = 0.6
             tool._parsed_args = args
 
             with patch(
@@ -899,6 +977,282 @@ class TestDocsFindTool:
             # Should NOT have ANSI escape codes
             assert "\033[1;33m" not in captured.out
             assert "pattern" in captured.out
+
+    def test_finds_by_frontmatter_keyword(self, capsys):
+        """Test finds file by frontmatter keyword even if content doesn't match."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            docs_dir = Path(tmpdir) / "docs"
+            docs_dir.mkdir()
+            # File with keyword in frontmatter but not in content
+            (docs_dir / "doc.md").write_text(
+                "---\nkeywords: [check-funcs, funcsize, cq cf]\n---\n"
+                "# Function Size Checker\n\nContent about function sizes"
+            )
+
+            tool = DocsFindTool()
+            args = Mock()
+            args.pattern = "check-funcs"  # Only in keywords, not content
+            args.context = 0
+            args.word = False
+            args.max_matches = 10
+            args.docs_only = False
+            args.examples_only = False
+            args.no_color = True
+            args.fuzzy = False
+            args.threshold = 0.6
+            tool._parsed_args = args
+
+            with patch(
+                "appinfra.cli.tools.docs_tool.get_package_root",
+                return_value=Path(tmpdir),
+            ):
+                with patch(
+                    "appinfra.cli.tools.docs_tool.get_docs_dir", return_value=docs_dir
+                ):
+                    with patch(
+                        "appinfra.cli.tools.docs_tool.get_examples_dir",
+                        return_value=Path("/nonexistent"),
+                    ):
+                        result = tool.run()
+
+            assert result == 0
+            captured = capsys.readouterr()
+            assert "doc.md" in captured.out
+            assert "[keyword: check-funcs]" in captured.out
+
+    def test_finds_by_frontmatter_alias(self, capsys):
+        """Test finds file by frontmatter alias."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            docs_dir = Path(tmpdir) / "docs"
+            docs_dir.mkdir()
+            (docs_dir / "doc.md").write_text(
+                "---\naliases: [function-checker, line-limit]\n---\n"
+                "# Function Size Checker\n\nContent here"
+            )
+
+            tool = DocsFindTool()
+            args = Mock()
+            args.pattern = "line-limit"  # Only in aliases
+            args.context = 0
+            args.word = False
+            args.max_matches = 10
+            args.docs_only = False
+            args.examples_only = False
+            args.no_color = True
+            args.fuzzy = False
+            args.threshold = 0.6
+            tool._parsed_args = args
+
+            with patch(
+                "appinfra.cli.tools.docs_tool.get_package_root",
+                return_value=Path(tmpdir),
+            ):
+                with patch(
+                    "appinfra.cli.tools.docs_tool.get_docs_dir", return_value=docs_dir
+                ):
+                    with patch(
+                        "appinfra.cli.tools.docs_tool.get_examples_dir",
+                        return_value=Path("/nonexistent"),
+                    ):
+                        result = tool.run()
+
+            assert result == 0
+            captured = capsys.readouterr()
+            assert "doc.md" in captured.out
+            assert "[keyword: line-limit]" in captured.out
+
+    def test_keyword_search_case_insensitive(self, capsys):
+        """Test keyword search is case insensitive."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            docs_dir = Path(tmpdir) / "docs"
+            docs_dir.mkdir()
+            (docs_dir / "doc.md").write_text(
+                "---\nkeywords: [CheckFuncs, FUNCSIZE]\n---\n# Content"
+            )
+
+            tool = DocsFindTool()
+            args = Mock()
+            args.pattern = "checkfuncs"  # lowercase
+            args.context = 0
+            args.word = False
+            args.max_matches = 10
+            args.docs_only = False
+            args.examples_only = False
+            args.no_color = True
+            args.fuzzy = False
+            args.threshold = 0.6
+            tool._parsed_args = args
+
+            with patch(
+                "appinfra.cli.tools.docs_tool.get_package_root",
+                return_value=Path(tmpdir),
+            ):
+                with patch(
+                    "appinfra.cli.tools.docs_tool.get_docs_dir", return_value=docs_dir
+                ):
+                    with patch(
+                        "appinfra.cli.tools.docs_tool.get_examples_dir",
+                        return_value=Path("/nonexistent"),
+                    ):
+                        result = tool.run()
+
+            assert result == 0
+            captured = capsys.readouterr()
+            assert "doc.md" in captured.out
+
+    def test_fuzzy_matching_finds_typos(self, capsys):
+        """Test fuzzy matching finds words with typos."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            docs_dir = Path(tmpdir) / "docs"
+            docs_dir.mkdir()
+            (docs_dir / "doc.md").write_text("# Guide\n\nConfigure the logging here")
+
+            tool = DocsFindTool()
+            args = Mock()
+            args.pattern = "loging"  # typo: missing 'g'
+            args.context = 0
+            args.word = False
+            args.max_matches = 10
+            args.docs_only = False
+            args.examples_only = False
+            args.no_color = True
+            args.fuzzy = True
+            args.threshold = 0.7
+            tool._parsed_args = args
+
+            with patch(
+                "appinfra.cli.tools.docs_tool.get_package_root",
+                return_value=Path(tmpdir),
+            ):
+                with patch(
+                    "appinfra.cli.tools.docs_tool.get_docs_dir", return_value=docs_dir
+                ):
+                    with patch(
+                        "appinfra.cli.tools.docs_tool.get_examples_dir",
+                        return_value=Path("/nonexistent"),
+                    ):
+                        result = tool.run()
+
+            assert result == 0
+            captured = capsys.readouterr()
+            assert "doc.md" in captured.out
+            assert "logging" in captured.out
+
+    def test_fuzzy_matching_finds_partial_words(self, capsys):
+        """Test fuzzy matching finds partial word matches."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            docs_dir = Path(tmpdir) / "docs"
+            docs_dir.mkdir()
+            (docs_dir / "doc.md").write_text(
+                "---\nkeywords: [configuration]\n---\n# Content"
+            )
+
+            tool = DocsFindTool()
+            args = Mock()
+            args.pattern = "config"  # partial match
+            args.context = 0
+            args.word = False
+            args.max_matches = 10
+            args.docs_only = False
+            args.examples_only = False
+            args.no_color = True
+            args.fuzzy = True
+            args.threshold = 0.6
+            tool._parsed_args = args
+
+            with patch(
+                "appinfra.cli.tools.docs_tool.get_package_root",
+                return_value=Path(tmpdir),
+            ):
+                with patch(
+                    "appinfra.cli.tools.docs_tool.get_docs_dir", return_value=docs_dir
+                ):
+                    with patch(
+                        "appinfra.cli.tools.docs_tool.get_examples_dir",
+                        return_value=Path("/nonexistent"),
+                    ):
+                        result = tool.run()
+
+            assert result == 0
+            captured = capsys.readouterr()
+            # Should find via keyword fuzzy match
+            assert "doc.md" in captured.out
+
+    def test_fuzzy_disabled_by_default(self, capsys):
+        """Test fuzzy matching is disabled by default."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            docs_dir = Path(tmpdir) / "docs"
+            docs_dir.mkdir()
+            (docs_dir / "doc.md").write_text("# Guide\n\nConfigure the logging here")
+
+            tool = DocsFindTool()
+            args = Mock()
+            args.pattern = "loging"  # typo
+            args.context = 0
+            args.word = False
+            args.max_matches = 10
+            args.docs_only = False
+            args.examples_only = False
+            args.no_color = True
+            args.fuzzy = False  # Disabled
+            args.threshold = 0.6
+            tool._parsed_args = args
+
+            with patch(
+                "appinfra.cli.tools.docs_tool.get_package_root",
+                return_value=Path(tmpdir),
+            ):
+                with patch(
+                    "appinfra.cli.tools.docs_tool.get_docs_dir", return_value=docs_dir
+                ):
+                    with patch(
+                        "appinfra.cli.tools.docs_tool.get_examples_dir",
+                        return_value=Path("/nonexistent"),
+                    ):
+                        result = tool.run()
+
+            assert result == 0
+            captured = capsys.readouterr()
+            # Should NOT find with exact matching
+            assert "No matches found" in captured.out
+
+    def test_fuzzy_threshold_affects_results(self, capsys):
+        """Test that threshold affects fuzzy match sensitivity."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            docs_dir = Path(tmpdir) / "docs"
+            docs_dir.mkdir()
+            (docs_dir / "doc.md").write_text("# Guide\n\nConfigure the logging here")
+
+            tool = DocsFindTool()
+            args = Mock()
+            args.pattern = "log"  # very short pattern
+            args.context = 0
+            args.word = False
+            args.max_matches = 10
+            args.docs_only = False
+            args.examples_only = False
+            args.no_color = True
+            args.fuzzy = True
+            args.threshold = 0.95  # Very high threshold
+            tool._parsed_args = args
+
+            with patch(
+                "appinfra.cli.tools.docs_tool.get_package_root",
+                return_value=Path(tmpdir),
+            ):
+                with patch(
+                    "appinfra.cli.tools.docs_tool.get_docs_dir", return_value=docs_dir
+                ):
+                    with patch(
+                        "appinfra.cli.tools.docs_tool.get_examples_dir",
+                        return_value=Path("/nonexistent"),
+                    ):
+                        result = tool.run()
+
+            assert result == 0
+            captured = capsys.readouterr()
+            # With 0.95 threshold, "log" shouldn't match "logging" (ratio ~0.67)
+            assert "No matches found" in captured.out
 
 
 # =============================================================================

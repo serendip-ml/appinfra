@@ -1,3 +1,19 @@
+---
+title: Logging System
+keywords:
+  - logging
+  - log levels
+  - trace
+  - debug
+  - structured logging
+  - handlers
+  - formatters
+  - colors
+aliases:
+  - log-api
+  - logging-api
+---
+
 # Logging System
 
 Comprehensive logging with structured output, custom levels, and multiple handlers.
