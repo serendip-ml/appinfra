@@ -141,6 +141,11 @@ testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --tb=short"
 pythonpath = ["."]
+# Suppress passlib deprecation warning for 'crypt' module (Python 3.13+)
+# See: https://github.com/pyca/passlib/issues/148 - remove when passlib releases a fix
+filterwarnings = [
+    "ignore:'crypt' is deprecated:DeprecationWarning:passlib",
+]
 markers = [
     "property: property-based tests using Hypothesis",
 ]
