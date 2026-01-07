@@ -1,3 +1,19 @@
+---
+title: Database Layer
+keywords:
+  - database
+  - postgresql
+  - postgres
+  - connection pool
+  - session
+  - sqlalchemy
+  - query
+  - PG class
+aliases:
+  - db-api
+  - postgres-api
+---
+
 # Database Layer
 
 PostgreSQL interface with connection pooling, query monitoring, and session management.

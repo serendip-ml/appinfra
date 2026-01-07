@@ -1,3 +1,19 @@
+---
+title: Getting Started
+keywords:
+  - installation
+  - setup
+  - quickstart
+  - install
+  - make setup
+  - prerequisites
+  - python
+  - postgresql
+aliases:
+  - quick-start
+  - install-guide
+---
+
 # Getting Started
 
 This guide will help you get up and running with the Infra framework quickly.
