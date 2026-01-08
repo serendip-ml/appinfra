@@ -114,11 +114,26 @@ class BuildInfo:
 
     @classmethod
     def _parse_build_info_file(cls, path: Path) -> dict[str, object] | None:
-        """Parse _build_info.py file and return namespace dict."""
+        """Parse _build_info.py file and return namespace dict.
+
+        Uses importlib to safely load the module instead of exec().
+        """
+        import importlib.util
+
         try:
-            namespace: dict[str, object] = {}
-            exec(path.read_text(), namespace)
-            return namespace
+            spec = importlib.util.spec_from_file_location("_build_info", path)
+            if spec is None or spec.loader is None:
+                return None
+
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            # Extract relevant attributes into a dict
+            return {
+                key: getattr(module, key)
+                for key in dir(module)
+                if not key.startswith("_")
+            }
         except Exception:
             return None
 

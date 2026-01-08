@@ -17,9 +17,17 @@ For API stability guarantees and deprecation policy, see
 - Session-start cleanup for stale debug tables (prevents orphaned tables from accumulating)
 - Session detachment utilities (`appinfra.db.utils`) for background processing
 - Test for debug table retention-on-failure behavior
+- YAML frontmatter support for `appinfra docs search` - docs can include searchable keywords/aliases
+- Fuzzy matching for `appinfra docs search` via `--fuzzy` flag with configurable `--threshold`
+- Root-level SECURITY.md symlink for GitHub security integration discoverability
 
 ### Changed
 - Database names standardized to `infra_main` and `infra_test` to avoid global name conflicts
+- Replace `exec()` with `importlib.util` in version/info.py for safer module loading
+
+### Fixed
+- Suppress passlib `crypt` module deprecation warning (upstream issue, Python 3.13 compatibility)
+- Coverage directory handling in Makefile (properly cleans existing .coverage file/directory)
 
 ## [0.1.3] - 2026-01-05
 
