@@ -137,7 +137,8 @@ test.ci:: ## runs tests appropriate for CI (unit + integration)
 
 test.coverage:: ## runs tests with coverage analysis (configurable via INFRA_PYTEST_COVERAGE_MARKERS)
 	@echo "* running tests with coverage analysis..."
-	@rm -rf $(_COVERAGE_DIR) && mkdir -p $(_COVERAGE_DIR)
+	@rm -rf $(_COVERAGE_DIR) 2>/dev/null || true
+	@mkdir -p $(_COVERAGE_DIR)
 	@COVERAGE_FILE=$(_COVERAGE_DIR)/data $(call run_pytest,tests/ $(_COVERAGE_MARKER_ARG) -qq --no-header --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=term --cov-report=xml:$(_COVERAGE_DIR)/coverage.xml)
 	@echo "* coverage analysis completed (XML report: $(_COVERAGE_DIR)/coverage.xml)"
 .PHONY: test.coverage
