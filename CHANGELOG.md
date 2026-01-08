@@ -20,6 +20,8 @@ For API stability guarantees and deprecation policy, see
 - YAML frontmatter support for `appinfra docs search` - docs can include searchable keywords/aliases
 - Fuzzy matching for `appinfra docs search` via `--fuzzy` flag with configurable `--threshold`
 - Root-level SECURITY.md symlink for GitHub security integration discoverability
+- CodeRabbit AI code review integration (`.coderabbit.yaml`) for automated PR reviews
+- CODEOWNERS file requiring @serendip-ml approval for all changes
 
 ### Changed
 - Database names standardized to `infra_main` and `infra_test` to avoid global name conflicts
