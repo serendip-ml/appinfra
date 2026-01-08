@@ -122,8 +122,8 @@ declare -a TEST_SUBCHECKS=(
     "Security tests|test.security|${PYTHON} -m pytest tests/ -m security --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
     "Performance tests|test.perf|${PYTHON} -m pytest tests/ -m performance --tb=short --no-header -qq|"
 )
-# Add coverage check only if threshold > 0
-if [ "$(echo "$COVERAGE_TARGET > 0" | bc -l 2>/dev/null || echo "1")" -eq 1 ]; then
+# Add coverage check only if threshold > 0 (awk is more portable than bc)
+if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then
     TEST_SUBCHECKS+=("Code coverage|test.coverage|${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term -qq ${PYTEST_PARALLEL}|${COVERAGE_TARGET}")
 fi
 
@@ -135,8 +135,8 @@ declare -a TEST_SUBCHECKS_RAW=(
     "Security tests|test.security.v|${PYTHON} -m pytest tests/ -m security -v --tb=short ${PYTEST_PARALLEL}|"
     "Performance tests|test.perf.v|${PYTHON} -m pytest tests/ -m performance -v --tb=short|"
 )
-# Add coverage check only if threshold > 0
-if [ "$(echo "$COVERAGE_TARGET > 0" | bc -l 2>/dev/null || echo "1")" -eq 1 ]; then
+# Add coverage check only if threshold > 0 (awk is more portable than bc)
+if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then
     TEST_SUBCHECKS_RAW+=("Code coverage|test.coverage|${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term-missing ${PYTEST_PARALLEL}|${COVERAGE_TARGET}")
 fi
 
