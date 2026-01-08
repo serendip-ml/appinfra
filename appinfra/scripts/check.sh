@@ -71,7 +71,9 @@ DISPLAY_LOCK="/tmp/infra-check-display-lock-${MAIN_PID}"
 STATUS_DIR="/tmp/infra-check-status-${MAIN_PID}"
 mkdir -p "$STATUS_DIR"
 
-DEFAULT_COVERAGE_TARGET="95.0"
+# Coverage threshold: use env var, then CLI arg, then default
+# Set to 0 to disable coverage checking entirely
+DEFAULT_COVERAGE_TARGET="${INFRA_PYTEST_COVERAGE_THRESHOLD:-95.0}"
 COVERAGE_TARGET="${COVERAGE_TARGET:-$DEFAULT_COVERAGE_TARGET}"
 
 # Check definitions: "Name|Make Target|Command|Fix Target"
@@ -119,8 +121,11 @@ declare -a TEST_SUBCHECKS=(
     "E2E tests|test.e2e|${PYTHON} -m pytest tests/ -m e2e --tb=short --no-header -qq|"
     "Security tests|test.security|${PYTHON} -m pytest tests/ -m security --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
     "Performance tests|test.perf|${PYTHON} -m pytest tests/ -m performance --tb=short --no-header -qq|"
-    "Code coverage|test.coverage|${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term -qq ${PYTEST_PARALLEL}|${COVERAGE_TARGET}"
 )
+# Add coverage check only if threshold > 0
+if [ "$(echo "$COVERAGE_TARGET > 0" | bc -l 2>/dev/null || echo "1")" -eq 1 ]; then
+    TEST_SUBCHECKS+=("Code coverage|test.coverage|${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term -qq ${PYTEST_PARALLEL}|${COVERAGE_TARGET}")
+fi
 
 # Verbose versions for raw mode
 declare -a TEST_SUBCHECKS_RAW=(
@@ -129,8 +134,11 @@ declare -a TEST_SUBCHECKS_RAW=(
     "E2E tests|test.e2e.v|${PYTHON} -m pytest tests/ -m e2e -v --tb=short|"
     "Security tests|test.security.v|${PYTHON} -m pytest tests/ -m security -v --tb=short ${PYTEST_PARALLEL}|"
     "Performance tests|test.perf.v|${PYTHON} -m pytest tests/ -m performance -v --tb=short|"
-    "Code coverage|test.coverage|${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term-missing ${PYTEST_PARALLEL}|${COVERAGE_TARGET}"
 )
+# Add coverage check only if threshold > 0
+if [ "$(echo "$COVERAGE_TARGET > 0" | bc -l 2>/dev/null || echo "1")" -eq 1 ]; then
+    TEST_SUBCHECKS_RAW+=("Code coverage|test.coverage|${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term-missing ${PYTEST_PARALLEL}|${COVERAGE_TARGET}")
+fi
 
 declare -A CHECK_LINES
 declare -A SUBCHECK_LINES

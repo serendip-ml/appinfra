@@ -11,6 +11,7 @@ For API stability guarantees and deprecation policy, see
 ## [Unreleased]
 
 ### Added
+- Configurable coverage threshold via `INFRA_PYTEST_COVERAGE_THRESHOLD` (default: 95.0, set to 0 to disable)
 - SQLite database support (`appinfra.db.sqlite`) for lightweight/embedded use cases
 - pgvector extension support (`appinfra.db.pg.vector`) for embedding storage and similarity search
 - SQLite integration fixtures for fast DB tests (no external server needed)
