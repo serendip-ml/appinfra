@@ -71,7 +71,7 @@ DISPLAY_LOCK="/tmp/infra-check-display-lock-${MAIN_PID}"
 STATUS_DIR="/tmp/infra-check-status-${MAIN_PID}"
 mkdir -p "$STATUS_DIR"
 
-# Coverage threshold: use env var, then CLI arg, then default
+# Coverage threshold precedence: CLI arg > env var > default (95.0)
 # Set to 0 to disable coverage checking entirely
 DEFAULT_COVERAGE_TARGET="${INFRA_PYTEST_COVERAGE_THRESHOLD:-95.0}"
 COVERAGE_TARGET="${COVERAGE_TARGET:-$DEFAULT_COVERAGE_TARGET}"
@@ -213,7 +213,7 @@ parse_coverage() {
 
 check_coverage_threshold() {
     local actual="$1" target="$2"
-    [ "$(echo "$actual >= $target" | bc -l 2>/dev/null || echo "0")" -eq 1 ]
+    awk "BEGIN {exit !($actual >= $target)}" 2>/dev/null
 }
 
 # === CHECK EXECUTION ===
