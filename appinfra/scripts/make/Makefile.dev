@@ -32,6 +32,7 @@ export INFRA_DEV_PROJECT_ROOT
 export INFRA_DEV_INSTALL_EXTRAS
 export INFRA_DEFAULT_CONFIG_FILE
 export INFRA_PYTEST_COVERAGE_MARKERS
+export INFRA_PYTEST_COVERAGE_THRESHOLD
 
 # Python test wrapper with warning suppression
 PYTHON_TEST = PYTHONWARNINGS="ignore::ResourceWarning,ignore::RuntimeWarning" ${PYTHON}

@@ -353,6 +353,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `INFRA_PYTEST_COVERAGE_PKG` | `$(INFRA_DEV_PKG_NAME)` | Package to measure coverage |
+| `INFRA_PYTEST_COVERAGE_THRESHOLD` | `95.0` | Coverage threshold for `make check` (0 to disable) |
 | `INFRA_PYTEST_TESTS_DIR` | `tests` | Tests directory |
 | `INFRA_PYTEST_ARGS` | (empty) | Additional pytest arguments |
 

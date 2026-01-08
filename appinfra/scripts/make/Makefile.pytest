@@ -4,11 +4,13 @@
 # Requires: PYTHON (from Makefile.env)
 #
 # Configuration variables (set in Makefile before include):
-#   INFRA_PYTEST_COVERAGE_PKG     - Package to measure coverage for (default: INFRA_DEV_PKG_NAME)
-#   INFRA_PYTEST_COVERAGE_MARKERS - Pytest markers for coverage tests (default: unit)
-#                                   Set empty to include all tests in coverage
-#   INFRA_PYTEST_TESTS_DIR        - Tests directory (default: tests)
-#   INFRA_PYTEST_ARGS             - Additional pytest arguments (default: empty)
+#   INFRA_PYTEST_COVERAGE_PKG       - Package to measure coverage for (default: INFRA_DEV_PKG_NAME)
+#   INFRA_PYTEST_COVERAGE_MARKERS   - Pytest markers for coverage tests (default: unit)
+#                                     Set empty to include all tests in coverage
+#   INFRA_PYTEST_COVERAGE_THRESHOLD - Coverage threshold for make check (default: 95.0)
+#                                     Set to 0 to disable coverage checking entirely
+#   INFRA_PYTEST_TESTS_DIR          - Tests directory (default: tests)
+#   INFRA_PYTEST_ARGS               - Additional pytest arguments (default: empty)
 
 # Configuration (defaults set in Makefile.config)
 INFRA_PYTEST_TESTS_DIR ?= tests
