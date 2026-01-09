@@ -71,7 +71,7 @@ try:
     class PostgreSQLServerConfig(BaseModel):
         """Configuration for PostgreSQL server connection."""
 
-        version: int = Field(default=17, description="PostgreSQL version")
+        version: int = Field(default=16, description="PostgreSQL version")
         name: str = Field(default="infra-pg", description="Server name")
         port: int = Field(default=5432, ge=1, le=65535, description="Server port")
         user: str = Field(default="postgres", description="Username")

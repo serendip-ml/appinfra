@@ -26,7 +26,7 @@ See [docs/README.md](docs/README.md) for full scope and philosophy.
 ## Requirements
 
 - Python 3.11+
-- PostgreSQL 17 (optional, for database features)
+- PostgreSQL 16 (optional, for database features)
 
 ## Installation
 
