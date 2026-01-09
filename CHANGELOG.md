@@ -25,6 +25,7 @@ For API stability guarantees and deprecation policy, see
 - CODEOWNERS file requiring @serendip-ml approval for all changes
 
 ### Changed
+- Default PostgreSQL version changed from 17 to 16 (psql client compatibility issues with PG17)
 - Database names standardized to `infra_main` and `infra_test` to avoid global name conflicts
 - Replace `exec()` with `importlib.util` in version/info.py for safer module loading
 

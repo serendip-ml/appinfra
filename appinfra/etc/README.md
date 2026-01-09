@@ -128,7 +128,7 @@ Defines PostgreSQL server connection settings.
 
 ```yaml
 pgserver:
-  version: 17                   # PostgreSQL version
+  version: 16                   # PostgreSQL version
   name: infra-pg               # Server name/identifier
   port: 7432                   # PostgreSQL port
   user: postgres               # Database user

@@ -235,7 +235,7 @@ appinfra cq cf             # Check function sizes
 ## Requirements
 
 - Python 3.11+
-- PostgreSQL 17 (optional, for database features)
+- PostgreSQL 16 (optional, for database features)
 - Docker (optional, for PostgreSQL in development)
 
 **Core dependencies:**
