@@ -83,7 +83,7 @@ PostgreSQL and SQLite interfaces:
 YAML configuration with powerful features:
 - Environment variable overrides (`INFRA_<SECTION>_<KEY>`)
 - File includes with `!include` directive
-- Automatic path resolution
+- Path resolution via `!path` YAML tag
 - Hot-reload with ConfigWatcher
 
 ### `appinfra.time` - Time Utilities
@@ -161,20 +161,21 @@ export INFRA_PGSERVER_PORT=5432       # Override database port
 
 See [Environment Variables Guide](guides/environment-variables.md) for full documentation.
 
-### Automatic Path Resolution
+### Path Resolution with `!path` Tag
 
-Relative paths in config files are automatically resolved to absolute paths:
+Use the `!path` YAML tag to resolve paths relative to the config file:
 
 ```yaml
 # Config at /app/etc/config.yaml
 logging:
-  file: ./logs/app.log              # Resolves to /app/etc/logs/app.log
-  error_file: ../errors/error.log   # Resolves to /app/errors/error.log
+  file: !path ./logs/app.log        # Resolves to /app/etc/logs/app.log
+  error_file: !path ../errors.log   # Resolves to /app/errors.log
+  cache: !path ~/.cache/myapp       # Expands ~ to home directory
 ```
 
-- Paths starting with `./` or `../` are resolved relative to the config file
+- Without `!path`, paths remain as literal strings
 - Works correctly with `!include` - paths resolve relative to the included file
-- Disable with `Config(path, resolve_paths=False)`
+- Expands tilde (`~`) to the user's home directory
 
 ## CLI Commands
 

@@ -79,14 +79,15 @@ api:
 
 @pytest.fixture
 def temp_yaml_with_paths(tmp_path):
-    """Create a YAML file with relative paths."""
+    """Create a YAML file with paths using !path tag."""
     config_file = tmp_path / "config.yaml"
     content = """
 files:
-  data: ./data/file.txt
-  logs: ../logs/app.log
+  data: !path ./data/file.txt
+  logs: !path ../logs/app.log
   absolute: /var/log/app.log
   url: http://example.com/path
+  no_tag: ./unresolved/path.txt
 """
     config_file.write_text(content)
     return str(config_file)
@@ -136,12 +137,10 @@ class TestConfigInitialization:
             enable_env_overrides=False,
             env_prefix="MYAPP_",
             merge_strategy="merge",
-            resolve_paths=False,
         )
         assert config._enable_env_overrides is False
         assert config._env_prefix == "MYAPP_"
         assert config._merge_strategy == "merge"
-        assert config._resolve_paths is False
 
     def test_init_default_attributes(self, temp_yaml_file):
         """Test that default attributes are set correctly."""
@@ -149,7 +148,6 @@ class TestConfigInitialization:
         assert config._enable_env_overrides is True
         assert config._env_prefix == "INFRA_"
         assert config._merge_strategy == "replace"
-        assert config._resolve_paths is True
 
     def test_init_with_malformed_yaml(self, tmp_path):
         """Test initialization with malformed YAML raises error."""
@@ -460,44 +458,72 @@ class TestEnvironmentOverrides:
 
 @pytest.mark.unit
 class TestPathResolution:
-    """Test relative path resolution functionality."""
+    """Test path resolution via !path YAML tag."""
 
-    def test_resolve_relative_paths_enabled(self, temp_yaml_with_paths):
-        """Test relative path resolution when enabled."""
-        config = Config(temp_yaml_with_paths, resolve_paths=True)
-        # Relative paths should be resolved to absolute
+    def test_path_tag_resolves_relative_paths(self, temp_yaml_with_paths):
+        """Test that !path tag resolves relative paths to absolute."""
+        config = Config(temp_yaml_with_paths)
+        # Paths with !path tag should be resolved to absolute
         assert Path(config.files.data).is_absolute()
         assert Path(config.files.logs).is_absolute()
         # Absolute paths should remain unchanged
         assert config.files.absolute == "/var/log/app.log"
         # URLs should remain unchanged
         assert config.files.url == "http://example.com/path"
+        # Paths without !path tag should NOT be resolved
+        assert config.files.no_tag == "./unresolved/path.txt"
 
-    def test_resolve_relative_paths_disabled(self, temp_yaml_with_paths):
-        """Test that path resolution can be disabled."""
-        config = Config(temp_yaml_with_paths, resolve_paths=False)
-        # Paths should remain as-is
-        assert config.files.data == "./data/file.txt"
-        assert config.files.logs == "../logs/app.log"
-
-    def test_path_resolution_with_dot_slash(self, tmp_path):
-        """Test resolution of ./ paths."""
+    def test_path_tag_with_dot_slash(self, tmp_path):
+        """Test !path resolution of ./ paths."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("file: ./relative/path.txt")
-        config = Config(str(config_file), resolve_paths=True)
+        config_file.write_text("file: !path ./relative/path.txt")
+        config = Config(str(config_file))
         expected = str((tmp_path / "relative" / "path.txt").resolve())
         assert config.file == expected
 
-    def test_path_resolution_with_dot_dot_slash(self, tmp_path):
-        """Test resolution of ../ paths."""
+    def test_path_tag_with_dot_dot_slash(self, tmp_path):
+        """Test !path resolution of ../ paths."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("file: ../parent/path.txt")
-        config = Config(str(config_file), resolve_paths=True)
+        config_file.write_text("file: !path ../parent/path.txt")
+        config = Config(str(config_file))
         expected = str((tmp_path.parent / "parent" / "path.txt").resolve())
         assert config.file == expected
 
-    def test_url_not_resolved_as_path(self, tmp_path):
-        """Test that URLs are not treated as paths."""
+    def test_path_tag_expands_tilde(self, tmp_path):
+        """Test that !path expands tilde to home directory."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("cache: !path ~/.cache/myapp")
+        config = Config(str(config_file))
+        expected = str(Path("~/.cache/myapp").expanduser())
+        assert config.cache == expected
+
+    def test_path_tag_absolute_path_unchanged(self, tmp_path):
+        """Test that !path with absolute paths returns them unchanged."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("file: !path /absolute/path.txt")
+        config = Config(str(config_file))
+        assert config.file == "/absolute/path.txt"
+
+    def test_no_automatic_path_resolution(self, tmp_path):
+        """Test that paths without !path tag are NOT resolved."""
+        config_file = tmp_path / "config.yaml"
+        content = """
+paths:
+  relative_dot: ./data/file.txt
+  relative_dotdot: ../logs/app.log
+  tilde: ~/.config/app
+  plain: some/value
+"""
+        config_file.write_text(content)
+        config = Config(str(config_file))
+        # All paths without !path tag should remain as-is
+        assert config.paths.relative_dot == "./data/file.txt"
+        assert config.paths.relative_dotdot == "../logs/app.log"
+        assert config.paths.tilde == "~/.config/app"
+        assert config.paths.plain == "some/value"
+
+    def test_urls_unchanged(self, tmp_path):
+        """Test that URLs are not affected by !path tag or otherwise."""
         config_file = tmp_path / "config.yaml"
         content = """
 urls:
@@ -507,35 +533,12 @@ urls:
   postgres: postgresql://localhost:5432/db
 """
         config_file.write_text(content)
-        config = Config(str(config_file), resolve_paths=True)
+        config = Config(str(config_file))
         # All URLs should remain unchanged
         assert config.urls.http == "http://example.com/path"
         assert config.urls.https == "https://example.com/path"
         assert config.urls.file == "file:///absolute/path"
         assert config.urls.postgres == "postgresql://localhost:5432/db"
-
-    def test_absolute_path_not_resolved(self, tmp_path):
-        """Test that absolute paths are not changed."""
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("file: /absolute/path.txt")
-        config = Config(str(config_file), resolve_paths=True)
-        assert config.file == "/absolute/path.txt"
-
-    def test_non_path_strings_not_resolved(self, tmp_path):
-        """Test that regular strings are not treated as paths."""
-        config_file = tmp_path / "config.yaml"
-        content = """
-strings:
-  plain: just_a_string
-  with_slash: some/value
-  number_like: 123/456
-"""
-        config_file.write_text(content)
-        config = Config(str(config_file), resolve_paths=True)
-        # None of these should be resolved (no ./ or ../ prefix)
-        assert config.strings.plain == "just_a_string"
-        assert config.strings.with_slash == "some/value"
-        assert config.strings.number_like == "123/456"
 
 
 # =============================================================================
@@ -669,14 +672,12 @@ class TestHelperFunctions:
         mock_config._enable_env_overrides = False
         mock_config._env_prefix = "TEST_"
         mock_config._merge_strategy = "merge"
-        mock_config._resolve_paths = False
 
         attrs = _preserve_config_attributes(mock_config)
 
         assert attrs["enable_env_overrides"] is False
         assert attrs["env_prefix"] == "TEST_"
         assert attrs["merge_strategy"] == "merge"
-        assert attrs["resolve_paths"] is False
 
     def test_preserve_config_attributes_with_defaults(self):
         """Test preserving config attributes with missing attributes."""
@@ -688,7 +689,6 @@ class TestHelperFunctions:
         assert attrs["enable_env_overrides"] is True
         assert attrs["env_prefix"] == "INFRA_"
         assert attrs["merge_strategy"] == "replace"
-        assert attrs["resolve_paths"] is True
 
     def test_restore_config_attributes(self):
         """Test restoring config attributes."""
@@ -697,7 +697,6 @@ class TestHelperFunctions:
             "enable_env_overrides": False,
             "env_prefix": "CUSTOM_",
             "merge_strategy": "deep",
-            "resolve_paths": False,
         }
 
         _restore_config_attributes(mock_config, attrs)
@@ -705,7 +704,6 @@ class TestHelperFunctions:
         assert mock_config._enable_env_overrides is False
         assert mock_config._env_prefix == "CUSTOM_"
         assert mock_config._merge_strategy == "deep"
-        assert mock_config._resolve_paths is False
 
 
 # =============================================================================
@@ -977,28 +975,35 @@ database:
         assert config.servers[0].ports == [80, 443]
         assert config.database.replicas.primary.host == "db-primary.example.com"
 
-    def test_path_resolution_in_nested_structures(self, tmp_path):
-        """Test path resolution works in nested lists and dicts."""
+    def test_path_tag_in_nested_structures(self, tmp_path):
+        """Test !path tag works in nested lists and dicts."""
         config_file = tmp_path / "config.yaml"
         content = """
 files:
   configs:
-    - ./config1.yaml
-    - ./config2.yaml
+    - !path ./config1.yaml
+    - !path ./config2.yaml
   logs:
-    primary: ./logs/primary.log
-    secondary: ./logs/secondary.log
+    primary: !path ./logs/primary.log
+    secondary: !path ./logs/secondary.log
+  unresolved:
+    - ./no_tag1.yaml
+    - ./no_tag2.yaml
 """
         config_file.write_text(content)
-        config = Config(str(config_file), resolve_paths=True)
+        config = Config(str(config_file))
 
-        # List paths should be resolved
+        # List paths with !path should be resolved
         assert Path(config.files.configs[0]).is_absolute()
         assert Path(config.files.configs[1]).is_absolute()
 
-        # Nested dict paths should be resolved
+        # Nested dict paths with !path should be resolved
         assert Path(config.files.logs.primary).is_absolute()
         assert Path(config.files.logs.secondary).is_absolute()
+
+        # List paths without !path should NOT be resolved
+        assert config.files.unresolved[0] == "./no_tag1.yaml"
+        assert config.files.unresolved[1] == "./no_tag2.yaml"
 
 
 # =============================================================================
@@ -1193,7 +1198,6 @@ class TestConfigReload:
             str(config_file),
             enable_env_overrides=False,
             env_prefix="CUSTOM_",
-            resolve_paths=False,
         )
 
         config_file.write_text("value: updated")
@@ -1202,7 +1206,6 @@ class TestConfigReload:
         # Options should be preserved
         assert config._enable_env_overrides is False
         assert config._env_prefix == "CUSTOM_"
-        assert config._resolve_paths is False
         # Value should be updated
         assert config.value == "updated"
 
