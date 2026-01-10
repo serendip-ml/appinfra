@@ -3,6 +3,8 @@
 Production-grade Python infrastructure framework providing reusable building blocks for robust
 applications.
 
+For feature highlights and code examples, see the [main README](../../README.md).
+
 ## Overview
 
 A comprehensive toolkit of battle-tested infrastructure components extracted from many years of
@@ -22,122 +24,105 @@ framework.
 | **Best For** | Production CLI tools, background services, systems-level Python applications |
 | **Not For** | REST APIs (use FastAPI/Flask), async-heavy apps, general web development |
 
-## Key Features
+## Architecture
 
-### Logging (`appinfra/log/`)
+```
+appinfra/
+├── app/          # Application framework (AppBuilder, tools, lifecycle)
+├── cli/          # CLI infrastructure (output, prompts, argument parsing)
+├── config/       # Configuration loading (YAML, env vars, path resolution)
+├── db/           # Database layer (PostgreSQL, SQLite, connection pooling)
+├── log/          # Logging system (builders, handlers, formatters)
+├── net/          # Network components (TCP/HTTP servers, routing)
+├── time/         # Time utilities (ticker, scheduler, delta formatting)
+├── security/     # Security utilities (secret masking, validation)
+├── observability/# Lightweight hooks for metrics and tracing
+├── ui/           # Interactive UI (prompts, progress bars)
+└── (core)        # DotDict, YAML utils, type helpers, caching
+```
 
-Advanced logging system with structured output:
-- Custom log levels (TRACE/TRACE2)
-- Multiple handlers (console, file rotation, database)
-- Fluent builder API
-- JSON structured logging
-- Microsecond precision timestamps
-- Hot-reload configuration (change log settings without restart)
+**Design Principles:**
 
-### Database Layer (`appinfra/db/`)
+- **Fluent Builders** - All major components use chainable builder APIs
+- **Protocol-Based** - Interfaces defined via Python protocols for flexibility
+- **Lifecycle-Aware** - Startup/shutdown hooks, graceful termination
+- **Config-Driven** - YAML configuration with environment variable overrides
+- **Test-Friendly** - Dependency injection, mockable interfaces, test fixtures
 
-PostgreSQL interface with SQLAlchemy:
-- Connection pooling
-- Query logging and performance monitoring
-- Read-only connection support
-- Migration support
-- Test helpers
+## Packages
 
-### Application Framework (`appinfra/app/`)
+### `appinfra.app` - Application Framework
 
 Modern framework for CLI tools and applications:
-- Fluent AppBuilder API
-- Tool registry and protocols
-- Server framework with middleware
+- Fluent AppBuilder API with focused configurers
+- Tool registry with decorator-based commands
+- Nested subcommands support
 - Lifecycle management (startup/shutdown hooks)
-- YAML configuration with environment overrides
-- Plugin architecture
+- Multi-source version tracking
 
-### Time Utilities (`appinfra/time/`)
+### `appinfra.log` - Logging System
+
+Advanced logging with structured output:
+- Custom log levels (TRACE/TRACE2)
+- Multiple handlers (console, file rotation, database)
+- Topic-based log level control with glob patterns
+- JSON structured logging
+- Hot-reload configuration
+
+### `appinfra.db` - Database Layer
+
+PostgreSQL and SQLite interfaces:
+- Connection pooling with auto-reconnection
+- Query logging and performance monitoring
+- Read-only connection support
+- Test helpers and fixtures
+- pgvector extension support
+
+### `appinfra.config` - Configuration
+
+YAML configuration with powerful features:
+- Environment variable overrides (`INFRA_<SECTION>_<KEY>`)
+- File includes with `!include` directive
+- Automatic path resolution
+- Hot-reload with ConfigWatcher
+
+### `appinfra.time` - Time Utilities
 
 Comprehensive time-related utilities:
-- Monotonic timing and date conversion
-- Ticker: periodic task execution
+- Ticker: periodic/continuous task execution
 - Scheduler: daily/weekly/monthly/hourly execution
-- Delta: duration formatting (4 formats)
-- DateRange: memory-efficient iteration
+- Delta: human-readable duration formatting
+- ETA: progress estimation with EWMA smoothing
+- DateRange: memory-efficient date iteration
 
-### Network Components (`appinfra/net/`)
+### `appinfra.net` - Network Components
 
 TCP/HTTP server infrastructure:
 - Single-process and multiprocessing modes
 - HTTP request handling with routing
-- Graceful shutdown
-- Exception handling framework
+- Graceful shutdown with signal handling
+
+### `appinfra.security` - Security Utilities
+
+- Secret masking with pattern detection (20+ formats)
+- Input validation helpers
+- Path traversal protection
+
+### `appinfra.ui` - Interactive UI
+
+- Smart prompts (TTY-aware with fallbacks)
+- Progress bars with logging coordination
+- Testable output abstractions
 
 ### Core Utilities
 
-- `DotDict` - Dictionary with attribute-style access and dot-notation path traversal
-- `lru_cache` - LRU cache implementation
+- `DotDict` - Attribute-style access with dot-notation paths
 - `rate_limit` - Operation frequency control
-- YAML utilities with include support, type checking helpers
-
-## Installation
-
-```bash
-# From PyPI
-pip install appinfra
-
-# Or for development
-git clone https://github.com/serendip-ml/appinfra.git
-cd appinfra
-make setup
-```
-
-## Quick Start
-
-### Basic Logging
-
-```python
-from appinfra.log import LoggingBuilder
-
-logger = (
-    LoggingBuilder("my_app")
-    .with_level("info")
-    .console_handler()
-    .file_handler("logs/app.log")
-    .build()
-)
-
-logger.info("Hello world", extra={"user_id": "123"})
-```
-
-### Configuration
-
-```python
-from appinfra.config import Config, get_config_file_path
-
-# Recommended: Use get_config_file_path() for automatic etc/ directory resolution
-config = Config(get_config_file_path())  # Finds etc/infra.yaml automatically
-print(config.logging.level)  # Environment vars can override YAML values
-
-# Within a tool (respects --etc-dir if provided):
-# config is already available via self.config
-```
-
-### Database
-
-```python
-from appinfra.db import PG
-from appinfra.config import get_config_file_path
-import sqlalchemy
-
-# Recommended: Use get_config_file_path() for automatic resolution
-pg = PG(get_config_file_path(), "main")
-with pg.session() as session:
-    result = session.execute(sqlalchemy.text("SELECT 1"))
-
-# Within a tool: use self.config which already has the loaded config
-```
+- YAML utilities with type checking helpers
 
 ## Project Scaffolding
 
-Quickly generate new projects with the scaffold tool:
+Generate new projects with the scaffold tool:
 
 ```bash
 # Generate standalone project (self-contained Makefile)
@@ -158,10 +143,8 @@ appinfra scaffold myapp --with-logging-db
 
 **Makefile Styles:**
 
-- **Standalone** (default): Self-contained Makefile with basic targets (install, test, clean, fmt,
-  lint). No framework dependencies.
-- **Framework**: Includes modular framework Makefiles with advanced features (test categorization,
-  coverage targets, extensibility).
+- **Standalone** (default): Self-contained Makefile with basic targets. No framework dependencies.
+- **Framework**: Modular Makefiles with advanced features (test categorization, coverage, hooks).
 
 ## Configuration
 
@@ -172,77 +155,48 @@ Configuration via `etc/infra.yaml` with environment variable overrides.
 **Pattern:** `INFRA_<SECTION>_<KEY>`
 
 ```bash
-# Override logging level
-export INFRA_LOGGING_LEVEL=debug
-
-# Override database port
-export INFRA_PGSERVER_PORT=5432
+export INFRA_LOGGING_LEVEL=debug      # Override logging level
+export INFRA_PGSERVER_PORT=5432       # Override database port
 ```
 
 See [Environment Variables Guide](guides/environment-variables.md) for full documentation.
 
 ### Automatic Path Resolution
 
-Config files support automatic resolution of relative paths to absolute paths based on the file
-location.
-
-**How it works:**
-- Paths starting with `./` or `../` are automatically resolved to absolute paths
-- Paths resolve relative to the config file where they're defined
-- Works correctly with `!include` - included file paths resolve relative to the included file
-- Enabled by default, can be disabled with `resolve_paths=False`
-
-**Example:**
+Relative paths in config files are automatically resolved to absolute paths:
 
 ```yaml
 # Config at /app/etc/config.yaml
 logging:
   file: ./logs/app.log              # Resolves to /app/etc/logs/app.log
   error_file: ../errors/error.log   # Resolves to /app/errors/error.log
-
-database:
-  cert_path: ./certs/pg.crt         # Resolves to /app/etc/certs/pg.crt
 ```
 
-**Usage:**
-
-```python
-from appinfra.config import Config
-
-# Default: path resolution enabled
-config = Config('etc/config.yaml')
-print(config.logging.file)  # /absolute/path/to/etc/logs/app.log
-
-# Disable path resolution
-config = Config('etc/config.yaml', resolve_paths=False)
-print(config.logging.file)  # ./logs/app.log
-```
+- Paths starting with `./` or `../` are resolved relative to the config file
+- Works correctly with `!include` - paths resolve relative to the included file
+- Disable with `Config(path, resolve_paths=False)`
 
 ## CLI Commands
 
-After installation, the `appinfra` command provides useful utilities:
+After installation, the `appinfra` command provides:
 
 ```bash
 appinfra docs              # Show documentation overview
 appinfra docs list         # List all available docs and examples
 appinfra docs show <topic> # Show specific documentation
-appinfra docs find <text>  # Search documentation
+appinfra docs search <text># Search documentation (supports --fuzzy)
 appinfra scaffold <name>   # Generate a new project
-appinfra config [file]     # Show resolved configuration (aliases: c, cfg)
+appinfra config [file]     # Show resolved configuration
 appinfra cq cf             # Check function sizes
+appinfra doctor            # Run project health checks
 ```
 
-## Requirements
+## Further Reading
 
-- Python 3.11+
-- PostgreSQL 16 (optional, for database features)
-- Docker (optional, for PostgreSQL in development)
-
-**Core dependencies:**
-- SQLAlchemy 2.0+
-- PyYAML 6.0+
-- psycopg2-binary
+- [Getting Started](getting-started.md) - Installation and setup
+- [API Reference](api/index.md) - Detailed API documentation
+- [Contributing](guides/contributing.md) - Development setup and guidelines
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+Apache License 2.0 - see [LICENSE](LICENSE) for details.
