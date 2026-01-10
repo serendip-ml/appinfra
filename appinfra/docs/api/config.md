@@ -15,8 +15,7 @@ class Config(DotDict):
         fname: str,
         enable_env_overrides: bool = True,
         env_prefix: str = "INFRA_",
-        merge_strategy: str = "replace",
-        resolve_paths: bool = True
+        merge_strategy: str = "replace"
     ): ...
 
     def reload(self) -> Config: ...
