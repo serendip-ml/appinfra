@@ -33,7 +33,6 @@ class Config(DotDict):
 | `enable_env_overrides` | `True` | Apply environment variable overrides |
 | `env_prefix` | `"INFRA_"` | Prefix for environment variables |
 | `merge_strategy` | `"replace"` | Strategy for handling `!include` directives: `"replace"` (included content replaces target key) or `"merge"` (deep merge with existing). Note: only `"replace"` is currently fully supported |
-| `resolve_paths` | `True` | Resolve relative paths (starting with `./` or `../`) |
 
 **Basic Usage:**
 
@@ -108,17 +107,26 @@ app_name: myapp
 
 ## Path Resolution
 
-Relative paths in config are resolved to absolute paths based on the config file location:
+Path resolution requires the explicit `!path` YAML tag. Without the tag, paths remain as literal
+strings:
 
 ```yaml
 # etc/config.yaml
 logging:
-  file: ./logs/app.log     # Resolved to /project/etc/logs/app.log
+  file: ./logs/app.log           # Stays as "./logs/app.log" (no resolution)
+  resolved: !path ./logs/app.log # Resolved to /project/etc/logs/app.log
+
 models:
-  path: ../models          # Resolved to /project/models
+  path: !path ../models          # Resolved to /project/models
+  cache: !path ~/.cache/myapp    # Expands ~ to home directory
 ```
 
-Only paths starting with `./` or `../` are resolved. URLs and absolute paths are unchanged.
+**The `!path` tag:**
+- Resolves relative paths (`./`, `../`) to absolute paths based on config file location
+- Expands tilde (`~`) to the user's home directory
+- Leaves absolute paths and URLs unchanged
+
+See [YAML Tags](utilities.md#yaml-tags) for more details on `!path` and other custom tags.
 
 ## Config Reload
 

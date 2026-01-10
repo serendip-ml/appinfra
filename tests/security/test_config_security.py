@@ -267,32 +267,32 @@ def test_config_path_resolution_traversal(
     traversal_path: str, secure_temp_project: Path
 ):
     """
-    Verify path resolution stays within project boundaries.
+    Verify !path tag resolution stays within project boundaries.
 
     Attack Vector: Path traversal via relative paths in config values
-    Module: infra/app/cfg.py:207-368 (_should_resolve_path, _resolve_path_value)
+    Module: appinfra/yaml.py (path_constructor)
     OWASP: A01:2021 - Broken Access Control
 
-    Security Concern: Config values containing relative paths are resolved
-    to absolute paths. Without proper validation, attackers could use path
-    traversal to reference files outside the project directory.
+    Security Concern: Config values using !path tag are resolved to absolute
+    paths. Without proper validation, attackers could use path traversal
+    to reference files outside the project directory.
 
-    Note: Only paths starting with './' or '../' are resolved by design.
+    Note: Path resolution only happens with explicit !path tag.
     """
-    # Create config with path value
-    # Note: Only explicit relative paths (./ or ../) are resolved
+    # Create config with !path tag for path resolution
+    # Note: Only paths with !path tag are resolved
     if not (traversal_path.startswith("./") or traversal_path.startswith("../")):
-        pytest.skip(f"Path {traversal_path} not resolved by design (not ./ or ../)")
+        pytest.skip(f"Path {traversal_path} not a relative path (not ./ or ../)")
 
     config_content = f"""
 paths:
-  data_dir: "{traversal_path}"
+  data_dir: !path "{traversal_path}"
 """
     config_path = secure_temp_project / "configs" / "paths.yaml"
     config_path.write_text(config_content)
 
     # Load config
-    config = Config(str(config_path), enable_env_overrides=False, resolve_paths=True)
+    config = Config(str(config_path), enable_env_overrides=False)
 
     # Get resolved path
     resolved_path_str = config.paths.data_dir
@@ -310,10 +310,10 @@ paths:
 @pytest.mark.integration
 def test_config_path_symlink_attack(secure_temp_project: Path):
     """
-    Verify symlink resolution doesn't escape project boundaries.
+    Verify !path tag symlink resolution doesn't escape project boundaries.
 
     Attack Vector: Symlink-based path traversal
-    Module: infra/app/cfg.py:240-262 (_resolve_path_value with .resolve())
+    Module: appinfra/yaml.py (path_constructor with .resolve())
     OWASP: A01:2021 - Broken Access Control
 
     Security Concern: Symlinks can point outside the project directory.
@@ -334,24 +334,24 @@ def test_config_path_symlink_attack(secure_temp_project: Path):
     except OSError:
         pytest.skip("Cannot create symlinks (insufficient permissions)")
 
-    # Create config referencing the symlink via relative path
+    # Create config referencing the symlink via !path tag
     config_content = """
 paths:
-  dangerous: "./evil_symlink"
+  dangerous: !path "./evil_symlink"
 """
     config_path = secure_temp_project / "configs" / "symlink.yaml"
     config_path.write_text(config_content)
 
-    # Load config with path resolution enabled
-    config = Config(str(config_path), enable_env_overrides=False, resolve_paths=True)
+    # Load config - !path tag will resolve the path
+    config = Config(str(config_path), enable_env_overrides=False)
 
-    # The path will be resolved, but should not allow access outside project
+    # The path will be resolved via !path tag
     resolved = Path(config.paths.dangerous)
 
     # Verify the resolved path
     # If it points outside project_root, that's a security issue
     # However, the actual enforcement is in yaml.py for includes
-    # This test documents the behavior for config path resolution
+    # This test documents the behavior for !path tag resolution
 
     # For this test, we verify that .resolve() is being called
     # (which is the basis for security checks elsewhere)
@@ -426,7 +426,8 @@ def test_legitimate_config_operations(secure_temp_project: Path):
 app:
   name: "my_application"
   version: "1.2.3"
-  base_path: "./data"
+  base_path: !path ./data
+  literal_path: ./data
 
 database:
   host: "localhost"
@@ -451,7 +452,7 @@ settings:
 
     try:
         # Load config with all features enabled
-        config = Config(str(config_path), enable_env_overrides=True, resolve_paths=True)
+        config = Config(str(config_path), enable_env_overrides=True)
 
         # Verify basic access
         assert config.app.name == "my_application"
@@ -471,9 +472,12 @@ settings:
         assert isinstance(config.settings.timeout, int)
         assert isinstance(config.settings.ratio, float)
 
-        # Verify path resolution
+        # Verify !path tag resolves paths
         base_path = Path(config.app.base_path)
         assert base_path.is_absolute()
+
+        # Verify paths without !path remain literal
+        assert config.app.literal_path == "./data"
 
     finally:
         # Clean up

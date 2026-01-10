@@ -32,6 +32,13 @@ For API stability guarantees and deprecation policy, see
 - Database names standardized to `infra_main` and `infra_test` to avoid global name conflicts
 - Replace `exec()` with `importlib.util` in version/info.py for safer module loading
 
+### Removed
+- **BREAKING:** Remove automatic path resolution from `Config` class. The `resolve_paths` parameter
+  has been removed. Path resolution now requires the explicit `!path` YAML tag. This provides a
+  cleaner mental model: without `!path`, paths remain as literal strings; with `!path`, paths are
+  resolved relative to the config file and tilde (`~`) is expanded. Migration: add `!path` tag to
+  config values that need path resolution (e.g., `file: !path ./logs/app.log`).
+
 ### Fixed
 - Fix flaky integration tests with pytest-xdist by skipping stale table cleanup on worker processes
 - Fix documentation links to use actual paths instead of symlinks (GitHub doesn't follow symlinks)
