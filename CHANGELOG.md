@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 For API stability guarantees and deprecation policy, see
-[API Stability Policy](docs/guides/api-stability.md).
+[API Stability Policy](appinfra/docs/guides/api-stability.md).
 
 ## [Unreleased]
 
@@ -25,11 +25,13 @@ For API stability guarantees and deprecation policy, see
 - CODEOWNERS file requiring @serendip-ml approval for all changes
 
 ### Changed
+- Restructure `docs/README.md` as focused user guide with Architecture and Packages sections
 - Default PostgreSQL version changed from 17 to 16 (psql client compatibility issues with PG17)
 - Database names standardized to `infra_main` and `infra_test` to avoid global name conflicts
 - Replace `exec()` with `importlib.util` in version/info.py for safer module loading
 
 ### Fixed
+- Fix documentation links to use actual paths instead of symlinks (GitHub doesn't follow symlinks)
 - Suppress passlib `crypt` module deprecation warning (upstream issue, Python 3.13 compatibility)
 - Coverage directory handling in Makefile (properly cleans existing .coverage file/directory)
 
