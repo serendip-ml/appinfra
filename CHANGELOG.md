@@ -11,6 +11,8 @@ For API stability guarantees and deprecation policy, see
 ## [Unreleased]
 
 ### Added
+- API documentation for CLI framework (`cli.md`), configuration (`config.md`), network (`net.md`),
+  observability (`observability.md`), security (`security.md`), and subprocess (`subprocess.md`)
 - Configurable coverage threshold via `INFRA_PYTEST_COVERAGE_THRESHOLD` (default: 95.0, set to 0 to disable)
 - SQLite database support (`appinfra.db.sqlite`) for lightweight/embedded use cases
 - pgvector extension support (`appinfra.db.pg.vector`) for embedding storage and similarity search
@@ -31,6 +33,7 @@ For API stability guarantees and deprecation policy, see
 - Replace `exec()` with `importlib.util` in version/info.py for safer module loading
 
 ### Fixed
+- Fix flaky integration tests with pytest-xdist by skipping stale table cleanup on worker processes
 - Fix documentation links to use actual paths instead of symlinks (GitHub doesn't follow symlinks)
 - Suppress passlib `crypt` module deprecation warning (upstream issue, Python 3.13 compatibility)
 - Coverage directory handling in Makefile (properly cleans existing .coverage file/directory)

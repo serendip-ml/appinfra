@@ -128,22 +128,8 @@ def pg_connection(pg_config, pg_logger):
         pytest.skip(f"Cannot connect to test database: {e}")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def pg_cleanup_stale_debug_tables(pg_connection):
-    """
-    Clean up all debug tables from previous test runs at session start.
-
-    This ensures no orphaned tables accumulate from:
-    - Previous failed tests (now stale)
-    - Hard kills / crashes
-    - Interrupted test runs
-
-    Tables from the CURRENT session's failed tests are still retained
-    for debugging until the next test run.
-
-    Args:
-        pg_connection: PG connection fixture
-    """
+def _do_cleanup_stale_tables(pg_connection):
+    """Execute the actual cleanup of stale debug tables."""
     import sqlalchemy
 
     session = pg_connection.session()
@@ -172,6 +158,27 @@ def pg_cleanup_stale_debug_tables(pg_connection):
         logging.warning(f"Failed to clean up stale debug tables: {e}")
     finally:
         session.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def pg_cleanup_stale_debug_tables(pg_connection, worker_id):
+    """
+    Clean up all debug tables from previous test runs at session start.
+
+    When running with pytest-xdist, cleanup only runs on the master process
+    (worker_id="master") to avoid race conditions where one worker might
+    drop tables that another worker just created.
+
+    Args:
+        pg_connection: PG connection fixture
+        worker_id: pytest-xdist worker ID ("master" when not using xdist)
+    """
+    # Only run cleanup on master to avoid race conditions with xdist workers
+    # Each xdist worker gets its own "session", but they share the same database
+    if worker_id != "master":
+        return
+
+    _do_cleanup_stale_tables(pg_connection)
 
 
 @pytest.fixture
