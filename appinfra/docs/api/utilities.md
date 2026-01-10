@@ -10,8 +10,10 @@ Configuration loader with environment variable overrides.
 class Config(DotDict):
     def __init__(
         self,
-        config_path: str,
-        resolve_paths: bool = True  # Resolve relative paths
+        fname: str,
+        enable_env_overrides: bool = True,
+        env_prefix: str = "INFRA_",
+        merge_strategy: str = "replace"
     ): ...
 
     def get(self, path: str, default=None) -> Any: ...

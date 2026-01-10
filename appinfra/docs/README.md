@@ -83,7 +83,7 @@ PostgreSQL and SQLite interfaces:
 YAML configuration with powerful features:
 - Environment variable overrides (`INFRA_<SECTION>_<KEY>`)
 - File includes with `!include` directive
-- Automatic path resolution
+- Path resolution via `!path` YAML tag
 - Hot-reload with ConfigWatcher
 
 ### `appinfra.time` - Time Utilities

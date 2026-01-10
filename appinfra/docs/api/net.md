@@ -95,8 +95,10 @@ class MyTickerHandler(Ticker, TickerHandler, HTTPRequestHandler):
         self._lg = lg
         Ticker.__init__(self, self, secs=5)  # Tick every 5 seconds
 
-    def ticker_start(self, manager=None):
+    def ticker_start(self, *args, **kwargs):
         """Initialize shared state for multiprocessing."""
+        # Extract manager from positional args (passed by TCPServer in multiprocessing mode)
+        manager = args[0] if args else kwargs.get("manager")
         if manager is not None:
             # Multiprocessing mode - use manager for shared state
             self._lock = manager.Lock()
@@ -156,7 +158,12 @@ class ApiHandler(HTTPRequestHandler):
 
     def do_POST(self, instance):
         """Handle POST requests."""
-        content_length = int(instance.headers['Content-Length'])
+        if "Content-Length" not in instance.headers:
+            instance.send_response(411)  # Length Required
+            instance.end_headers()
+            return
+
+        content_length = int(instance.headers["Content-Length"])
         post_data = instance.rfile.read(content_length)
 
         # Process post_data...
