@@ -133,6 +133,14 @@ server = TCPServer(logger, 8080, handler, handler)
 server.run()  # Runs in multiprocessing mode
 ```
 
+**Mode Selection:**
+
+- Multiprocessing mode is automatically used when a `Ticker` instance is passed to `TCPServer`
+- Single-process mode is used when `ticker=None`
+- The `manager` parameter in `ticker_start` is `None` in single-process mode and a
+  `multiprocessing.Manager()` instance in multiprocessing mode
+- Inheritance order matters for MRO: `Ticker, TickerHandler, HTTPRequestHandler`
+
 ## REST API Example
 
 ```python

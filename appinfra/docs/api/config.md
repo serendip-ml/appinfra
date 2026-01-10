@@ -32,6 +32,7 @@ class Config(DotDict):
 | `fname` | required | Path to YAML configuration file |
 | `enable_env_overrides` | `True` | Apply environment variable overrides |
 | `env_prefix` | `"INFRA_"` | Prefix for environment variables |
+| `merge_strategy` | `"replace"` | Strategy for handling `!include` directives: `"replace"` (included content replaces target key) or `"merge"` (deep merge with existing). Note: only `"replace"` is currently fully supported |
 | `resolve_paths` | `True` | Resolve relative paths (starting with `./` or `../`) |
 
 **Basic Usage:**

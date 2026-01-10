@@ -148,7 +148,7 @@ appinfra docs
 
 ### etc-path / scripts-path
 
-Display the resolved paths for etc and scripts directories.
+Display the resolved paths for the `etc/` and `scripts/` directories.
 
 ```bash
 appinfra etc-path
