@@ -143,16 +143,20 @@ active_spans = {}
 def start_db_span(ctx: HookContext):
     span = tracer.start_span("db.query")
     span.set_attribute("db.statement", ctx.query)
-    active_spans[id(ctx)] = span
+    # Use query as correlation key (or add correlation_id to ctx.data)
+    active_spans[ctx.query] = span
 
 @hooks.on(HookEvent.QUERY_END)
 def end_db_span(ctx: HookContext):
-    span = active_spans.pop(id(ctx), None)
+    span = active_spans.pop(ctx.query, None)
     if span:
         if ctx.error:
             span.record_exception(ctx.error)
         span.end()
 ```
+
+**Note:** QUERY_START and QUERY_END receive different HookContext instances. Use a stable
+correlation key like `ctx.query` or pass a `correlation_id` in `ctx.data`.
 
 ## Enable/Disable Hooks
 
@@ -218,17 +222,19 @@ hooks.trigger(HookEvent.QUERY_START, query="SELECT 1")
 
 ## Duration Tracking
 
-Track operation duration using `set_duration()`:
+Track operation duration by passing timing data between events:
 
 ```python
+import time
+
 # Framework code pattern
-ctx = HookContext(event=HookEvent.QUERY_START, query=sql)
-hooks.trigger(HookEvent.QUERY_START, **ctx.data)
+start_time = time.time()
+hooks.trigger(HookEvent.QUERY_START, query=sql)
 
 # ... perform query ...
 
-ctx.set_duration()  # Calculates duration from start_time
-hooks.trigger(HookEvent.QUERY_END, duration=ctx.duration, query=sql)
+duration = time.time() - start_time
+hooks.trigger(HookEvent.QUERY_END, query=sql, duration=duration)
 ```
 
 ## See Also

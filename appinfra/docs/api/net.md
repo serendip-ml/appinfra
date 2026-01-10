@@ -93,34 +93,38 @@ import json
 class MyTickerHandler(Ticker, TickerHandler, HTTPRequestHandler):
     def __init__(self, lg):
         self._lg = lg
-        self._ticks = 0
-        super().__init__(self, secs=5)  # Tick every 5 seconds
+        Ticker.__init__(self, self, secs=5)  # Tick every 5 seconds
 
     def ticker_start(self, manager=None):
-        """Initialize shared state."""
+        """Initialize shared state for multiprocessing."""
         if manager is not None:
             # Multiprocessing mode - use manager for shared state
             self._lock = manager.Lock()
-            self._msg = manager.dict()
+            self._state = manager.dict()
+            self._state["ticks"] = 0
         else:
             # Single-process mode - use threading
             import threading
             self._lock = threading.Lock()
-            self._msg = {"started": True}
+            self._state = {"ticks": 0}
 
     def ticker_tick(self):
         """Handle periodic background tasks."""
-        self._ticks += 1
-        self._lg.info(f"Background task executed (tick {self._ticks})")
+        with self._lock:
+            self._state["ticks"] += 1
+            ticks = self._state["ticks"]
+        self._lg.info(f"Background task executed (tick {ticks})")
 
     def do_GET(self, instance):
         """Handle HTTP requests."""
+        with self._lock:
+            ticks = self._state["ticks"]
         instance.send_response(200)
         instance.send_header("Content-type", "application/json")
         instance.end_headers()
         instance.wfile.write(json.dumps({
             "status": "ok",
-            "ticks": self._ticks
+            "ticks": ticks
         }).encode())
 
 # Create and run server with ticker
