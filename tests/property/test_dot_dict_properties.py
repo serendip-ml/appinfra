@@ -17,6 +17,7 @@ RESERVED_METHOD_NAMES = {
     "to_dict",
     "get",
     "has",
+    "require",
 }
 valid_key = st.text(
     alphabet="abcdefghijklmnopqrstuvwxyz",

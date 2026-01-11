@@ -30,6 +30,7 @@ dev = [
     "coverage>=7.0.0,<8.0.0",
     "ruff>=0.1.0,<1.0.0",
     "mypy>=1.0.0,<2.0.0",
+    "types-PyYAML>=6.0.0,<7.0.0",
     "pytest>=7.0.0,<10.0.0",
     "pytest-asyncio>=0.21.0,<2.0.0",
     "pytest-cov>=4.0.0,<8.0.0",
@@ -140,6 +141,11 @@ testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --tb=short"
 pythonpath = ["."]
+# Suppress passlib deprecation warning for 'crypt' module (Python 3.13+)
+# See: https://github.com/pyca/passlib/issues/148 - remove when passlib releases a fix
+filterwarnings = [
+    "ignore:'crypt' is deprecated:DeprecationWarning:passlib",
+]
 markers = [
     "property: property-based tests using Hypothesis",
 ]

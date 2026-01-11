@@ -26,7 +26,6 @@ def _preserve_config_attributes(config_instance: Any) -> dict[str, Any]:
         "enable_env_overrides": getattr(config_instance, "_enable_env_overrides", True),
         "env_prefix": getattr(config_instance, "_env_prefix", "INFRA_"),
         "merge_strategy": getattr(config_instance, "_merge_strategy", "replace"),
-        "resolve_paths": getattr(config_instance, "_resolve_paths", True),
     }
 
 
@@ -37,7 +36,6 @@ def _restore_config_attributes(
     config_instance._enable_env_overrides = preserved_attrs["enable_env_overrides"]
     config_instance._env_prefix = preserved_attrs["env_prefix"]
     config_instance._merge_strategy = preserved_attrs["merge_strategy"]
-    config_instance._resolve_paths = preserved_attrs["resolve_paths"]
 
 
 def _check_file_size(fname_path: Any) -> None:
@@ -138,7 +136,6 @@ class Config(DotDict):
         enable_env_overrides: bool = True,
         env_prefix: str = "INFRA_",
         merge_strategy: str = "replace",
-        resolve_paths: bool = True,
     ):
         """
         Initialize configuration from a YAML file with optional environment variable overrides.
@@ -149,14 +146,15 @@ class Config(DotDict):
             env_prefix: Prefix for environment variables (default: 'INFRA_')
             merge_strategy: Strategy for handling includes - "replace" or "merge" (default: "replace")
                            Note: Currently only "replace" is fully supported
-            resolve_paths: Whether to resolve relative paths to absolute paths (default: True)
-                          Only paths starting with './' or '../' are resolved
+
+        Note:
+            Path resolution is handled explicitly via the !path YAML tag. Use !path for paths
+            that should be resolved relative to the config file or for tilde (~) expansion.
         """
         super().__init__()  # Initialize DotDict first
         self._enable_env_overrides = enable_env_overrides
         self._env_prefix = env_prefix
         self._merge_strategy = merge_strategy
-        self._resolve_paths = resolve_paths
         self._load(fname)
 
     def _load(self, fname: str) -> None:
@@ -188,11 +186,6 @@ class Config(DotDict):
             fname_path, self._merge_strategy, project_root=proj_root
         )
         self._source_map = source_map  # Store for get_source_files()
-        if not self._resolve_paths:
-            source_map = {}
-
-        if self._resolve_paths and source_map:
-            config_data = self._resolve_paths_in_data(config_data, source_map)
 
         if self._enable_env_overrides:
             config_data = self._apply_env_overrides(config_data)
@@ -264,169 +257,6 @@ class Config(DotDict):
         if not self.has(var_name):
             raise DotDictPathNotFoundError(self, var_name)
         return str(self.get(var_name))
-
-    def _should_resolve_path(self, value: Any) -> bool:
-        """
-        Determine if a value should be resolved as a relative path.
-
-        Only resolves values that:
-        - Are strings
-        - Start with './' or '../' (explicit relative paths)
-        - Don't contain '://' (URLs)
-        - Are not already absolute paths
-
-        Args:
-            value: Value to check
-
-        Returns:
-            True if the value should be resolved as a path
-        """
-        if not isinstance(value, str) or not value:
-            return False
-
-        # Skip URLs (e.g., http://example.com/path or file://path)
-        if "://" in value:
-            return False
-
-        # Skip absolute paths (already resolved)
-        if Path(value).is_absolute():
-            return False
-
-        # Only resolve explicit relative paths
-        if value.startswith("./") or value.startswith("../"):
-            return True
-
-        return False
-
-    def _resolve_path_value(self, value: str, source_file: Path) -> str:
-        """
-        Resolve a relative path to absolute based on source file location.
-
-        Args:
-            value: Relative path string
-            source_file: Path to the config file where this value was defined
-
-        Returns:
-            Absolute path as string
-        """
-        if not self._should_resolve_path(value):
-            return value
-
-        try:
-            # Resolve relative to source file's directory
-            value_path = Path(value)
-            resolved = (source_file.parent / value_path).resolve()
-            return str(resolved)
-        except Exception:
-            # If resolution fails, return original value
-            return value
-
-    def _resolve_string_value(
-        self, value: str, config_path: str, source_map: dict[str, Path | None]
-    ) -> str:
-        """
-        Resolve a string value if it's a relative path.
-
-        Args:
-            value: String value to resolve
-            config_path: Path in config hierarchy where this value is located
-            source_map: Map of config paths to source file paths
-
-        Returns:
-            Resolved string value (or original if not a path)
-        """
-        source_file = source_map.get(config_path)
-        if source_file and self._should_resolve_path(value):
-            return self._resolve_path_value(value, source_file)
-        return value
-
-    def _resolve_dict_paths(
-        self, data: dict, source_map: dict[str, Path | None], parent_path: str
-    ) -> dict:
-        """
-        Resolve relative paths in a dictionary.
-
-        Args:
-            data: Dictionary to process
-            source_map: Map of config paths to source file paths
-            parent_path: Current path in the config hierarchy
-
-        Returns:
-            Dictionary with resolved paths
-        """
-        resolved_dict = {}
-        for key, value in data.items():
-            full_path = f"{parent_path}.{key}" if parent_path else key
-
-            if isinstance(value, (dict, list)):
-                resolved_dict[key] = self._resolve_paths_in_data(
-                    value, source_map, full_path
-                )
-            elif isinstance(value, str):
-                resolved_dict[key] = self._resolve_string_value(
-                    value, full_path, source_map
-                )
-            else:
-                resolved_dict[key] = value
-
-        return resolved_dict
-
-    def _resolve_list_paths(
-        self, data: list, source_map: dict[str, Path | None], parent_path: str
-    ) -> list:
-        """
-        Resolve relative paths in a list.
-
-        Args:
-            data: List to process
-            source_map: Map of config paths to source file paths
-            parent_path: Current path in the config hierarchy
-
-        Returns:
-            List with resolved paths
-        """
-        resolved_list = []
-        for idx, item in enumerate(data):
-            item_path = f"{parent_path}[{idx}]"
-
-            if isinstance(item, (dict, list)):
-                resolved_list.append(
-                    self._resolve_paths_in_data(item, source_map, item_path)
-                )
-            elif isinstance(item, str):
-                resolved_list.append(
-                    self._resolve_string_value(item, item_path, source_map)
-                )
-            else:
-                resolved_list.append(item)
-
-        return resolved_list
-
-    def _resolve_paths_in_data(
-        self, data: Any, source_map: dict[str, Path | None], parent_path: str = ""
-    ) -> Any:
-        """
-        Recursively resolve relative paths in configuration data.
-
-        Args:
-            data: Configuration data (dict, list, or scalar)
-            source_map: Map of config paths to source file paths
-            parent_path: Current path in the config hierarchy (for dict keys)
-
-        Returns:
-            Configuration data with relative paths resolved to absolute
-        """
-        if isinstance(data, dict):
-            return self._resolve_dict_paths(data, source_map, parent_path)
-
-        elif isinstance(data, list):
-            return self._resolve_list_paths(data, source_map, parent_path)
-
-        else:
-            # Scalar value - check if it's a path to resolve
-            if isinstance(data, str) and parent_path:
-                return self._resolve_string_value(data, parent_path, source_map)
-            return data
 
     def _apply_env_overrides(self, config_data: dict[str, Any]) -> dict[str, Any]:
         """

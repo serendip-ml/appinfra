@@ -418,6 +418,85 @@ class TestPGComplexScenarios:
         assert row[0] == "Child data"
         assert row[1] == "Parent 1"
 
-        # Cleanup child table manually
-        pg_session.execute(sqlalchemy.text(f"DROP TABLE {child_table} CASCADE"))
+        # Child table cleaned up via CASCADE when parent debug table is dropped
+
+
+@pytest.mark.integration
+class TestPGStaleTableCleanup:
+    """Test that stale debug tables are cleaned at session start."""
+
+    def test_stale_tables_cleaned_at_session_start(self, pg_session):
+        """
+        Verify no tables with old timestamps exist after session starts.
+
+        The pg_cleanup_stale_debug_tables fixture runs at session start and
+        removes all tables matching the debug pattern. Any debug tables that
+        exist at this point should be from the current session (recent timestamp).
+        """
+        import re
+        import time
+
+        result = pg_session.execute(
+            sqlalchemy.text(
+                """
+                SELECT tablename FROM pg_tables
+                WHERE schemaname = 'public'
+                AND tablename ~ '_[0-9]{10}_'
+                """
+            )
+        )
+        tables = result.fetchall()
+
+        current_time = int(time.time())
+        for (table,) in tables:
+            # Extract timestamp from table name
+            match = re.search(r"_(\d{10})_", table)
+            if match:
+                table_time = int(match.group(1))
+                # Table should be from this session (within last 5 minutes)
+                age_seconds = current_time - table_time
+                assert age_seconds < 300, (
+                    f"Stale table '{table}' is {age_seconds}s old - "
+                    "should have been cleaned at session start"
+                )
+
+    def test_table_retained_on_test_failure(self, pg_session):
+        """
+        Verify tables are retained when a test fails.
+
+        This tests the cleanup logic directly by mocking the test outcome,
+        rather than running a subprocess test that actually fails.
+        """
+        import os
+        import time
+        from unittest.mock import Mock
+
+        from tests.fixtures.pg_integration import _cleanup_debug_table
+
+        # Create a table with debug naming pattern
+        table_name = f"test_retention_{int(time.time())}_{os.getpid()}_1"
+        pg_session.execute(sqlalchemy.text(f"CREATE TABLE {table_name} (id INT)"))
         pg_session.commit()
+
+        # Mock a failed test request
+        mock_request = Mock()
+        mock_request.node.rep_call.failed = True
+
+        # Cleanup should NOT drop the table when test failed
+        _cleanup_debug_table(mock_request, pg_session, table_name)
+
+        # Verify table still exists
+        result = pg_session.execute(
+            sqlalchemy.text(f"SELECT 1 FROM pg_tables WHERE tablename = '{table_name}'")
+        )
+        assert result.fetchone() is not None, "Table should be retained on failure"
+
+        # Now test that passing test cleans up
+        mock_request.node.rep_call.failed = False
+        _cleanup_debug_table(mock_request, pg_session, table_name)
+
+        # Verify table is gone
+        result = pg_session.execute(
+            sqlalchemy.text(f"SELECT 1 FROM pg_tables WHERE tablename = '{table_name}'")
+        )
+        assert result.fetchone() is None, "Table should be cleaned on success"

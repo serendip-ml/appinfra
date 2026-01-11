@@ -5,7 +5,7 @@ This module provides the core functionality for managing debug tables in Postgre
 Debug tables persist when tests fail (for debugging) but are cleaned up when tests succeed.
 """
 
-import time
+import uuid
 from typing import cast
 
 import sqlalchemy
@@ -153,7 +153,9 @@ class PGTestHelperCore:
                 - cleanup_needed: Boolean flag (initially False, set to True if test succeeds)
         """
         session = self.pg.session()
-        test_table_name = f"{table_name_prefix}_{int(time.time())}"
+        # Use UUID suffix to avoid collisions in parallel test runs
+        unique_suffix = uuid.uuid4().hex[:8]
+        test_table_name = f"{table_name_prefix}_{unique_suffix}"
         cleanup_needed = False
         return session, test_table_name, cleanup_needed
 
@@ -235,8 +237,8 @@ class PGTestHelperCore:
         Returns:
             List of debug table names
         """
+        session = self.pg.session()
         try:
-            session = self.pg.session()
             result = session.execute(
                 sqlalchemy.text(
                     """
@@ -250,13 +252,13 @@ class PGTestHelperCore:
                 )
             )
 
-            tables = [row[0] for row in result.fetchall()]
-            session.close()
-            return tables
+            return [row[0] for row in result.fetchall()]
 
         except Exception as e:
             self.lg.warning("Could not list debug tables", extra={"error": str(e)})
             return []
+        finally:
+            session.close()
 
     def inspect_debug_table(self, table_name: str) -> dict | None:
         """
@@ -268,17 +270,13 @@ class PGTestHelperCore:
         Returns:
             Dictionary with table info and contents, or None if table doesn't exist
         """
+        session = self.pg.session()
         try:
-            session = self.pg.session()
-
             if not _check_table_exists(session, table_name):
-                session.close()
                 return None
 
             columns = _get_table_columns(session, table_name)
             contents = _get_table_contents(session, table_name, columns)
-
-            session.close()
 
             return {
                 "table_name": table_name,
@@ -293,6 +291,8 @@ class PGTestHelperCore:
                 extra={"table_name": table_name, "error": str(e)},
             )
             return None
+        finally:
+            session.close()
 
     def cleanup_all_debug_tables(self):
         """Manually clean up all debug tables (useful for cleanup scripts)."""

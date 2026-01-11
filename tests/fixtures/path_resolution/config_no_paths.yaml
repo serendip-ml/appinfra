@@ -1,4 +1,4 @@
-# Config with no relative paths (for testing resolve_paths=False)
+# Config with no relative paths (no !path tags needed)
 server:
   host: localhost
   port: 8080

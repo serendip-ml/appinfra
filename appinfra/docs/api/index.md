@@ -10,12 +10,18 @@ The Infra framework is organized into several major modules, each providing spec
 |--------|-------------|
 | [Application Framework](app.md) | Core application classes, lifecycle management, and tool framework |
 | [AppBuilder](app-builder.md) | Fluent API for constructing CLI applications with builders |
+| [CLI Framework](cli.md) | Output abstractions and built-in CLI tools |
+| [Configuration](config.md) | Config loading, environment overrides, hot-reload watching |
 | [Logging System](logging.md) | Advanced logging with structured output, builders, and handlers |
+| [Security](security.md) | Secret masking for logs and console output |
 | [UI Components](ui.md) | Rich terminal output, progress bars, spinners, and prompts |
 | [Database Layer](database.md) | PostgreSQL interface with connection pooling and query monitoring |
+| [Network](net.md) | TCP/HTTP server with background ticker support |
 | [Time & Scheduling](time.md) | Periodic execution, scheduling, and time utilities |
 | [Version Tracking](version.md) | Git commit tracking for installed packages |
-| [Utilities](utilities.md) | Core utilities (DotDict, Config, rate limiting, etc.) |
+| [Observability](observability.md) | Callback-based hooks for monitoring and instrumentation |
+| [Subprocess](subprocess.md) | Context manager for subprocess lifecycle management |
+| [Utilities](utilities.md) | Core utilities (DotDict, rate limiting, EWMA, etc.) |
 | [Exceptions](exceptions.md) | Exception hierarchy for error handling |
 
 ## Design Patterns
@@ -39,16 +45,19 @@ appinfra/
 │   ├── cli/         # Command-line interface
 │   ├── server/      # HTTP server (experimental)
 │   └── decorators/  # Decorator-based API
-├── log/              # Logging system
-│   └── builder/     # Logging builders
-├── ui/               # Terminal UI components
+├── cli/              # CLI output abstractions and built-in tools
+├── config/           # Configuration loading, watching, validation
 ├── db/               # Database layer
 │   └── pg/          # PostgreSQL implementation
+├── log/              # Logging system
+│   └── builder/     # Logging builders
+├── net/              # TCP/HTTP server components
+├── observability/    # Monitoring hooks
+├── security/         # Secret masking
+├── subprocess/       # Subprocess lifecycle management
 ├── time/             # Time and scheduling
-├── version/          # Version and commit tracking
-├── net/              # Network components
-├── config/           # Configuration schemas (optional)
-└── observability/    # Monitoring hooks
+├── ui/               # Terminal UI components
+└── version/          # Version and commit tracking
 ```
 
 ## Quick Navigation
@@ -77,9 +86,14 @@ appinfra/
 - [`Ticker`](time.md#appinfra.time.Ticker) - Periodic task executor
 - [`Sched`](time.md#appinfra.time.Sched) - Time-based scheduler
 
-**Utilities:**
-- [`Config`](utilities.md#config) - Configuration management
+**Configuration:**
+- [`Config`](config.md#config) - Configuration management
+- [`ConfigWatcher`](config.md#configwatcher) - Hot-reload file watching
 - [`DotDict`](utilities.md#dotdict) - Dot-notation dictionary
+
+**Security & Observability:**
+- [`SecretMasker`](security.md#secretmasker) - Secret detection and masking
+- [`ObservabilityHooks`](observability.md#observabilityhooks) - Event callbacks
 
 ## Naming Conventions
 
@@ -123,7 +137,7 @@ def get(self, path: str, default: Any = None) -> Any:
 ## Version Support
 
 - **Python**: 3.11+ (tested with 3.11, 3.12)
-- **PostgreSQL**: 17 (for database features)
+- **PostgreSQL**: 16 (for database features)
 - **SQLAlchemy**: 2.0+
 
 ## Browse by Category
@@ -131,14 +145,20 @@ def get(self, path: str, default: Any = None) -> Any:
 ### Application Development
 - [Application Framework](app.md) - Core classes and lifecycle
 - [AppBuilder](app-builder.md) - Fluent builder API
-- [CLI Framework](app.md#cli-framework) - Command-line parsing
+- [CLI Framework](cli.md) - Output abstractions and CLI tools
+- [Subprocess](subprocess.md) - Subprocess lifecycle management
 
-### Data & Storage
+### Configuration & Data
+- [Configuration](config.md) - Config loading, hot-reload
 - [Database Layer](database.md) - PostgreSQL interface
-- [Configuration](utilities.md#configuration) - Config management
 
-### Logging & Monitoring
+### Logging & Security
 - [Logging System](logging.md) - Advanced logging
+- [Security](security.md) - Secret masking
+- [Observability](observability.md) - Monitoring hooks
+
+### Network & UI
+- [Network](net.md) - TCP/HTTP servers
 - [UI Components](ui.md) - Progress bars, spinners, prompts
 
 ### Utilities & Helpers

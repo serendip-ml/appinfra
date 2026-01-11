@@ -1,3 +1,17 @@
+---
+title: API Stability Policy
+keywords:
+  - versioning
+  - semver
+  - deprecation
+  - breaking changes
+  - backwards compatibility
+  - migration
+aliases:
+  - versioning-policy
+  - deprecation-policy
+---
+
 # API Stability Policy
 
 This document describes appinfra's versioning scheme, API stability guarantees, and deprecation

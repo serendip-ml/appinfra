@@ -1,3 +1,19 @@
+---
+title: Getting Started
+keywords:
+  - installation
+  - setup
+  - quickstart
+  - install
+  - make setup
+  - prerequisites
+  - python
+  - postgresql
+aliases:
+  - quick-start
+  - install-guide
+---
+
 # Getting Started
 
 This guide will help you get up and running with the Infra framework quickly.
@@ -8,7 +24,7 @@ This guide will help you get up and running with the Infra framework quickly.
 
 - Python 3.11 or higher
 - pip (Python package manager)
-- PostgreSQL 17 (optional, for database features)
+- PostgreSQL 16 (optional, for database features)
 
 ### Install the Framework
 

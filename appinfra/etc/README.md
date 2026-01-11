@@ -128,7 +128,7 @@ Defines PostgreSQL server connection settings.
 
 ```yaml
 pgserver:
-  version: 17                   # PostgreSQL version
+  version: 16                   # PostgreSQL version
   name: infra-pg               # Server name/identifier
   port: 7432                   # PostgreSQL port
   user: postgres               # Database user
@@ -154,7 +154,7 @@ Defines multiple named database connections with various settings.
 ```yaml
 dbs:
   main:
-    url: "postgresql://${pgserver.user}:${pgserver.pass}@$127.0.0.1:${pgserver.port}/main"
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@$127.0.0.1:${pgserver.port}/infra_main"
     create_db: true              # Create database if it doesn't exist
     readonly: false              # Enable read-only mode
     # Pool configuration (defaults defined in infra/db/pg/pg.py)
@@ -162,7 +162,7 @@ dbs:
     max_overflow: 10             # Maximum overflow connections (default: 10)
 
   test:
-    url: "postgresql://${pgserver.user}:${pgserver.pass}@127.0.0.1:${pgserver.port}/unittest"
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@127.0.0.1:${pgserver.port}/infra_test"
     readonly: false
     create_db: true
     # Custom pool settings
@@ -170,7 +170,7 @@ dbs:
     max_overflow: 10
 
   unittest_ro:
-    url: "postgresql://${pgserver.user}:${pgserver.pass}@127.0.0.1:${pgserver.port}/unittest"
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@127.0.0.1:${pgserver.port}/infra_test"
     readonly: true               # Read-only database
     create_db: false
     # Custom pool settings for read-only
@@ -178,7 +178,7 @@ dbs:
     max_overflow: 5
 ```
 
-#### Database Configuration Options
+#### PostgreSQL Configuration Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -191,6 +191,61 @@ dbs:
 | `pool_recycle` | integer | `3600` | Connection recycle time |
 | `pool_pre_ping` | boolean | `true` | Test connections before use |
 | `echo` | boolean | `false` | Echo SQL statements |
+
+#### SQLite Database Configuration
+
+SQLite databases are configured the same way as PostgreSQL, but with `sqlite://` URLs:
+
+```yaml
+dbs:
+  # In-memory database (great for unit tests - data lost when process exits)
+  test:
+    url: "sqlite:///:memory:"
+
+  # File-based database (relative path - 3 slashes)
+  local:
+    url: "sqlite:///./data/app.db"
+
+  # Absolute path (4 slashes)
+  production:
+    url: "sqlite:////var/lib/myapp/data.db"
+```
+
+#### SQLite URL Formats
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| In-memory | `sqlite:///:memory:` | Temporary database, lost when process exits |
+| Relative path | `sqlite:///./data/app.db` | Path relative to working directory |
+| Absolute path | `sqlite:////var/lib/app.db` | Absolute filesystem path |
+
+#### SQLite Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `url` | string | **required** | SQLite connection URL |
+| `check_same_thread` | boolean | `false` | SQLite thread safety check (false allows multi-threaded access) |
+| `echo` | boolean | `false` | Echo SQL statements |
+
+**Example with options:**
+```yaml
+dbs:
+  local:
+    url: "sqlite:///./app.db"
+    check_same_thread: false  # Allow multi-threaded access (default)
+    echo: true                # Echo SQL for debugging
+```
+
+#### PostgreSQL vs SQLite Comparison
+
+| Feature | PostgreSQL | SQLite |
+|---------|------------|--------|
+| URL prefix | `postgresql://` or `postgres://` | `sqlite://` |
+| Connection pooling | Yes (pool_size, max_overflow) | No (not needed) |
+| create_db option | Yes | No (file auto-created) |
+| readonly option | Yes | No |
+| check_same_thread | No | Yes (SQLite-specific) |
+| Use case | Production, multi-user | Testing, single-user, embedded |
 
 ### 4. Test Configuration
 
@@ -275,7 +330,7 @@ The configuration supports variable substitution using `${variable_name}` syntax
 ```yaml
 dbs:
   main:
-    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/main"
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/infra_main"
 ```
 
 **Available Variables:**
@@ -405,9 +460,9 @@ dbs: !include './databases.yaml'
 
 # databases.yaml
 main:
-  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/main"
+  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/infra_main"
 test:
-  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/test"
+  url: "postgresql://${pgserver.user}:${pgserver.pass}@${pgserver.host}:${pgserver.port}/infra_test"
 ```
 
 **Note:** Variable substitution happens after all includes are resolved, so variables work across

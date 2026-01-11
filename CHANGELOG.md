@@ -6,9 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 For API stability guarantees and deprecation policy, see
-[API Stability Policy](docs/guides/api-stability.md).
+[API Stability Policy](appinfra/docs/guides/api-stability.md).
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-01-11
+
+### Added
+- API documentation for CLI framework (`cli.md`), configuration (`config.md`), network (`net.md`),
+  observability (`observability.md`), security (`security.md`), and subprocess (`subprocess.md`)
+- Configurable coverage threshold via `INFRA_PYTEST_COVERAGE_THRESHOLD` (default: 95.0, set to 0 to disable)
+- SQLite database support (`appinfra.db.sqlite`) for lightweight/embedded use cases
+- pgvector extension support (`appinfra.db.pg.vector`) for embedding storage and similarity search
+- SQLite integration fixtures for fast DB tests (no external server needed)
+- Session-start cleanup for stale debug tables (prevents orphaned tables from accumulating)
+- Session detachment utilities (`appinfra.db.utils`) for background processing
+- Test for debug table retention-on-failure behavior
+- YAML frontmatter support for `appinfra docs search` - docs can include searchable keywords/aliases
+- Fuzzy matching for `appinfra docs search` via `--fuzzy` flag with configurable `--threshold`
+- Root-level SECURITY.md symlink for GitHub security integration discoverability
+- CodeRabbit AI code review integration (`.coderabbit.yaml`) for automated PR reviews
+- CODEOWNERS file requiring @serendip-ml approval for all changes
+
+### Changed
+- Restructure `docs/README.md` as focused user guide with Architecture and Packages sections
+- Default PostgreSQL version changed from 17 to 16 (psql client compatibility issues with PG17)
+- Database names standardized to `infra_main` and `infra_test` to avoid global name conflicts
+- Replace `exec()` with `importlib.util` in version/info.py for safer module loading
+
+### Removed
+- **BREAKING:** Remove automatic path resolution from `Config` class. The `resolve_paths` parameter
+  has been removed. Path resolution now requires the explicit `!path` YAML tag. This provides a
+  cleaner mental model: without `!path`, paths remain as literal strings; with `!path`, paths are
+  resolved relative to the config file and tilde (`~`) is expanded. Migration: add `!path` tag to
+  config values that need path resolution (e.g., `file: !path ./logs/app.log`).
+
+### Fixed
+- Fix flaky integration tests with pytest-xdist by skipping stale table cleanup on worker processes
+- Fix documentation links to use actual paths instead of symlinks (GitHub doesn't follow symlinks)
+- Suppress passlib `crypt` module deprecation warning (upstream issue, Python 3.13 compatibility)
+- Coverage directory handling in Makefile (properly cleans existing .coverage file/directory)
 
 ## [0.1.3] - 2026-01-05
 
@@ -67,7 +104,8 @@ For API stability guarantees and deprecation policy, see
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/serendip-ml/appinfra/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/serendip-ml/appinfra/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/serendip-ml/appinfra/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/serendip-ml/appinfra/compare/v0.1.0...v0.1.1

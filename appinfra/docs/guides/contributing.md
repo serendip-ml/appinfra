@@ -1,3 +1,21 @@
+---
+title: Contributing Guide
+keywords:
+  - check-funcs
+  - funcsize
+  - function size
+  - line limit
+  - cq cf
+  - code quality
+  - exempt
+  - ignore
+  - max-lines
+  - development setup
+aliases:
+  - developer-guide
+  - dev-setup
+---
+
 # Contributing Guide
 
 Guide for developers who want to contribute to appinfra or use it in development mode.
@@ -214,7 +232,7 @@ make pg.server.down     # Stop all (auto-detects mode)
 ## Tech Stack
 
 - **Language**: Python 3.11+ (tested with 3.12.3)
-- **Database**: PostgreSQL 17
+- **Database**: PostgreSQL 16
 - **Testing**: pytest, hypothesis, coverage
 - **Formatting**: ruff
 - **Type Checking**: mypy

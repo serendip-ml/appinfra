@@ -10,8 +10,10 @@ Configuration loader with environment variable overrides.
 class Config(DotDict):
     def __init__(
         self,
-        config_path: str,
-        resolve_paths: bool = True  # Resolve relative paths
+        fname: str,
+        enable_env_overrides: bool = True,
+        env_prefix: str = "INFRA_",
+        merge_strategy: str = "replace"
     ): ...
 
     def get(self, path: str, default=None) -> Any: ...
@@ -272,30 +274,43 @@ password: !secret ${DB_PASSWORD}    # Valid - env var reference
 api_key: !secret my_literal_key     # Warning - should use ${VAR} syntax
 ```
 
-**`!path`** - Resolve paths relative to config file location:
+**`!path`** - Resolve paths relative to config file location with tilde expansion:
 
 ```yaml
 models_dir: !path ../.models       # Resolves to absolute path
 data_dir: !path /absolute/path     # Absolute paths unchanged
 cache: !path ./cache               # Relative to config file
+home_cache: !path ~/.cache/myapp   # Expands ~ to home directory
 ```
 
 ## Path Resolution
 
-Relative paths in config are resolved automatically:
+Path resolution in configuration files requires the explicit `!path` YAML tag. Without the tag,
+paths remain as literal strings:
 
 ```yaml
 # Config at /app/etc/config.yaml
 logging:
-  file: ./logs/app.log     # Resolves to /app/etc/logs/app.log
+  file: ./logs/app.log           # Stays as "./logs/app.log" (literal string)
+  resolved: !path ./logs/app.log # Resolved to /app/etc/logs/app.log
+
+cache:
+  dir: ~/.cache/myapp            # Stays as "~/.cache/myapp" (literal string)
+  resolved: !path ~/.cache/myapp # Expands to /home/user/.cache/myapp
 ```
 
 ```python
 from appinfra.config import Config, get_config_file_path
 
-config = Config(get_config_file_path("config.yaml"), resolve_paths=True)
-print(config.logging.file)  # Absolute path
+config = Config(get_config_file_path("config.yaml"))
+print(config.logging.file)      # "./logs/app.log" (literal)
+print(config.logging.resolved)  # "/app/etc/logs/app.log" (absolute)
 ```
+
+**The `!path` tag:**
+- Resolves relative paths (`./`, `../`) to absolute paths based on config file location
+- Expands tilde (`~`) to the user's home directory
+- Leaves absolute paths and URLs unchanged
 
 ## Utility Functions
 

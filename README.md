@@ -13,7 +13,7 @@ Production-grade Python infrastructure framework for building reliable CLI tools
 
 **Not for:** Web APIs (use FastAPI), async-heavy applications, ORMs.
 
-See [docs/README.md](docs/README.md) for full scope and philosophy.
+See [docs/README.md](appinfra/docs/README.md) for full scope and philosophy.
 
 ## Features
 
@@ -26,7 +26,7 @@ See [docs/README.md](docs/README.md) for full scope and philosophy.
 ## Requirements
 
 - Python 3.11+
-- PostgreSQL 17 (optional, for database features)
+- PostgreSQL 16 (optional, for database features)
 
 ## Installation
 
@@ -45,7 +45,7 @@ pip install appinfra[hotreload]  # Config file watching
 
 ## Documentation
 
-Full documentation is available in [docs/README.md](docs/README.md), or via CLI:
+Full documentation is available in [docs/README.md](appinfra/docs/README.md), or via CLI:
 
 ```bash
 appinfra docs           # Overview
@@ -444,13 +444,14 @@ Built for production with comprehensive validation:
 
 ## Contributing
 
-See the [Contributing Guide](docs/guides/contributing.md) for development setup and guidelines.
+See the [Contributing Guide](appinfra/docs/guides/contributing.md) for development setup and
+guidelines.
 
 ## Links
 
 - [Changelog](CHANGELOG.md)
-- [Security Policy](SECURITY.md)
-- [API Stability](docs/guides/api-stability.md)
+- [Security Policy](appinfra/docs/SECURITY.md)
+- [API Stability](appinfra/docs/guides/api-stability.md)
 
 ## License
 

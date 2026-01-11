@@ -49,6 +49,31 @@ All targets:
 - Test pattern: `*_test.py` (unit tests)
 - Uses: `~/.venv/bin/python`
 
+### Coverage Threshold
+
+The `make check` command enforces a coverage threshold. Configure via
+`INFRA_PYTEST_COVERAGE_THRESHOLD`:
+
+```makefile
+# In your Makefile (before includes)
+INFRA_PYTEST_COVERAGE_THRESHOLD := 80    # Require 80% coverage
+
+# Or disable coverage check entirely
+INFRA_PYTEST_COVERAGE_THRESHOLD := 0
+```
+
+**Default:** 95.0%
+
+**Use cases:**
+- Open-sourcing existing projects with limited test coverage
+- Incremental coverage improvement (start at 30%, raise over time)
+- Projects where certain modules are intentionally untested (e.g., GPU-only code)
+
+You can also override at runtime:
+```bash
+INFRA_PYTEST_COVERAGE_THRESHOLD=50 make check
+```
+
 ## Best Practices
 
 **Regular usage:**

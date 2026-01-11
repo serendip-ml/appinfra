@@ -1,3 +1,19 @@
+---
+title: Customizing Framework Makefiles
+keywords:
+  - makefile
+  - make targets
+  - extend
+  - override
+  - customize
+  - INFRA_DEV_
+  - double-colon
+  - downstream
+aliases:
+  - makefile-extend
+  - make-customize
+---
+
 # Customizing Framework Makefiles
 
 The infra framework is designed to be extended by downstream applications. This guide explains how
@@ -337,6 +353,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `INFRA_PYTEST_COVERAGE_PKG` | `$(INFRA_DEV_PKG_NAME)` | Package to measure coverage |
+| `INFRA_PYTEST_COVERAGE_THRESHOLD` | `95.0` | Coverage threshold for `make check` (0 to disable) |
 | `INFRA_PYTEST_TESTS_DIR` | `tests` | Tests directory |
 | `INFRA_PYTEST_ARGS` | (empty) | Additional pytest arguments |
 

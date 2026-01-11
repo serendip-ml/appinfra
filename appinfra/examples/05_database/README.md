@@ -196,7 +196,7 @@ docker ps | grep postgres
 make pg
 
 # Create database
-CREATE DATABASE unittest;
+CREATE DATABASE infra_test;
 ```
 
 ### Permission denied

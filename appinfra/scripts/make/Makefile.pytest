@@ -4,11 +4,13 @@
 # Requires: PYTHON (from Makefile.env)
 #
 # Configuration variables (set in Makefile before include):
-#   INFRA_PYTEST_COVERAGE_PKG     - Package to measure coverage for (default: INFRA_DEV_PKG_NAME)
-#   INFRA_PYTEST_COVERAGE_MARKERS - Pytest markers for coverage tests (default: unit)
-#                                   Set empty to include all tests in coverage
-#   INFRA_PYTEST_TESTS_DIR        - Tests directory (default: tests)
-#   INFRA_PYTEST_ARGS             - Additional pytest arguments (default: empty)
+#   INFRA_PYTEST_COVERAGE_PKG       - Package to measure coverage for (default: INFRA_DEV_PKG_NAME)
+#   INFRA_PYTEST_COVERAGE_MARKERS   - Pytest markers for coverage tests (default: unit)
+#                                     Set empty to include all tests in coverage
+#   INFRA_PYTEST_COVERAGE_THRESHOLD - Coverage threshold for make check (default: 95.0)
+#                                     Set to 0 to disable coverage checking entirely
+#   INFRA_PYTEST_TESTS_DIR          - Tests directory (default: tests)
+#   INFRA_PYTEST_ARGS               - Additional pytest arguments (default: empty)
 
 # Configuration (defaults set in Makefile.config)
 INFRA_PYTEST_TESTS_DIR ?= tests
@@ -137,7 +139,8 @@ test.ci:: ## runs tests appropriate for CI (unit + integration)
 
 test.coverage:: ## runs tests with coverage analysis (configurable via INFRA_PYTEST_COVERAGE_MARKERS)
 	@echo "* running tests with coverage analysis..."
-	@mkdir -p $(_COVERAGE_DIR) && rm -rf $(_COVERAGE_DIR)/*
+	@rm -rf $(_COVERAGE_DIR) 2>/dev/null || true
+	@mkdir -p $(_COVERAGE_DIR)
 	@COVERAGE_FILE=$(_COVERAGE_DIR)/data $(call run_pytest,tests/ $(_COVERAGE_MARKER_ARG) -qq --no-header --cov=$(INFRA_PYTEST_COVERAGE_PKG) --cov-report=term --cov-report=xml:$(_COVERAGE_DIR)/coverage.xml)
 	@echo "* coverage analysis completed (XML report: $(_COVERAGE_DIR)/coverage.xml)"
 .PHONY: test.coverage

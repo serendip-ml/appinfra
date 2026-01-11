@@ -1,6 +1,23 @@
+---
+title: PGTestCaseHelper Guide
+keywords:
+  - postgresql
+  - postgres
+  - test database
+  - debug tables
+  - test helper
+  - pg fixtures
+  - integration test
+  - cleanup
+aliases:
+  - pg-helper
+  - postgres-testing
+---
+
 # PGTestCaseHelper Guide
 
-PostgreSQL test helper that manages debug tables: persists them when tests fail (for debugging), cleans up on success.
+PostgreSQL test helper that manages debug tables: persists them when tests fail (for debugging),
+cleans up on success.
 
 ## Quick Start
 

@@ -8,6 +8,8 @@ web access or external documentation sites.
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from appinfra.app.tools import Tool, ToolConfig
 from appinfra.app.tracing.traceable import Traceable
 from appinfra.cli.output import ConsoleOutput, OutputWriter
@@ -333,6 +335,28 @@ class DocsShowTool(Tool):
         return 0
 
 
+def parse_frontmatter(content: str) -> dict:
+    """Extract YAML frontmatter from markdown content.
+
+    Args:
+        content: Markdown file content
+
+    Returns:
+        Dictionary of frontmatter fields, empty dict if no frontmatter
+    """
+    if not content.startswith("---"):
+        return {}
+    try:
+        # Find closing delimiter
+        end = content.index("---", 3)
+        frontmatter_text = content[3:end].strip()
+        if not frontmatter_text:
+            return {}
+        return yaml.safe_load(frontmatter_text) or {}
+    except (ValueError, Exception):
+        return {}
+
+
 class DocsFindTool(Tool):
     """Search documentation and examples for a pattern."""
 
@@ -357,6 +381,50 @@ class DocsFindTool(Tool):
         add("--docs-only", action="store_true", help="Search only documentation")
         add("--examples-only", action="store_true", help="Search only examples")
         add("--no-color", action="store_true", help="Disable match highlighting")
+        add(
+            "-z",
+            "--fuzzy",
+            action="store_true",
+            help="Enable fuzzy matching for typos and partial matches",
+        )
+        add(
+            "--threshold",
+            type=float,
+            default=0.6,
+            help="Fuzzy match threshold 0.0-1.0 (default: 0.6)",
+        )
+
+    def _get_search_options(self) -> dict[str, Any]:
+        """Extract search options from parsed args."""
+        args = self.args
+        return {
+            "word": getattr(args, "word", False),
+            "docs_only": getattr(args, "docs_only", False),
+            "examples_only": getattr(args, "examples_only", False),
+            "context": getattr(args, "context", 0),
+            "max_matches": getattr(args, "max_matches", 10),
+            "no_color": getattr(args, "no_color", False),
+            "fuzzy": getattr(args, "fuzzy", False),
+            "threshold": getattr(args, "threshold", 0.6),
+        }
+
+    def _display_results(
+        self, pattern: str, matches: list, opts: dict[str, Any]
+    ) -> None:
+        """Display search results."""
+        self.out.write(f"Found matches for '{pattern}' in {len(matches)} file(s):")
+        self.out.write()
+        self._print_matches(
+            matches,
+            opts["context"],
+            opts["max_matches"],
+            pattern,
+            opts["word"],
+            opts["no_color"],
+        )
+        self.out.write(
+            "Tip: View with 'appinfra docs show <topic>' (e.g., 'docs show hot-reload-logging')"
+        )
 
     def run(self, **kwargs: Any) -> int:
         """Search documentation for a pattern."""
@@ -366,28 +434,20 @@ class DocsFindTool(Tool):
             self.out.write("Usage: appinfra docs find <pattern>")
             return 1
 
-        word_boundary = getattr(self.args, "word", False)
-        docs_only = getattr(self.args, "docs_only", False)
-        examples_only = getattr(self.args, "examples_only", False)
-        context = getattr(self.args, "context", 0)
-        max_matches = getattr(self.args, "max_matches", 10)
-        no_color = getattr(self.args, "no_color", False)
-
+        opts = self._get_search_options()
         matches = self._collect_matches(
-            pattern, word_boundary, docs_only, examples_only
+            pattern,
+            opts["word"],
+            opts["docs_only"],
+            opts["examples_only"],
+            opts["fuzzy"],
+            opts["threshold"],
         )
         if not matches:
             self.out.write(f"No matches found for '{pattern}'")
             return 0
 
-        self.out.write(f"Found matches for '{pattern}' in {len(matches)} file(s):")
-        self.out.write()
-        self._print_matches(
-            matches, context, max_matches, pattern, word_boundary, no_color
-        )
-        self.out.write(
-            "Tip: View with 'appinfra docs show <topic>' (e.g., 'docs show hot-reload-logging')"
-        )
+        self._display_results(pattern, matches, opts)
         return 0
 
     def _collect_matches(
@@ -396,6 +456,8 @@ class DocsFindTool(Tool):
         word_boundary: bool = False,
         docs_only: bool = False,
         examples_only: bool = False,
+        fuzzy: bool = False,
+        threshold: float = 0.6,
     ) -> list[tuple[str, list[tuple[int, str]]]]:
         """Collect all matches from docs and examples."""
         matches: list[tuple[str, list[tuple[int, str]]]] = []
@@ -403,12 +465,20 @@ class DocsFindTool(Tool):
         examples_dir = get_examples_dir()
 
         if not examples_only and docs_dir.exists():
-            self._search_directory(docs_dir, "*.md", pattern, matches, word_boundary)
+            self._search_directory(
+                docs_dir, "*.md", pattern, matches, word_boundary, fuzzy, threshold
+            )
 
         if not docs_only and examples_dir.exists():
             for suffix in ("*.md", "*.py", "*.yaml"):
                 self._search_directory(
-                    examples_dir, suffix, pattern, matches, word_boundary
+                    examples_dir,
+                    suffix,
+                    pattern,
+                    matches,
+                    word_boundary,
+                    fuzzy,
+                    threshold,
                 )
 
         return matches
@@ -420,10 +490,14 @@ class DocsFindTool(Tool):
         pattern: str,
         matches: list[tuple[str, list[tuple[int, str]]]],
         word_boundary: bool = False,
+        fuzzy: bool = False,
+        threshold: float = 0.6,
     ) -> None:
         """Search a directory for pattern matches."""
         for file_path in directory.rglob(glob):
-            file_matches = self._search_file(file_path, pattern, word_boundary)
+            file_matches = self._search_file(
+                file_path, pattern, word_boundary, fuzzy, threshold
+            )
             if file_matches:
                 # Use path relative to docs dir for docs (so paths work with 'docs show')
                 docs_dir = get_docs_dir()
@@ -586,35 +660,102 @@ class DocsFindTool(Tool):
 
         return pattern_re.sub(lambda m: f"{highlight}{m.group()}{reset}", line)
 
+    def _fuzzy_match(
+        self, pattern: str, text: str, threshold: float = 0.6
+    ) -> tuple[bool, str | None]:
+        """Check if pattern fuzzy-matches any word in text.
+
+        Returns:
+            Tuple of (matched, matched_word) where matched_word is the
+            word that matched if any.
+        """
+        from difflib import SequenceMatcher
+
+        pattern_lower = pattern.lower()
+        # Split on whitespace and common separators
+        words = text.lower().replace("-", " ").replace("_", " ").split()
+
+        for word in words:
+            # Skip very short words
+            if len(word) < 2:
+                continue
+            ratio = SequenceMatcher(None, pattern_lower, word).ratio()
+            if ratio >= threshold:
+                return True, word
+
+        return False, None
+
+    def _search_frontmatter_keywords(
+        self, content: str, pattern_lower: str, fuzzy: bool, threshold: float
+    ) -> tuple[int, str] | None:
+        """Search frontmatter keywords for a match."""
+        frontmatter = parse_frontmatter(content)
+        keywords = frontmatter.get("keywords", []) or []
+        aliases = frontmatter.get("aliases", []) or []
+
+        for kw in keywords + aliases:
+            if not isinstance(kw, str):
+                continue
+            if pattern_lower in kw.lower():
+                return (0, f"[keyword: {kw}]")
+            if fuzzy:
+                matched, _ = self._fuzzy_match(pattern_lower, kw, threshold)
+                if matched:
+                    return (0, f"[keyword: {kw}] (fuzzy)")
+        return None
+
     def _search_file(
-        self, file_path: Path, pattern: str, word_boundary: bool = False
+        self,
+        file_path: Path,
+        pattern: str,
+        word_boundary: bool = False,
+        fuzzy: bool = False,
+        threshold: float = 0.6,
     ) -> list[tuple[int, str]]:
         """Search a file for pattern matches."""
         import re
 
-        matches = []
-
-        if word_boundary:
-            # Use regex for word boundary matching
-            pattern_re = re.compile(r"\b" + re.escape(pattern) + r"\b", re.IGNORECASE)
-        else:
-            pattern_re = None
+        matches: list[tuple[int, str]] = []
         pattern_lower = pattern.lower()
+        pattern_re = (
+            re.compile(r"\b" + re.escape(pattern) + r"\b", re.IGNORECASE)
+            if word_boundary
+            else None
+        )
 
         try:
-            with open(file_path, encoding="utf-8", errors="ignore") as f:
-                lines = f.readlines()
-                for i, line in enumerate(lines, 1):
-                    if word_boundary:
-                        if pattern_re and pattern_re.search(line):
-                            matches.append((i, line))
-                    else:
-                        if pattern_lower in line.lower():
-                            matches.append((i, line))
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+            # Check frontmatter keywords for .md files
+            if file_path.suffix == ".md":
+                if kw_match := self._search_frontmatter_keywords(
+                    content, pattern_lower, fuzzy, threshold
+                ):
+                    matches.append(kw_match)
+            # Search content lines
+            for i, line in enumerate(content.splitlines(keepends=True), 1):
+                if self._line_matches(
+                    line, pattern_lower, pattern_re, fuzzy, threshold
+                ):
+                    matches.append((i, line))
         except Exception:
             pass
-
         return matches
+
+    def _line_matches(
+        self,
+        line: str,
+        pattern_lower: str,
+        pattern_re: Any,
+        fuzzy: bool,
+        threshold: float,
+    ) -> bool:
+        """Check if a line matches the search pattern."""
+        if pattern_re:
+            return bool(pattern_re.search(line))
+        if fuzzy:
+            matched, _ = self._fuzzy_match(pattern_lower, line, threshold)
+            return matched
+        return pattern_lower in line.lower()
 
 
 class DocsLicenseTool(Tool):
