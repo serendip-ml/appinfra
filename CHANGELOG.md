@@ -10,10 +10,13 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-01-11
+
 ### Fixed
-- `ConfigValidator.get_engine_kwargs()` now uses consistent attribute access pattern (`getattr`)
-  instead of dict-style `.get()`, matching `validate_config()` behavior. This allows using
-  SimpleNamespace, dataclasses, or any object with attributes as config.
+- `appinfra.db.pg` now uses consistent attribute access pattern (`getattr`) throughout instead of
+  dict-style `.get()`. This allows using SimpleNamespace, dataclasses, or any object with attributes
+as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
+`ConnectionManager.connect()`.
 
 ## [0.2.0] - 2026-01-11
 
@@ -109,7 +112,8 @@ For API stability guarantees and deprecation policy, see
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/serendip-ml/appinfra/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/serendip-ml/appinfra/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/serendip-ml/appinfra/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/serendip-ml/appinfra/compare/v0.1.1...v0.1.2
