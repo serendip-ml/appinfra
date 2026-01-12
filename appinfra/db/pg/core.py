@@ -46,7 +46,7 @@ def create_engine_and_session(cfg: Any) -> tuple[sqlalchemy.engine.Engine, Any]:
 def configure_readonly_mode(pg_instance: Any) -> None:
     """Configure readonly mode with validation."""
     if pg_instance.readonly is True:
-        if pg_instance._cfg.get("create_db", False) is True:
+        if getattr(pg_instance._cfg, "create_db", False) is True:
             raise ValueError("Cannot create database in read-only mode")
 
         # Use transaction-level readonly (fires when transaction begins)
@@ -73,9 +73,9 @@ def initialize_logging_context(pg_instance: Any, query_lg_level: Any) -> None:
 def initialize_connection_health(pg_instance: Any) -> None:
     """Initialize connection health tracking attributes."""
     pg_instance._connection_healthy = True
-    pg_instance._auto_reconnect = pg_instance._cfg.get("auto_reconnect", True)
-    pg_instance._max_retries = pg_instance._cfg.get("max_retries", 3)
-    pg_instance._retry_delay = pg_instance._cfg.get("retry_delay", 1.0)
+    pg_instance._auto_reconnect = getattr(pg_instance._cfg, "auto_reconnect", True)
+    pg_instance._max_retries = getattr(pg_instance._cfg, "max_retries", 3)
+    pg_instance._retry_delay = getattr(pg_instance._cfg, "retry_delay", 1.0)
 
 
 def initialize_performance_optimizations(pg_instance: Any) -> None:
@@ -252,12 +252,12 @@ class ConfigValidator:
             Engine configuration parameters
         """
         kwargs = {
-            "pool_size": cfg.get("pool_size", 5),
-            "max_overflow": cfg.get("max_overflow", 10),
-            "pool_timeout": cfg.get("pool_timeout", 30),
-            "pool_recycle": cfg.get("pool_recycle", 3600),
-            "pool_pre_ping": cfg.get("pool_pre_ping", True),
-            "echo": cfg.get("echo", False),
+            "pool_size": getattr(cfg, "pool_size", 5),
+            "max_overflow": getattr(cfg, "max_overflow", 10),
+            "pool_timeout": getattr(cfg, "pool_timeout", 30),
+            "pool_recycle": getattr(cfg, "pool_recycle", 3600),
+            "pool_pre_ping": getattr(cfg, "pool_pre_ping", True),
+            "echo": getattr(cfg, "echo", False),
         }
 
         # Remove None values
