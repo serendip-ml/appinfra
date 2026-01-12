@@ -36,10 +36,8 @@ def mock_logger():
 
 @pytest.fixture
 def mock_cfg():
-    """Create mock configuration."""
-    cfg = Mock()
-    cfg.get = Mock(side_effect=lambda key, default=None: default)
-    return cfg
+    """Create mock configuration with no attributes (getattr returns defaults)."""
+    return Mock(spec=[])
 
 
 @pytest.fixture
@@ -83,15 +81,11 @@ class TestConnect:
         mock_engine.connect.assert_called_once()
         mock_logger.debug.assert_called()
 
-    def test_creates_database_when_configured(
-        self, conn_mgr, mock_engine, mock_logger, mock_cfg
-    ):
+    def test_creates_database_when_configured(self, mock_engine, mock_logger):
         """Test creates database when create_db is True."""
-        mock_cfg.get = Mock(
-            side_effect=lambda key, default=None: True
-            if key == "create_db"
-            else default
-        )
+        cfg = Mock()
+        cfg.create_db = True  # Set attribute instead of mocking .get()
+        conn_mgr = ConnectionManager(mock_engine, mock_logger, cfg, readonly=False)
         mock_conn = Mock()
         mock_engine.connect.return_value = mock_conn
 

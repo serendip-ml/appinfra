@@ -145,7 +145,7 @@ class PG(Interface):
     @property
     def readonly(self) -> bool:
         """Check if connection is read-only."""
-        return self._cfg.get("readonly", False) is True
+        return getattr(self._cfg, "readonly", False) is True
 
     @property
     def engine(self) -> sqlalchemy.engine.Engine:
@@ -196,7 +196,7 @@ class PG(Interface):
             >>> pg.migrate(Base)  # Creates 'users' table if not exists
         """
         # Ensure database exists if create_db is enabled
-        create_db = self._cfg.get("create_db", False)
+        create_db = getattr(self._cfg, "create_db", False)
         if create_db is True and not sqlalchemy_utils.database_exists(self._engine.url):
             sqlalchemy_utils.create_database(self._engine.url)
             self._lg.info("created db", extra=self._lg_extra)
