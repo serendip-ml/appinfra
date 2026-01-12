@@ -266,8 +266,7 @@ class TestInitializationHelpers:
     def test_initialize_connection_health(self):
         """Test initialize_connection_health sets attributes."""
         pg = Mock()
-        pg._cfg = Mock()
-        pg._cfg.get = Mock(side_effect=lambda k, d: d)
+        pg._cfg = Mock(spec=[])  # Empty spec so getattr returns defaults
 
         initialize_connection_health(pg)
 
@@ -316,8 +315,9 @@ class TestInitializationHelpers:
         """Test configure_readonly_mode sets up event listener."""
         pg = Mock()
         pg.readonly = True
-        pg._cfg = Mock()
-        pg._cfg.get = Mock(return_value=False)
+        pg._cfg = Mock(
+            spec=[]
+        )  # Empty spec so getattr(cfg, "create_db", False) returns False
         pg._engine = Mock()
 
         with patch("sqlalchemy.event.listen") as mock_listen:
@@ -345,7 +345,7 @@ class TestInitializationHelpers:
         pg = Mock()
         pg.readonly = True
         pg._cfg = Mock()
-        pg._cfg.get = Mock(return_value=True)  # create_db = True
+        pg._cfg.create_db = True  # Set attribute instead of mocking .get()
 
         with pytest.raises(
             ValueError, match="Cannot create database in read-only mode"
