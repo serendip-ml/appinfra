@@ -252,12 +252,12 @@ class ConfigValidator:
             Engine configuration parameters
         """
         kwargs = {
-            "pool_size": cfg.get("pool_size", 5),
-            "max_overflow": cfg.get("max_overflow", 10),
-            "pool_timeout": cfg.get("pool_timeout", 30),
-            "pool_recycle": cfg.get("pool_recycle", 3600),
-            "pool_pre_ping": cfg.get("pool_pre_ping", True),
-            "echo": cfg.get("echo", False),
+            "pool_size": getattr(cfg, "pool_size", 5),
+            "max_overflow": getattr(cfg, "max_overflow", 10),
+            "pool_timeout": getattr(cfg, "pool_timeout", 30),
+            "pool_recycle": getattr(cfg, "pool_recycle", 3600),
+            "pool_pre_ping": getattr(cfg, "pool_pre_ping", True),
+            "echo": getattr(cfg, "echo", False),
         }
 
         # Remove None values
