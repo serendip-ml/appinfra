@@ -129,21 +129,17 @@ def test_readonly_mode_enforcement():
     The readonly mode should enforce transaction-level read-only constraints,
     preventing INSERT, UPDATE, DELETE, and other write operations.
     """
-    # Create mock configuration for readonly mode
+    # Create mock configuration for readonly mode (using attributes, not .get())
     mock_cfg = Mock()
     mock_cfg.url = "postgresql://readonly:test@localhost:5432/test_db"
-    mock_cfg.get = Mock(
-        side_effect=lambda key, default=None: {
-            "readonly": True,  # Enable readonly mode
-            "create_db": False,
-            "pool_size": 5,
-            "max_overflow": 10,
-            "pool_timeout": 30,
-            "pool_recycle": 3600,
-            "pool_pre_ping": True,
-            "echo": False,
-        }.get(key, default)
-    )
+    mock_cfg.readonly = True  # Enable readonly mode
+    mock_cfg.create_db = False
+    mock_cfg.pool_size = 5
+    mock_cfg.max_overflow = 10
+    mock_cfg.pool_timeout = 30
+    mock_cfg.pool_recycle = 3600
+    mock_cfg.pool_pre_ping = True
+    mock_cfg.echo = False
 
     # Create a real logger for testing
     log_config = LogConfig.from_params(level="debug", colors=False)

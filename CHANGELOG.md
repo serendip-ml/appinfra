@@ -10,6 +10,11 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Fixed
+- `ConfigValidator.get_engine_kwargs()` now uses consistent attribute access pattern (`getattr`)
+  instead of dict-style `.get()`, matching `validate_config()` behavior. This allows using
+  SimpleNamespace, dataclasses, or any object with attributes as config.
+
 ## [0.2.0] - 2026-01-11
 
 ### Added

@@ -100,7 +100,7 @@ class ConnectionManager:
         start = infratime.start()
         self._lg.trace("connecting to db...", extra=self._lg_extra)
 
-        create_db = self._cfg.get("create_db", False)
+        create_db = getattr(self._cfg, "create_db", False)
         validate_readonly_config(self._readonly, create_db)
 
         if self._readonly:

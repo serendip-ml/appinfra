@@ -74,9 +74,8 @@ class TestConfigValidator:
             ConfigValidator.validate_config(cfg)
 
     def test_get_engine_kwargs_with_defaults(self):
-        """Test get_engine_kwargs returns default values."""
-        cfg = Mock()
-        cfg.get = Mock(side_effect=lambda key, default: default)
+        """Test get_engine_kwargs returns default values when attrs missing."""
+        cfg = Mock(spec=[])  # Empty spec = no attributes
 
         kwargs = ConfigValidator.get_engine_kwargs(cfg)
 
@@ -90,17 +89,49 @@ class TestConfigValidator:
     def test_get_engine_kwargs_with_custom_values(self):
         """Test get_engine_kwargs uses custom config values."""
         cfg = Mock()
-        cfg.get = Mock(
-            side_effect=lambda key, default: {
-                "pool_size": 20,
-                "max_overflow": 30,
-            }.get(key, default)
-        )
+        cfg.pool_size = 20
+        cfg.max_overflow = 30
 
         kwargs = ConfigValidator.get_engine_kwargs(cfg)
 
         assert kwargs["pool_size"] == 20
         assert kwargs["max_overflow"] == 30
+
+    def test_config_works_with_simple_namespace(self):
+        """Test both methods work with SimpleNamespace config."""
+        from types import SimpleNamespace
+
+        cfg = SimpleNamespace(
+            url="postgresql://localhost/testdb",
+            pool_size=15,
+            max_overflow=25,
+        )
+
+        # Both should work with same config object
+        ConfigValidator.validate_config(cfg)  # Should not raise
+        kwargs = ConfigValidator.get_engine_kwargs(cfg)
+
+        assert kwargs["pool_size"] == 15
+        assert kwargs["max_overflow"] == 25
+
+    def test_config_works_with_dataclass(self):
+        """Test both methods work with dataclass config."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class DBConfig:
+            url: str
+            pool_size: int = 10
+            echo: bool = True
+
+        cfg = DBConfig(url="postgresql://localhost/testdb")
+
+        # Both should work with same config object
+        ConfigValidator.validate_config(cfg)  # Should not raise
+        kwargs = ConfigValidator.get_engine_kwargs(cfg)
+
+        assert kwargs["pool_size"] == 10
+        assert kwargs["echo"] is True
 
 
 @pytest.mark.unit
@@ -235,8 +266,7 @@ class TestInitializationHelpers:
     def test_initialize_connection_health(self):
         """Test initialize_connection_health sets attributes."""
         pg = Mock()
-        pg._cfg = Mock()
-        pg._cfg.get = Mock(side_effect=lambda k, d: d)
+        pg._cfg = Mock(spec=[])  # Empty spec so getattr returns defaults
 
         initialize_connection_health(pg)
 
@@ -285,8 +315,9 @@ class TestInitializationHelpers:
         """Test configure_readonly_mode sets up event listener."""
         pg = Mock()
         pg.readonly = True
-        pg._cfg = Mock()
-        pg._cfg.get = Mock(return_value=False)
+        pg._cfg = Mock(
+            spec=[]
+        )  # Empty spec so getattr(cfg, "create_db", False) returns False
         pg._engine = Mock()
 
         with patch("sqlalchemy.event.listen") as mock_listen:
@@ -314,7 +345,7 @@ class TestInitializationHelpers:
         pg = Mock()
         pg.readonly = True
         pg._cfg = Mock()
-        pg._cfg.get = Mock(return_value=True)  # create_db = True
+        pg._cfg.create_db = True  # Set attribute instead of mocking .get()
 
         with pytest.raises(
             ValueError, match="Cannot create database in read-only mode"
