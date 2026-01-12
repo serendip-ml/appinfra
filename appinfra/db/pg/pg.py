@@ -5,6 +5,7 @@ Provides a complete PostgreSQL database interface with SQLAlchemy integration,
 using composition pattern for clean separation of concerns.
 """
 
+from types import SimpleNamespace
 from typing import Any
 
 import sqlalchemy
@@ -76,6 +77,10 @@ class PG(Interface):
             query_lg_level: Log level for query logging (optional)
         """
         validate_init_params(lg, cfg)
+
+        # Normalize dict config to object with attribute access
+        if isinstance(cfg, dict):
+            cfg = SimpleNamespace(**cfg)
 
         self._cfg = cfg
         self._lg = LoggerFactory.derive(lg, "pg")

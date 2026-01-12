@@ -10,6 +10,11 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Fixed
+- `appinfra.db.pg.PG` now accepts dict configs by normalizing them to `SimpleNamespace` at
+  initialization. Previously, dict configs would silently fail because `getattr()` on a dict returns
+  the default value instead of the dict key value.
+
 ## [0.2.1] - 2026-01-11
 
 ### Fixed
