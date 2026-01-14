@@ -35,22 +35,47 @@ class TestPostgreSQLServerConfigValidation:
     def test_invalid_port_negative(self):
         """Test that negative port raises ValidationError."""
         with pytest.raises(ValidationError, match="greater than or equal to 1"):
-            PostgreSQLServerConfig(port=-1)
+            PostgreSQLServerConfig(version=16, port=-1)
 
     def test_invalid_port_too_high(self):
         """Test that port > 65535 raises ValidationError."""
         with pytest.raises(ValidationError, match="less than or equal to 65535"):
-            PostgreSQLServerConfig(port=70000)
+            PostgreSQLServerConfig(version=16, port=70000)
 
     def test_valid_port_boundary_values(self):
         """Test that boundary port values are accepted."""
         # Port 1 should be valid
-        config1 = PostgreSQLServerConfig(port=1)
+        config1 = PostgreSQLServerConfig(version=16, port=1)
         assert config1.port == 1
 
         # Port 65535 should be valid
-        config2 = PostgreSQLServerConfig(port=65535)
+        config2 = PostgreSQLServerConfig(version=16, port=65535)
         assert config2.port == 65535
+
+    def test_version_or_image_required(self):
+        """Test that either version or image must be specified."""
+        with pytest.raises(
+            ValidationError, match="Either 'version' or 'image' must be specified"
+        ):
+            PostgreSQLServerConfig(port=5432)
+
+    def test_version_only_valid(self):
+        """Test that config with only version is valid."""
+        config = PostgreSQLServerConfig(version=16)
+        assert config.version == 16
+        assert config.image is None
+
+    def test_image_only_valid(self):
+        """Test that config with only image is valid (version not required)."""
+        config = PostgreSQLServerConfig(image="pgvector/pgvector:pg16")
+        assert config.image == "pgvector/pgvector:pg16"
+        assert config.version is None
+
+    def test_both_version_and_image_valid(self):
+        """Test that config with both version and image is valid."""
+        config = PostgreSQLServerConfig(version=16, image="pgvector/pgvector:pg16")
+        assert config.version == 16
+        assert config.image == "pgvector/pgvector:pg16"
 
 
 @pytest.mark.skipif(

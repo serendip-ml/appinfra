@@ -10,6 +10,12 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Added
+- Custom Docker image support for PostgreSQL server via `pgserver.image` config field. Enables using
+extension images like `pgvector/pgvector:pg16` or `timescale/timescaledb:latest-pg16`. When `image`
+is specified, `version` becomes optional. The image must be PostgreSQL-compatible (based on official
+  `postgres` image) as docker-compose passes postgres-specific CLI arguments.
+
 ### Fixed
 - `appinfra.db.pg.PG` now accepts dict configs by normalizing them to `SimpleNamespace` at
   initialization. Previously, dict configs would silently fail because `getattr()` on a dict returns

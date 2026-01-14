@@ -128,15 +128,57 @@ Defines PostgreSQL server connection settings.
 
 ```yaml
 pgserver:
-  version: 16                   # PostgreSQL version
+  version: 16                   # PostgreSQL version (required unless image is specified)
   name: infra-pg               # Server name/identifier
   port: 7432                   # PostgreSQL port
   user: postgres               # Database user
   pass: ''                     # Database password (use environment variable for security)
+  image: pgvector/pgvector:pg16  # Optional: custom Docker image (defaults to postgres:VERSION)
   replica:                     # Optional: replication mode configuration
     enabled: true              # Enable replication targets (pg.server.up.repl, pg.standby)
     port: 7433                 # Standby server port (required when enabled: true)
 ```
+
+#### Version and Image Configuration
+
+Either `version` or `image` must be specified:
+
+| Configuration | Use Case |
+|---------------|----------|
+| `version` only | Standard PostgreSQL (uses `postgres:VERSION` image) |
+| `image` only | Custom image with extensions (version inferred from image) |
+| Both | Custom image with explicit version for documentation |
+
+**Examples:**
+
+```yaml
+# Standard PostgreSQL 16
+pgserver:
+  version: 16
+  name: my-pg
+  port: 5432
+
+# pgvector for vector similarity search
+pgserver:
+  name: learn-pg
+  port: 5432
+  image: pgvector/pgvector:pg16
+
+# TimescaleDB for time-series data
+pgserver:
+  name: timeseries-pg
+  port: 5432
+  image: timescale/timescaledb:latest-pg16
+```
+
+**Important:** The custom image must be PostgreSQL-compatible (based on the official `postgres`
+image). The docker-compose configuration passes PostgreSQL-specific command-line arguments (`-c
+max_connections`, `-c shared_preload_libraries`, etc.) that require a standard PostgreSQL server.
+Images that extend the
+official postgres image (like `pgvector/pgvector`, `timescale/timescaledb`, `postgis/postgis`) work
+correctly. Non-PostgreSQL databases or heavily modified images will fail to start.
+
+#### Replication Mode
 
 When `replica.enabled` is `true`:
 - Replication targets are available (`make pg.server.up.repl`, `make pg.standby`)

@@ -2,7 +2,7 @@
 services:
   postgres-primary:
     container_name: ${NAME:?}-primary
-    image: postgres:${VERSION:?}
+    image: ${IMAGE:-postgres:${VERSION}}
     command:
       - postgres
       - -c
@@ -42,7 +42,7 @@ services:
 
   postgres-standby:
     container_name: ${NAME:?}-standby
-    image: postgres:${VERSION:?}
+    image: ${IMAGE:-postgres:${VERSION}}
     restart: always
     volumes:
       - "$PWD:$PWD"
