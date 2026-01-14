@@ -6,6 +6,7 @@ Users can install it with: pip install infra[validation]
 """
 
 try:
+    import re
     from typing import Any
 
     from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -83,6 +84,14 @@ try:
             default=None,
             description="Docker image (e.g., pgvector/pgvector:pg16). Defaults to postgres:VERSION",
         )
+        postgres_conf: dict[str, str | int | bool | list[str]] = Field(
+            default_factory=dict,
+            description="PostgreSQL config parameters passed as -c key=value (lists joined with commas)",
+        )
+        postgres_conf_file: str | None = Field(
+            default=None,
+            description="Path to postgresql.conf file (postgres_conf overrides these)",
+        )
 
         @model_validator(mode="after")
         def validate_version_or_image(self) -> "PostgreSQLServerConfig":
@@ -125,6 +134,10 @@ try:
         retry_delay: float = Field(
             default=1.0, ge=0.0, description="Initial retry delay in seconds"
         )
+        extensions: list[str] = Field(
+            default_factory=list,
+            description="PostgreSQL extensions to create (e.g., ['vector', 'postgis'])",
+        )
 
         @field_validator("url")
         @classmethod
@@ -134,6 +147,20 @@ try:
                 raise ValueError(
                     "Database URL must start with 'postgresql://' or 'postgres://'"
                 )
+            return v
+
+        @field_validator("extensions")
+        @classmethod
+        def validate_extensions(cls, v: list[str]) -> list[str]:
+            """Validate extension names are safe SQL identifiers."""
+            pattern = re.compile(r"^[a-z][a-z0-9_-]*$")
+            for ext in v:
+                if not pattern.match(ext):
+                    raise ValueError(
+                        f"Invalid extension name '{ext}'. Must start with lowercase "
+                        "letter and contain only lowercase letters, numbers, "
+                        "underscores, and hyphens."
+                    )
             return v
 
         model_config = ConfigDict(extra="allow")

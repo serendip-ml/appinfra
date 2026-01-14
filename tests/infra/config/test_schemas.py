@@ -77,6 +77,42 @@ class TestPostgreSQLServerConfigValidation:
         assert config.version == 16
         assert config.image == "pgvector/pgvector:pg16"
 
+    def test_postgres_conf_dict(self):
+        """Test that postgres_conf accepts dict with various types."""
+        config = PostgreSQLServerConfig(
+            version=16,
+            postgres_conf={
+                "max_connections": 500,
+                "shared_preload_libraries": ["pg_stat_statements", "timescaledb"],
+                "autovacuum": True,
+                "work_mem": "256MB",
+            },
+        )
+        assert config.postgres_conf["max_connections"] == 500
+        assert config.postgres_conf["shared_preload_libraries"] == [
+            "pg_stat_statements",
+            "timescaledb",
+        ]
+        assert config.postgres_conf["autovacuum"] is True
+        assert config.postgres_conf["work_mem"] == "256MB"
+
+    def test_postgres_conf_file(self):
+        """Test that postgres_conf_file accepts string path."""
+        config = PostgreSQLServerConfig(
+            version=16, postgres_conf_file="./etc/postgresql.conf"
+        )
+        assert config.postgres_conf_file == "./etc/postgresql.conf"
+
+    def test_postgres_conf_and_file_together(self):
+        """Test that both postgres_conf and postgres_conf_file can be specified."""
+        config = PostgreSQLServerConfig(
+            version=16,
+            postgres_conf_file="./etc/postgresql.conf",
+            postgres_conf={"max_connections": 1000},
+        )
+        assert config.postgres_conf_file == "./etc/postgresql.conf"
+        assert config.postgres_conf["max_connections"] == 1000
+
 
 @pytest.mark.skipif(
     not PYDANTIC_AVAILABLE, reason=SKIP_REASON or "pydantic not available"
@@ -104,6 +140,47 @@ class TestDatabaseConfigValidation:
         """Test that URL with postgres:// prefix is valid."""
         config = DatabaseConfig(url="postgres://user:pass@localhost:5432/db")
         assert config.url == "postgres://user:pass@localhost:5432/db"
+
+    def test_extensions_valid(self):
+        """Test that valid extension names are accepted."""
+        config = DatabaseConfig(
+            url="postgresql://localhost/db",
+            extensions=["vector", "pg_trgm", "postgis", "timescaledb"],
+        )
+        assert config.extensions == ["vector", "pg_trgm", "postgis", "timescaledb"]
+
+    def test_extensions_empty_list(self):
+        """Test that empty extensions list is valid."""
+        config = DatabaseConfig(url="postgresql://localhost/db", extensions=[])
+        assert config.extensions == []
+
+    def test_extensions_default_empty(self):
+        """Test that extensions defaults to empty list."""
+        config = DatabaseConfig(url="postgresql://localhost/db")
+        assert config.extensions == []
+
+    def test_extensions_invalid_uppercase(self):
+        """Test that uppercase extension names are rejected."""
+        with pytest.raises(ValidationError, match="Invalid extension name"):
+            DatabaseConfig(url="postgresql://localhost/db", extensions=["Vector"])
+
+    def test_extensions_invalid_starts_with_number(self):
+        """Test that extension names starting with number are rejected."""
+        with pytest.raises(ValidationError, match="Invalid extension name"):
+            DatabaseConfig(url="postgresql://localhost/db", extensions=["123vector"])
+
+    def test_extensions_invalid_special_chars(self):
+        """Test that extension names with special chars are rejected."""
+        with pytest.raises(ValidationError, match="Invalid extension name"):
+            DatabaseConfig(url="postgresql://localhost/db", extensions=["pg.vector"])
+
+    def test_extensions_valid_with_hyphens_underscores(self):
+        """Test that extension names with hyphens and underscores are valid."""
+        config = DatabaseConfig(
+            url="postgresql://localhost/db",
+            extensions=["pg_trgm", "some-extension", "ext_with-both"],
+        )
+        assert config.extensions == ["pg_trgm", "some-extension", "ext_with-both"]
 
 
 @pytest.mark.skipif(
