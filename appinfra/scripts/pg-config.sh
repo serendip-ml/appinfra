@@ -21,7 +21,7 @@ FULL_PATH="$ETC_DIR/$CONFIG_FILE"
 
 # Check if file exists
 if [ ! -f "$FULL_PATH" ]; then
-    echo "PG_DOCKER_IMAGE:=|PG_VERSION:=|PG_PORT:=|PG_REPLICA_ENABLED:=false|PG_PORT_R:="
+    echo "PG_DOCKER_IMAGE:=|PG_VERSION:=|PG_PORT:=|PG_IMAGE:=|PG_REPLICA_ENABLED:=false|PG_PORT_R:="
     exit 0
 fi
 
@@ -45,6 +45,7 @@ parts = [
     f'PG_DOCKER_IMAGE:={cfg.get(\"name\", \"\")}',
     f'PG_VERSION:={cfg.get(\"version\", \"\")}',
     f'PG_PORT:={cfg.get(\"port\", \"\")}',
+    f'PG_IMAGE:={cfg.get(\"image\", \"\")}',
     f'PG_REPLICA_ENABLED:={replica_enabled}',
     f'PG_PORT_R:={replica_port}',
 ]

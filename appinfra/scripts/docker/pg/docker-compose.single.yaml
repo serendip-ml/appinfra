@@ -2,7 +2,7 @@
 services:
   postgres:
     container_name: ${NAME:?}
-    image: postgres:${VERSION:?}
+    image: ${IMAGE:-postgres:${VERSION}}
     command:
       - postgres
       - -c
