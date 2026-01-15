@@ -42,22 +42,29 @@ replica_port = replica.get('port', '')
 
 # Build postgres command from config
 postgres_conf = cfg.get('postgres_conf', {})
-postgres_conf_file = cfg.get('postgres_conf_file', '')
 
 cmd_parts = ['postgres']
 
-# Add config file if specified
-if postgres_conf_file:
-    cmd_parts.extend(['-c', f'config_file={postgres_conf_file}'])
-
-# Add individual config params (these override config file settings)
+# Add config params as -c key=value arguments
+# PostgreSQL quoting rules (per docs):
+# - Booleans (on/off/true/false): no quotes
+# - Numbers (int/float): no quotes
+# - Strings: single quotes required
 for key, value in postgres_conf.items():
-    # Convert Python types to postgres format
     if isinstance(value, bool):
+        # Boolean -> on/off (no quotes needed)
         value = 'on' if value else 'off'
+        cmd_parts.extend(['-c', f'{key}={value}'])
+    elif isinstance(value, (int, float)):
+        # Numbers don't need quotes
+        cmd_parts.extend(['-c', f'{key}={value}'])
     elif isinstance(value, list):
+        # Lists become comma-separated strings (single quotes)
         value = ','.join(str(v) for v in value)
-    cmd_parts.extend(['-c', f'{key}={value}'])
+        cmd_parts.extend(['-c', f\"{key}='{value}'\"])
+    else:
+        # String values need single quotes
+        cmd_parts.extend(['-c', f\"{key}='{value}'\"])
 
 pg_command = ' '.join(cmd_parts)
 

@@ -88,10 +88,6 @@ try:
             default_factory=dict,
             description="PostgreSQL config parameters passed as -c key=value (lists joined with commas)",
         )
-        postgres_conf_file: str | None = Field(
-            default=None,
-            description="Path to postgresql.conf file (postgres_conf overrides these)",
-        )
 
         @model_validator(mode="after")
         def validate_version_or_image(self) -> "PostgreSQLServerConfig":

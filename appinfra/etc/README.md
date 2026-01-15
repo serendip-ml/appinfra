@@ -138,7 +138,6 @@ pgserver:
     max_connections: 500
     shared_preload_libraries:
       - pg_stat_statements
-  postgres_conf_file: ./postgresql.conf  # Optional: path to postgresql.conf file
   replica:                     # Optional: replication mode configuration
     enabled: true              # Enable replication targets (pg.server.up.repl, pg.standby)
     port: 7433                 # Standby server port (required when enabled: true)
@@ -206,17 +205,6 @@ pgserver:
     autovacuum: true
 ```
 
-**Config file alternative:** Use `postgres_conf_file` to point to a full `postgresql.conf` file.
-When both are specified, `postgres_conf` parameters override the config file settings.
-
-```yaml
-pgserver:
-  version: 16
-  postgres_conf_file: ./etc/postgresql.conf  # Path relative to project root
-  postgres_conf:
-    max_connections: 1000  # Overrides value in postgresql.conf
-```
-
 #### Recommended PostgreSQL Settings
 
 When no `postgres_conf` is specified, PostgreSQL starts with its built-in defaults. Consider these
@@ -226,7 +214,6 @@ settings for production use:
 |---------|-------------|-------------|
 | `max_connections` | 500 | Maximum concurrent connections (default: 100) |
 | `shared_preload_libraries` | `pg_stat_statements` | Extensions to load at startup for query statistics |
-| `join_collapse_limit` | 1 | Controls join planning (1 = deterministic, higher = optimizer explores more) |
 | `autovacuum` | true | Automatic table maintenance (PostgreSQL default, but worth being explicit) |
 
 **Example with recommended settings:**
@@ -239,7 +226,6 @@ pgserver:
     max_connections: 500
     shared_preload_libraries:
       - pg_stat_statements
-    join_collapse_limit: 1
     autovacuum: true
 ```
 

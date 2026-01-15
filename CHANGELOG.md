@@ -18,8 +18,6 @@ is specified, `version` becomes optional. The image must be PostgreSQL-compatibl
 - PostgreSQL server configuration via `pgserver.postgres_conf` dict for passing `-c key=value`
   parameters to postgres. Supports strings, integers, booleans (converted to on/off), and lists
   (joined with commas for `shared_preload_libraries` etc.).
-- PostgreSQL config file support via `pgserver.postgres_conf_file` for loading a full
-  `postgresql.conf`. When both are specified, `postgres_conf` values override the config file.
 - Declarative PostgreSQL extension support via `dbs.<name>.extensions` list. Extensions are created
   with `CREATE EXTENSION IF NOT EXISTS` during `PG.migrate()`. Extension names are validated to
   prevent SQL injection.

@@ -1,5 +1,5 @@
 # PostgreSQL Single Instance Mode
-# Configure postgres via pgserver.postgres_conf or pgserver.postgres_conf_file
+# Configure postgres via pgserver.postgres_conf
 services:
   postgres:
     container_name: ${NAME:?}

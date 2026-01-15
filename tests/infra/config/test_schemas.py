@@ -96,23 +96,6 @@ class TestPostgreSQLServerConfigValidation:
         assert config.postgres_conf["autovacuum"] is True
         assert config.postgres_conf["work_mem"] == "256MB"
 
-    def test_postgres_conf_file(self):
-        """Test that postgres_conf_file accepts string path."""
-        config = PostgreSQLServerConfig(
-            version=16, postgres_conf_file="./etc/postgresql.conf"
-        )
-        assert config.postgres_conf_file == "./etc/postgresql.conf"
-
-    def test_postgres_conf_and_file_together(self):
-        """Test that both postgres_conf and postgres_conf_file can be specified."""
-        config = PostgreSQLServerConfig(
-            version=16,
-            postgres_conf_file="./etc/postgresql.conf",
-            postgres_conf={"max_connections": 1000},
-        )
-        assert config.postgres_conf_file == "./etc/postgresql.conf"
-        assert config.postgres_conf["max_connections"] == 1000
-
 
 @pytest.mark.skipif(
     not PYDANTIC_AVAILABLE, reason=SKIP_REASON or "pydantic not available"
