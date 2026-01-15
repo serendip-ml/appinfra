@@ -10,6 +10,8 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-01-15
+
 ### Added
 - Custom Docker image support for PostgreSQL server via `pgserver.image` config field. Enables using
 extension images like `pgvector/pgvector:pg16` or `timescale/timescaledb:latest-pg16`. When `image`
@@ -32,6 +34,8 @@ is specified, `version` becomes optional. The image must be PostgreSQL-compatibl
 - `appinfra.db.pg.PG` now accepts dict configs by normalizing them to `SimpleNamespace` at
   initialization. Previously, dict configs would silently fail because `getattr()` on a dict returns
   the default value instead of the dict key value.
+- `DotDict` now correctly prioritizes data over inherited dict methods. Previously, keys like
+  `copy`, `pop`, or `update` would return the dict method instead of the stored value.
 
 ## [0.2.1] - 2026-01-11
 
