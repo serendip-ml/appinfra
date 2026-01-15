@@ -21,7 +21,7 @@ FULL_PATH="$ETC_DIR/$CONFIG_FILE"
 
 # Check if file exists
 if [ ! -f "$FULL_PATH" ]; then
-    echo "PG_DOCKER_IMAGE:=|PG_VERSION:=|PG_PORT:=|PG_IMAGE:=|PG_REPLICA_ENABLED:=false|PG_PORT_R:="
+    echo "PG_DOCKER_IMAGE:=|PG_VERSION:=|PG_PORT:=|PG_IMAGE:=|PG_REPLICA_ENABLED:=false|PG_PORT_R:=|PG_COMMAND:=postgres"
     exit 0
 fi
 
@@ -40,6 +40,34 @@ replica = cfg.get('replica', {})
 replica_enabled = str(replica.get('enabled', False)).lower()
 replica_port = replica.get('port', '')
 
+# Build postgres command from config
+postgres_conf = cfg.get('postgres_conf', {})
+
+cmd_parts = ['postgres']
+
+# Add config params as -c key=value arguments
+# PostgreSQL quoting rules (per docs):
+# - Booleans (on/off/true/false): no quotes
+# - Numbers (int/float): no quotes
+# - Strings: single quotes required
+for key, value in postgres_conf.items():
+    if isinstance(value, bool):
+        # Boolean -> on/off (no quotes needed)
+        value = 'on' if value else 'off'
+        cmd_parts.extend(['-c', f'{key}={value}'])
+    elif isinstance(value, (int, float)):
+        # Numbers don't need quotes
+        cmd_parts.extend(['-c', f'{key}={value}'])
+    elif isinstance(value, list):
+        # Lists become comma-separated strings (single quotes)
+        value = ','.join(str(v) for v in value)
+        cmd_parts.extend(['-c', f\"{key}='{value}'\"])
+    else:
+        # String values need single quotes
+        cmd_parts.extend(['-c', f\"{key}='{value}'\"])
+
+pg_command = ' '.join(cmd_parts)
+
 # Output Make variable assignments (pipe-separated, converted to newlines by Makefile)
 parts = [
     f'PG_DOCKER_IMAGE:={cfg.get(\"name\", \"\")}',
@@ -48,6 +76,7 @@ parts = [
     f'PG_IMAGE:={cfg.get(\"image\", \"\")}',
     f'PG_REPLICA_ENABLED:={replica_enabled}',
     f'PG_PORT_R:={replica_port}',
+    f'PG_COMMAND:={pg_command}',
 ]
 print('|'.join(parts))
 "

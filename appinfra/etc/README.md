@@ -134,6 +134,10 @@ pgserver:
   user: postgres               # Database user
   pass: ''                     # Database password (use environment variable for security)
   image: pgvector/pgvector:pg16  # Optional: custom Docker image (defaults to postgres:VERSION)
+  postgres_conf:               # Optional: PostgreSQL -c parameters (see Recommended Settings below)
+    max_connections: 500
+    shared_preload_libraries:
+      - pg_stat_statements
   replica:                     # Optional: replication mode configuration
     enabled: true              # Enable replication targets (pg.server.up.repl, pg.standby)
     port: 7433                 # Standby server port (required when enabled: true)
@@ -172,11 +176,65 @@ pgserver:
 ```
 
 **Important:** The custom image must be PostgreSQL-compatible (based on the official `postgres`
-image). The docker-compose configuration passes PostgreSQL-specific command-line arguments (`-c
-max_connections`, `-c shared_preload_libraries`, etc.) that require a standard PostgreSQL server.
-Images that extend the
-official postgres image (like `pgvector/pgvector`, `timescale/timescaledb`, `postgis/postgis`) work
-correctly. Non-PostgreSQL databases or heavily modified images will fail to start.
+image). Images that extend the official postgres image (like `pgvector/pgvector`,
+`timescale/timescaledb`, `postgis/postgis`) work correctly. Non-PostgreSQL databases or heavily
+modified images will fail to start.
+
+#### PostgreSQL Configuration (`postgres_conf`)
+
+Control PostgreSQL server parameters via the `postgres_conf` dictionary. Each key-value pair is
+passed as a `-c key=value` argument to the postgres command.
+
+**Supported value types:**
+- **Strings/integers:** passed directly (`max_connections: 500` → `-c max_connections=500`)
+- **Booleans:** converted to on/off (`autovacuum: true` → `-c autovacuum=on`)
+- **Lists:** joined with commas (`shared_preload_libraries: [a, b]` → `-c shared_preload_libraries=a,b`)
+
+**Example:**
+```yaml
+pgserver:
+  version: 16
+  name: my-pg
+  port: 5432
+  postgres_conf:
+    max_connections: 500
+    shared_preload_libraries:
+      - pg_stat_statements
+      - timescaledb
+    work_mem: 256MB
+    autovacuum: true
+```
+
+#### Recommended PostgreSQL Settings
+
+When no `postgres_conf` is specified, PostgreSQL starts with its built-in defaults. Consider these
+settings for production use:
+
+| Setting | Recommended | Description |
+|---------|-------------|-------------|
+| `max_connections` | 500 | Maximum concurrent connections (default: 100) |
+| `shared_preload_libraries` | `pg_stat_statements` | Extensions to load at startup for query statistics |
+| `autovacuum` | true | Automatic table maintenance (PostgreSQL default, but worth being explicit) |
+
+**Example with recommended settings:**
+```yaml
+pgserver:
+  version: 16
+  name: my-pg
+  port: 5432
+  postgres_conf:
+    max_connections: 500
+    shared_preload_libraries:
+      - pg_stat_statements
+    autovacuum: true
+```
+
+**Extensions requiring `shared_preload_libraries`:**
+Some extensions must be loaded at server startup:
+- `pg_stat_statements` - Query statistics
+- `timescaledb` - Time-series data
+- `pg_cron` - Job scheduling
+- `auto_explain` - Automatic query plan logging
 
 #### Replication Mode
 
@@ -196,9 +254,12 @@ Defines multiple named database connections with various settings.
 ```yaml
 dbs:
   main:
-    url: "postgresql://${pgserver.user}:${pgserver.pass}@$127.0.0.1:${pgserver.port}/infra_main"
+    url: "postgresql://${pgserver.user}:${pgserver.pass}@127.0.0.1:${pgserver.port}/infra_main"
     create_db: true              # Create database if it doesn't exist
     readonly: false              # Enable read-only mode
+    extensions:                  # PostgreSQL extensions to create (CREATE EXTENSION)
+      - vector
+      - pg_trgm
     # Pool configuration (defaults defined in infra/db/pg/pg.py)
     pool_size: 5                 # Connection pool size (default: 5)
     max_overflow: 10             # Maximum overflow connections (default: 10)
@@ -227,12 +288,52 @@ dbs:
 | `url` | string | **required** | Database connection URL |
 | `readonly` | boolean | `false` | Enable read-only mode |
 | `create_db` | boolean | `false` | Create database if it doesn't exist |
+| `extensions` | list | `[]` | PostgreSQL extensions to create (e.g., `vector`, `pg_trgm`) |
 | `pool_size` | integer | `5` | Connection pool size |
 | `max_overflow` | integer | `10` | Maximum overflow connections |
 | `pool_timeout` | integer | `30` | Pool timeout in seconds |
 | `pool_recycle` | integer | `3600` | Connection recycle time |
 | `pool_pre_ping` | boolean | `true` | Test connections before use |
 | `echo` | boolean | `false` | Echo SQL statements |
+
+#### Database Extensions
+
+The `extensions` field allows you to declaratively specify PostgreSQL extensions to create in each
+database. Extensions are created during `PG.migrate()` using `CREATE EXTENSION IF NOT EXISTS`.
+
+**Example:**
+```yaml
+dbs:
+  main:
+    url: "postgresql://localhost/myapp"
+    create_db: true
+    extensions:
+      - vector      # pgvector for embeddings
+      - pg_trgm     # Trigram similarity for fuzzy search
+      - postgis     # Geospatial support
+```
+
+**Server vs Database extensions:**
+- **Server-level** (`pgserver.postgres_conf.shared_preload_libraries`): Extensions loaded at server
+  startup. Required for `timescaledb`, `pg_stat_statements`, `pg_cron`, etc.
+- **Database-level** (`dbs.<name>.extensions`): Extensions created per database via `CREATE
+  EXTENSION`. Most extensions only need this.
+
+**Some extensions require both:**
+```yaml
+pgserver:
+  version: 16
+  image: timescale/timescaledb:latest-pg16
+  postgres_conf:
+    shared_preload_libraries:
+      - timescaledb  # Must be preloaded
+
+dbs:
+  main:
+    url: "postgresql://localhost/myapp"
+    extensions:
+      - timescaledb  # Also needs CREATE EXTENSION in each database
+```
 
 #### SQLite Database Configuration
 
@@ -796,11 +897,3 @@ For more information about specific configuration options:
 - **Logging Configuration**: See `infra/log/README.md`
 - **Environment Overrides**: See `../docs/guides/environment-variables.md`
 
-## Version History
-
-- **v1.0**: Initial configuration structure
-- **v1.1**: Added environment variable override support
-- **v1.2**: Added database pool configuration options
-- **v1.3**: Added error handling configuration
-- **v1.4**: Simplified configuration with default values
-- **v1.5**: Added `!include` tag support for file inclusion with circular dependency detection

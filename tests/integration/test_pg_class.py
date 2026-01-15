@@ -254,6 +254,100 @@ class TestPGMigration:
         name = result.fetchone()[0]
         assert name == "test"
 
+    def test_migrate_runs_before_hooks(self, pg_connection, pg_session, pg_debug_table):
+        """Test that migrate() runs before_migrate hooks."""
+        hook_calls = []
+
+        @pg_connection.on_before_migrate
+        def before_hook(conn):
+            hook_calls.append("before")
+            # Create a schema that the table will use
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS test_schema"))
+
+        Base = declarative_base()
+
+        class TestModel(Base):
+            __tablename__ = pg_debug_table
+            id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+
+        pg_connection.migrate(Base)
+
+        # Verify hook was called
+        assert "before" in hook_calls
+
+        # Verify schema was created (hook ran before table creation)
+        result = pg_session.execute(
+            text(
+                """
+            SELECT COUNT(*)
+            FROM information_schema.schemata
+            WHERE schema_name = 'test_schema'
+        """
+            )
+        )
+        count = result.fetchone()[0]
+        assert count == 1
+
+        # Cleanup
+        pg_session.execute(text("DROP SCHEMA IF EXISTS test_schema CASCADE"))
+        pg_session.commit()
+
+    def test_migrate_runs_after_hooks(self, pg_connection, pg_session, pg_debug_table):
+        """Test that migrate() runs after_migrate hooks."""
+        hook_calls = []
+
+        @pg_connection.on_after_migrate
+        def after_hook(conn):
+            hook_calls.append("after")
+            # Insert seed data after tables are created
+            conn.execute(
+                text(f"INSERT INTO {pg_debug_table} (id, name) VALUES (999, 'seeded')")
+            )
+
+        Base = declarative_base()
+
+        class TestModel(Base):
+            __tablename__ = pg_debug_table
+            id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+            name = sqlalchemy.Column(sqlalchemy.String(50), nullable=True)
+
+        pg_connection.migrate(Base)
+
+        # Verify hook was called
+        assert "after" in hook_calls
+
+        # Verify seed data was inserted (hook ran after table creation)
+        result = pg_session.execute(
+            text(f"SELECT name FROM {pg_debug_table} WHERE id = 999")
+        )
+        name = result.fetchone()[0]
+        assert name == "seeded"
+
+    def test_migrate_runs_hooks_in_order(self, pg_config, pg_logger, pg_debug_table):
+        """Test that migrate() runs hooks in correct order: before -> tables -> after."""
+        # Use fresh PG instance to avoid hook pollution from other tests
+        pg = PG(pg_logger, pg_config)
+        execution_order = []
+
+        @pg.on_before_migrate
+        def before_hook(conn):
+            execution_order.append("before")
+
+        @pg.on_after_migrate
+        def after_hook(conn):
+            execution_order.append("after")
+
+        Base = declarative_base()
+
+        class TestModel(Base):
+            __tablename__ = pg_debug_table
+            id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+
+        pg.migrate(Base)
+
+        # Verify order
+        assert execution_order == ["before", "after"]
+
 
 @pytest.mark.integration
 class TestPGConfigValidation:

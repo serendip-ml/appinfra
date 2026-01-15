@@ -15,6 +15,18 @@ For API stability guarantees and deprecation policy, see
 extension images like `pgvector/pgvector:pg16` or `timescale/timescaledb:latest-pg16`. When `image`
 is specified, `version` becomes optional. The image must be PostgreSQL-compatible (based on official
   `postgres` image) as docker-compose passes postgres-specific CLI arguments.
+- PostgreSQL server configuration via `pgserver.postgres_conf` dict for passing `-c key=value`
+  parameters to postgres. Supports strings, integers, booleans (converted to on/off), and lists
+  (joined with commas for `shared_preload_libraries` etc.).
+- Declarative PostgreSQL extension support via `dbs.<name>.extensions` list. Extensions are created
+  with `CREATE EXTENSION IF NOT EXISTS` during `PG.migrate()`. Extension names are validated to
+  prevent SQL injection.
+- Lifecycle hooks for PG class: `pg.on_before_migrate(callback)` and `pg.on_after_migrate(callback)`
+  for custom setup/teardown during migrations. Callbacks receive a SQLAlchemy connection object.
+
+### Changed
+- Removed hardcoded PostgreSQL parameters from docker-compose files. Server now starts with
+  PostgreSQL defaults unless `postgres_conf` is specified. Recommended settings are documented.
 
 ### Fixed
 - `appinfra.db.pg.PG` now accepts dict configs by normalizing them to `SimpleNamespace` at

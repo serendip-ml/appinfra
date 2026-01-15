@@ -5,11 +5,14 @@ Provides a complete PostgreSQL database interface with SQLAlchemy integration,
 using composition pattern for clean separation of concerns.
 """
 
+import re
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
 import sqlalchemy
 import sqlalchemy_utils
+from sqlalchemy import text
 
 from ...log import LoggerFactory
 from .connection import ConnectionManager
@@ -66,6 +69,12 @@ class PG(Interface):
     _readonly_listener: Any
     _after_execute_listener: Any
     _before_cursor_listener: Any
+    # Lifecycle hooks
+    _before_migrate_hooks: list[Callable[[Any], None]]
+    _after_migrate_hooks: list[Callable[[Any], None]]
+
+    # Extension name validation pattern (defense-in-depth)
+    _EXTENSION_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 
     def __init__(self, lg: Any, cfg: Any, query_lg_level: Any | None = None) -> None:
         """
@@ -84,6 +93,10 @@ class PG(Interface):
 
         self._cfg = cfg
         self._lg = LoggerFactory.derive(lg, "pg")
+
+        # Initialize lifecycle hooks
+        self._before_migrate_hooks = []
+        self._after_migrate_hooks = []
 
         # Validate and create engine
         ConfigValidator.validate_config(cfg)
@@ -181,7 +194,8 @@ class PG(Interface):
         """
         Run database migrations using SQLAlchemy metadata.
 
-        Creates all tables defined in the metadata if they don't exist.
+        Creates database (if create_db=True), extensions, runs lifecycle hooks,
+        and creates all tables defined in the metadata.
 
         Args:
             base: SQLAlchemy declarative base with metadata
@@ -206,7 +220,17 @@ class PG(Interface):
             sqlalchemy_utils.create_database(self._engine.url)
             self._lg.info("created db", extra=self._lg_extra)
 
+        # Create configured extensions
+        self._create_extensions()
+
+        # Run before-migrate hooks
+        self._run_hooks(self._before_migrate_hooks, "before_migrate")
+
+        # Create tables
         base.metadata.create_all(self._engine)
+
+        # Run after-migrate hooks
+        self._run_hooks(self._after_migrate_hooks, "after_migrate")
 
     def session(self) -> Any:
         """
@@ -273,3 +297,114 @@ class PG(Interface):
         # Update session manager's health status
         self._session_mgr.set_connection_health(self._reconnect_strategy.is_healthy())
         return result
+
+    # -------------------------------------------------------------------------
+    # Lifecycle Hooks
+    # -------------------------------------------------------------------------
+
+    def on_before_migrate(
+        self, callback: Callable[[Any], None]
+    ) -> Callable[[Any], None]:
+        """
+        Register a callback to run before migration.
+
+        The callback receives a SQLAlchemy connection object and can execute
+        custom SQL or setup operations.
+
+        Args:
+            callback: Function that accepts a connection object
+
+        Returns:
+            The callback (allows use as decorator)
+
+        Example:
+            >>> pg = PG(logger, config)
+            >>>
+            >>> @pg.on_before_migrate
+            ... def setup_schema(conn):
+            ...     conn.execute(text("CREATE SCHEMA IF NOT EXISTS ml"))
+            >>>
+            >>> pg.migrate(Base)  # Runs setup_schema before creating tables
+        """
+        self._before_migrate_hooks.append(callback)
+        return callback
+
+    def on_after_migrate(
+        self, callback: Callable[[Any], None]
+    ) -> Callable[[Any], None]:
+        """
+        Register a callback to run after migration.
+
+        The callback receives a SQLAlchemy connection object and can execute
+        custom SQL or post-migration operations.
+
+        Args:
+            callback: Function that accepts a connection object
+
+        Returns:
+            The callback (allows use as decorator)
+
+        Example:
+            >>> pg = PG(logger, config)
+            >>>
+            >>> @pg.on_after_migrate
+            ... def seed_data(conn):
+            ...     conn.execute(text("INSERT INTO settings ..."))
+            >>>
+            >>> pg.migrate(Base)  # Runs seed_data after creating tables
+        """
+        self._after_migrate_hooks.append(callback)
+        return callback
+
+    # -------------------------------------------------------------------------
+    # Extension Management
+    # -------------------------------------------------------------------------
+
+    def _create_extensions(self) -> None:
+        """Create PostgreSQL extensions configured in the database config."""
+        extensions = getattr(self._cfg, "extensions", [])
+        if not extensions:
+            return
+
+        with self._engine.connect() as conn:
+            for ext in extensions:
+                # Defense-in-depth validation (also validated by Pydantic schema)
+                if not self._is_valid_extension_name(ext):
+                    self._lg.warning(
+                        "skipping invalid extension name",
+                        extra={**self._lg_extra, "extension": ext},
+                    )
+                    continue
+
+                # Use identifier quoting for safety (though we validated the name)
+                conn.execute(text(f'CREATE EXTENSION IF NOT EXISTS "{ext}"'))
+                self._lg.debug(
+                    "created extension",
+                    extra={**self._lg_extra, "extension": ext},
+                )
+            conn.commit()
+
+    def _is_valid_extension_name(self, name: str) -> bool:
+        """
+        Validate extension name is a safe SQL identifier.
+
+        Defense-in-depth check - names should already be validated by Pydantic.
+        """
+        return bool(self._EXTENSION_NAME_PATTERN.match(name))
+
+    def _run_hooks(self, hooks: list[Callable[[Any], None]], hook_type: str) -> None:
+        """Execute lifecycle hooks with a connection."""
+        if not hooks:
+            return
+
+        with self._engine.connect() as conn:
+            for hook in hooks:
+                try:
+                    hook(conn)
+                except Exception:
+                    self._lg.exception(
+                        "hook failed",
+                        extra={**self._lg_extra, "hook_type": hook_type},
+                    )
+                    raise
+            conn.commit()
