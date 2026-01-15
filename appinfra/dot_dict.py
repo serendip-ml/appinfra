@@ -40,7 +40,10 @@ class DotDict(dict, DictInterface):
 
     # Dict method names that can be used as data keys via attribute access.
     # When accessing these as attributes, data takes priority over methods.
-    _DATA_PRIORITY_ATTRS = frozenset({"keys", "values", "items"})
+    # Includes all dict methods except those in _RESERVED_KEYS.
+    _DATA_PRIORITY_ATTRS = frozenset(
+        {"keys", "values", "items", "copy", "pop", "popitem", "setdefault", "update"}
+    )
 
     def __init__(self, **kwargs: Any) -> None:
         """

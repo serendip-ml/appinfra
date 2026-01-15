@@ -163,7 +163,6 @@ image). Images that extend the official postgres image work correctly:
 - `pgvector/pgvector:pg16` - Vector similarity search
 - `timescale/timescaledb:latest-pg16` - Time-series database
 - `postgis/postgis:16-3.4` - Geospatial database
-- `ankane/pgvector:pg16` - Alternative pgvector image
 
 Non-PostgreSQL databases or heavily modified images will fail to start because the framework passes
 PostgreSQL-specific CLI arguments to the container.
