@@ -149,7 +149,8 @@ Some extensions require configuration at both levels:
 | Server | `pgserver.postgres_conf.shared_preload_libraries` | Extensions loaded at server startup |
 | Database | `dbs.<name>.extensions` | Extensions created per database |
 
-**Extensions requiring both levels:** `timescaledb`, `pg_cron`, `pg_stat_statements`
+**Extensions requiring both levels (examples):** `timescaledb`, `pg_cron`, `pg_stat_statements`,
+`pgaudit`, `auto_explain`
 
 ```yaml
 # Server config (pg.yaml)
@@ -167,7 +168,7 @@ dbs:
       - timescaledb              # Also needs CREATE EXTENSION per database
 ```
 
-**Extensions needing only database-level:** `vector`, `pg_trgm`, `postgis`, `uuid-ossp`
+**Extensions needing only database-level (examples):** `vector`, `pg_trgm`, `postgis`, `uuid-ossp`
 
 ## PostgreSQL Server Configuration (pg.yaml)
 
