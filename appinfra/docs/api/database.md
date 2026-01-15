@@ -9,6 +9,12 @@ keywords:
   - sqlalchemy
   - query
   - PG class
+  - pgserver
+  - image
+  - docker image
+  - pgvector
+  - timescaledb
+  - postgis
 aliases:
   - db-api
   - postgres-api
@@ -96,6 +102,70 @@ databases:
     user: postgres
     password: secret
 ```
+
+## PostgreSQL Server Configuration (pg.yaml)
+
+Defines the Docker-based PostgreSQL server for local development.
+
+```yaml
+pgserver:
+  version: 16                      # PostgreSQL version (required unless image is specified)
+  name: infra-pg                   # Server name/identifier
+  port: 7432                       # PostgreSQL port
+  user: postgres                   # Database user
+  pass: ''                         # Database password
+  image: pgvector/pgvector:pg16   # Optional: custom Docker image
+```
+
+### Custom Docker Image (`image` field)
+
+Use the `image` field to run PostgreSQL with extensions like pgvector, TimescaleDB, or PostGIS.
+
+**Either `version` or `image` must be specified:**
+
+| Configuration | Use Case | Image Used |
+|---------------|----------|------------|
+| `version` only | Standard PostgreSQL | `postgres:VERSION` |
+| `image` only | Custom image with extensions | Your specified image |
+| Both | Custom image with explicit version for documentation | Your specified image |
+
+**Examples:**
+
+```yaml
+# Standard PostgreSQL 16
+pgserver:
+  version: 16
+  name: my-pg
+  port: 5432
+
+# pgvector for vector similarity search
+pgserver:
+  name: learn-pg
+  port: 5432
+  image: pgvector/pgvector:pg16
+
+# TimescaleDB for time-series data
+pgserver:
+  name: timeseries-pg
+  port: 5432
+  image: timescale/timescaledb:latest-pg16
+
+# PostGIS for geospatial data
+pgserver:
+  name: geo-pg
+  port: 5432
+  image: postgis/postgis:16-3.4
+```
+
+**Important:** The custom image must be PostgreSQL-compatible (based on the official `postgres`
+image). Images that extend the official postgres image work correctly:
+
+- `pgvector/pgvector:pg16` - Vector similarity search
+- `timescale/timescaledb:latest-pg16` - Time-series database
+- `postgis/postgis:16-3.4` - Geospatial database
+
+Non-PostgreSQL databases or heavily modified images will fail to start because the framework passes
+PostgreSQL-specific CLI arguments to the container.
 
 ## Read-Only Sessions
 
