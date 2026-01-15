@@ -1,18 +1,10 @@
 # PostgreSQL Single Instance Mode
+# Configure postgres via pgserver.postgres_conf
 services:
   postgres:
     container_name: ${NAME:?}
-    image: postgres:${VERSION:?}
-    command:
-      - postgres
-      - -c
-      - max_connections=500
-      - -c
-      - shared_preload_libraries=pg_stat_statements
-      - -c
-      - join_collapse_limit=1
-      - -c
-      - autovacuum=true
+    image: ${IMAGE:-postgres:${VERSION}}
+    command: ${COMMAND:-postgres}
     restart: always
     volumes:
       - "$PWD:$PWD"

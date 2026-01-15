@@ -6,9 +6,10 @@ Users can install it with: pip install infra[validation]
 """
 
 try:
+    import re
     from typing import Any
 
-    from pydantic import BaseModel, ConfigDict, Field, field_validator
+    from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
     PYDANTIC_AVAILABLE = True
 
@@ -71,11 +72,29 @@ try:
     class PostgreSQLServerConfig(BaseModel):
         """Configuration for PostgreSQL server connection."""
 
-        version: int = Field(default=16, description="PostgreSQL version")
+        version: int | None = Field(
+            default=None,
+            description="PostgreSQL version. Required unless image is specified",
+        )
         name: str = Field(default="infra-pg", description="Server name")
         port: int = Field(default=5432, ge=1, le=65535, description="Server port")
         user: str = Field(default="postgres", description="Username")
         password: str = Field(default="", alias="pass", description="Password")
+        image: str | None = Field(
+            default=None,
+            description="Docker image (e.g., pgvector/pgvector:pg16). Defaults to postgres:VERSION",
+        )
+        postgres_conf: dict[str, str | int | bool | list[str]] = Field(
+            default_factory=dict,
+            description="PostgreSQL config parameters passed as -c key=value (lists joined with commas)",
+        )
+
+        @model_validator(mode="after")
+        def validate_version_or_image(self) -> "PostgreSQLServerConfig":
+            """Ensure either version or image is specified."""
+            if self.version is None and self.image is None:
+                raise ValueError("Either 'version' or 'image' must be specified")
+            return self
 
         model_config = ConfigDict(
             populate_by_name=True,  # Allow both 'password' and 'pass'
@@ -111,6 +130,10 @@ try:
         retry_delay: float = Field(
             default=1.0, ge=0.0, description="Initial retry delay in seconds"
         )
+        extensions: list[str] = Field(
+            default_factory=list,
+            description="PostgreSQL extensions to create (e.g., ['vector', 'postgis'])",
+        )
 
         @field_validator("url")
         @classmethod
@@ -120,6 +143,20 @@ try:
                 raise ValueError(
                     "Database URL must start with 'postgresql://' or 'postgres://'"
                 )
+            return v
+
+        @field_validator("extensions")
+        @classmethod
+        def validate_extensions(cls, v: list[str]) -> list[str]:
+            """Validate extension names are safe SQL identifiers."""
+            pattern = re.compile(r"^[a-z][a-z0-9_-]*$")
+            for ext in v:
+                if not pattern.match(ext):
+                    raise ValueError(
+                        f"Invalid extension name '{ext}'. Must start with lowercase "
+                        "letter and contain only lowercase letters, numbers, "
+                        "underscores, and hyphens."
+                    )
             return v
 
         model_config = ConfigDict(extra="allow")

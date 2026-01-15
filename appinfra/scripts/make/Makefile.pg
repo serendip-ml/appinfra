@@ -13,11 +13,24 @@
 # YAML config structure:
 #   pgserver:
 #     name: myapp-pg
-#     version: "16"
+#     version: "16"          # Required unless image is specified
 #     port: 5432
+#     image: pgvector/pgvector:pg16  # Optional: custom Docker image
+#     postgres_conf:         # Optional: PostgreSQL -c parameters
+#       max_connections: 500
+#       shared_preload_libraries:
+#         - pg_stat_statements
+#         - timescaledb
 #     replica:               # Optional: enables replication mode targets
 #       enabled: true
 #       port: 5433
+#
+#   dbs:
+#     main:
+#       url: "postgresql://..."
+#       extensions:          # Optional: CREATE EXTENSION per database
+#         - vector
+#         - timescaledb
 
 # Flag to indicate Postgres Makefile is loaded
 PG_INCLUDED := true
@@ -34,7 +47,7 @@ define _pg_newline
 
 
 endef
-# Extract all PG config values in one call (sets PG_DOCKER_IMAGE, PG_VERSION, PG_PORT, PG_REPLICA_ENABLED, PG_PORT_R)
+# Extract all PG config values in one call (sets PG_DOCKER_IMAGE, PG_VERSION, PG_PORT, PG_IMAGE, PG_REPLICA_ENABLED, PG_PORT_R, PG_COMMAND)
 # pg-config.sh outputs pipe-separated values; $(subst) converts pipes to newlines for $(eval)
 # Args: config_file, config_key, etc_dir, default_config_file
 $(eval $(subst |,$(_pg_newline),$(shell $(pg_local)/../pg-config.sh "$(INFRA_PG_CONFIG_FILE)" $(INFRA_PG_CONFIG_KEY) $(ETC_DIR) $(INFRA_DEFAULT_CONFIG_FILE))))
@@ -58,9 +71,9 @@ PSQL_STANDBY := PAGER='less -S' psql -h $(PG_HOST) -p $(PG_PORT_R) -U $(PG_USER)
 endif
 
 # Docker compose commands
-PG_DOCKER_CMD_SINGLE := VERSION=$(PG_VERSION) NAME=$(PG_DOCKER_IMAGE) PORT=$(PG_PORT) docker compose -p $(PG_DOCKER_IMAGE) -f $(PG_DOCKER_YAML_SINGLE)
+PG_DOCKER_CMD_SINGLE := VERSION=$(PG_VERSION) NAME=$(PG_DOCKER_IMAGE) PORT=$(PG_PORT) IMAGE=$(PG_IMAGE) COMMAND='$(PG_COMMAND)' docker compose -p $(PG_DOCKER_IMAGE) -f $(PG_DOCKER_YAML_SINGLE)
 ifeq ($(PG_REPLICA_ENABLED),true)
-PG_DOCKER_CMD_REPL := VERSION=$(PG_VERSION) NAME=$(PG_DOCKER_IMAGE) PORT=$(PG_PORT) PORT_R=$(PG_PORT_R) docker compose -p $(PG_DOCKER_IMAGE) -f $(PG_DOCKER_YAML_REPL)
+PG_DOCKER_CMD_REPL := VERSION=$(PG_VERSION) NAME=$(PG_DOCKER_IMAGE) PORT=$(PG_PORT) PORT_R=$(PG_PORT_R) IMAGE=$(PG_IMAGE) COMMAND='$(PG_COMMAND)' docker compose -p $(PG_DOCKER_IMAGE) -f $(PG_DOCKER_YAML_REPL)
 endif
 
 ##@ Postgres

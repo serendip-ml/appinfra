@@ -9,6 +9,15 @@ keywords:
   - sqlalchemy
   - query
   - PG class
+  - pgserver
+  - image
+  - docker image
+  - pgvector
+  - timescaledb
+  - postgis
+  - extensions
+  - create extension
+  - dbs
 aliases:
   - db-api
   - postgres-api
@@ -74,28 +83,156 @@ test_db = manager.get_db("test")
 
 ## Configuration
 
-Example `etc/infra.yaml`:
+Database connections are configured in `etc/infra.yaml` under the `dbs` key.
 
 ```yaml
-databases:
-  production:
-    type: postgresql
-    host: localhost
-    port: 5432
-    database: myapp_prod
-    user: postgres
-    password: secret
-    pool_size: 10
-    max_overflow: 20
+dbs:
+  main:
+    url: "postgresql://postgres:secret@localhost:5432/myapp"
+    pool_size: 10              # Connection pool size (default: 5)
+    max_overflow: 20           # Max overflow connections (default: 10)
+    create_db: true            # Create database if not exists (default: false)
+    extensions:                # PostgreSQL extensions to create
+      - vector
+      - pg_trgm
 
-  test:
-    type: postgresql
-    host: localhost
-    port: 5432
-    database: myapp_test
-    user: postgres
-    password: secret
+  readonly:
+    url: "postgresql://postgres:secret@localhost:5432/myapp"
+    readonly: true             # Read-only mode (default: false)
 ```
+
+### Database Configuration Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `url` | string | required | PostgreSQL connection URL |
+| `pool_size` | int | 5 | Connection pool size |
+| `max_overflow` | int | 10 | Max overflow connections |
+| `pool_timeout` | int | 30 | Pool timeout in seconds |
+| `pool_recycle` | int | 3600 | Connection recycle time in seconds |
+| `pool_pre_ping` | bool | true | Enable connection health checks |
+| `readonly` | bool | false | Read-only mode |
+| `create_db` | bool | false | Create database if not exists |
+| `extensions` | list | [] | PostgreSQL extensions to create |
+
+### PostgreSQL Extensions (`extensions` field)
+
+The `extensions` field specifies PostgreSQL extensions to create automatically when `pg.migrate()`
+is called. Extensions are created using `CREATE EXTENSION IF NOT EXISTS`.
+
+```yaml
+dbs:
+  main:
+    url: "postgresql://localhost/myapp"
+    create_db: true
+    extensions:
+      - vector         # pgvector for embeddings
+      - pg_trgm        # Trigram similarity for fuzzy search
+      - postgis        # Geospatial support
+```
+
+**How it works:**
+1. Extensions are created during `pg.migrate()`, before table creation
+2. Uses `CREATE EXTENSION IF NOT EXISTS` (safe to run multiple times)
+3. Extension names must match pattern: lowercase letters, numbers, underscores, hyphens
+   (e.g., `vector`, `pg_trgm`, `pg-cron`)
+
+**Important:** The PostgreSQL server must have the extension binaries installed. Use a custom
+Docker image (via `pgserver.image`) that includes the extensions you need.
+
+### Server-Level vs Database-Level Extensions
+
+Some extensions require configuration at both levels:
+
+| Level | Config Location | Purpose |
+|-------|-----------------|---------|
+| Server | `pgserver.postgres_conf.shared_preload_libraries` | Extensions loaded at server startup |
+| Database | `dbs.<name>.extensions` | Extensions created per database |
+
+**Extensions requiring both levels (examples):** `timescaledb`, `pg_cron`, `pg_stat_statements`,
+`pgaudit`, `auto_explain`
+
+```yaml
+# Server config (pg.yaml)
+pgserver:
+  image: timescale/timescaledb:latest-pg16
+  postgres_conf:
+    shared_preload_libraries:
+      - timescaledb              # Must be preloaded at server startup
+
+# Database config (infra.yaml)
+dbs:
+  main:
+    url: "postgresql://localhost/myapp"
+    extensions:
+      - timescaledb              # Also needs CREATE EXTENSION per database
+```
+
+**Extensions needing only database-level (examples):** `vector`, `pg_trgm`, `postgis`, `uuid-ossp`
+
+## PostgreSQL Server Configuration (pg.yaml)
+
+Defines the Docker-based PostgreSQL server for local development.
+
+```yaml
+pgserver:
+  version: 16                      # PostgreSQL version (required unless image is specified)
+  name: infra-pg                   # Server name/identifier
+  port: 7432                       # PostgreSQL port
+  user: postgres                   # Database user
+  pass: ''                         # Database password
+  image: pgvector/pgvector:pg16   # Optional: custom Docker image
+```
+
+### Custom Docker Image (`image` field)
+
+Use the `image` field to run PostgreSQL with extensions like pgvector, TimescaleDB, or PostGIS.
+
+**Either `version` or `image` must be specified:**
+
+| Configuration | Use Case | Image Used |
+|---------------|----------|------------|
+| `version` only | Standard PostgreSQL | `postgres:VERSION` |
+| `image` only | Custom image with extensions | Your specified image |
+| Both | Custom image with explicit version for documentation | Your specified image |
+
+**Examples:**
+
+```yaml
+# Standard PostgreSQL 16
+pgserver:
+  version: 16
+  name: my-pg
+  port: 5432
+
+# pgvector for vector similarity search
+pgserver:
+  name: learn-pg
+  port: 5432
+  image: pgvector/pgvector:pg16
+
+# TimescaleDB for time-series data
+pgserver:
+  name: timeseries-pg
+  port: 5432
+  image: timescale/timescaledb:latest-pg16
+
+# PostGIS for geospatial data
+pgserver:
+  name: geo-pg
+  port: 5432
+  image: postgis/postgis:16-3.4
+```
+
+**Important:** The custom image must be PostgreSQL-compatible (based on the official `postgres`
+image). Images that extend the official postgres image work correctly:
+
+- `pgvector/pgvector:pg16` - Vector similarity search
+- `timescale/timescaledb:latest-pg16` - Time-series database
+- `postgis/postgis:16-3.4` - Geospatial database
+
+Non-PostgreSQL databases or heavily modified images will fail to start because the framework passes
+PostgreSQL-specific CLI arguments to the container.
 
 ## Read-Only Sessions
 

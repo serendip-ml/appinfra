@@ -35,22 +35,66 @@ class TestPostgreSQLServerConfigValidation:
     def test_invalid_port_negative(self):
         """Test that negative port raises ValidationError."""
         with pytest.raises(ValidationError, match="greater than or equal to 1"):
-            PostgreSQLServerConfig(port=-1)
+            PostgreSQLServerConfig(version=16, port=-1)
 
     def test_invalid_port_too_high(self):
         """Test that port > 65535 raises ValidationError."""
         with pytest.raises(ValidationError, match="less than or equal to 65535"):
-            PostgreSQLServerConfig(port=70000)
+            PostgreSQLServerConfig(version=16, port=70000)
 
     def test_valid_port_boundary_values(self):
         """Test that boundary port values are accepted."""
         # Port 1 should be valid
-        config1 = PostgreSQLServerConfig(port=1)
+        config1 = PostgreSQLServerConfig(version=16, port=1)
         assert config1.port == 1
 
         # Port 65535 should be valid
-        config2 = PostgreSQLServerConfig(port=65535)
+        config2 = PostgreSQLServerConfig(version=16, port=65535)
         assert config2.port == 65535
+
+    def test_version_or_image_required(self):
+        """Test that either version or image must be specified."""
+        with pytest.raises(
+            ValidationError, match="Either 'version' or 'image' must be specified"
+        ):
+            PostgreSQLServerConfig(port=5432)
+
+    def test_version_only_valid(self):
+        """Test that config with only version is valid."""
+        config = PostgreSQLServerConfig(version=16)
+        assert config.version == 16
+        assert config.image is None
+
+    def test_image_only_valid(self):
+        """Test that config with only image is valid (version not required)."""
+        config = PostgreSQLServerConfig(image="pgvector/pgvector:pg16")
+        assert config.image == "pgvector/pgvector:pg16"
+        assert config.version is None
+
+    def test_both_version_and_image_valid(self):
+        """Test that config with both version and image is valid."""
+        config = PostgreSQLServerConfig(version=16, image="pgvector/pgvector:pg16")
+        assert config.version == 16
+        assert config.image == "pgvector/pgvector:pg16"
+
+    def test_postgres_conf_dict(self):
+        """Test that postgres_conf accepts dict with various types."""
+        config = PostgreSQLServerConfig(
+            version=16,
+            postgres_conf={
+                "max_connections": 500,
+                "shared_preload_libraries": ["pg_stat_statements", "timescaledb"],
+                "autovacuum": True,
+                "work_mem": "256MB",
+            },
+        )
+        assert config.postgres_conf["max_connections"] == 500
+        assert config.postgres_conf["shared_preload_libraries"] == [
+            "pg_stat_statements",
+            "timescaledb",
+        ]
+        assert config.postgres_conf["autovacuum"] is True
+        assert config.postgres_conf["work_mem"] == "256MB"
 
 
 @pytest.mark.skipif(
@@ -79,6 +123,47 @@ class TestDatabaseConfigValidation:
         """Test that URL with postgres:// prefix is valid."""
         config = DatabaseConfig(url="postgres://user:pass@localhost:5432/db")
         assert config.url == "postgres://user:pass@localhost:5432/db"
+
+    def test_extensions_valid(self):
+        """Test that valid extension names are accepted."""
+        config = DatabaseConfig(
+            url="postgresql://localhost/db",
+            extensions=["vector", "pg_trgm", "postgis", "timescaledb"],
+        )
+        assert config.extensions == ["vector", "pg_trgm", "postgis", "timescaledb"]
+
+    def test_extensions_empty_list(self):
+        """Test that empty extensions list is valid."""
+        config = DatabaseConfig(url="postgresql://localhost/db", extensions=[])
+        assert config.extensions == []
+
+    def test_extensions_default_empty(self):
+        """Test that extensions defaults to empty list."""
+        config = DatabaseConfig(url="postgresql://localhost/db")
+        assert config.extensions == []
+
+    def test_extensions_invalid_uppercase(self):
+        """Test that uppercase extension names are rejected."""
+        with pytest.raises(ValidationError, match="Invalid extension name"):
+            DatabaseConfig(url="postgresql://localhost/db", extensions=["Vector"])
+
+    def test_extensions_invalid_starts_with_number(self):
+        """Test that extension names starting with number are rejected."""
+        with pytest.raises(ValidationError, match="Invalid extension name"):
+            DatabaseConfig(url="postgresql://localhost/db", extensions=["123vector"])
+
+    def test_extensions_invalid_special_chars(self):
+        """Test that extension names with special chars are rejected."""
+        with pytest.raises(ValidationError, match="Invalid extension name"):
+            DatabaseConfig(url="postgresql://localhost/db", extensions=["pg.vector"])
+
+    def test_extensions_valid_with_hyphens_underscores(self):
+        """Test that extension names with hyphens and underscores are valid."""
+        config = DatabaseConfig(
+            url="postgresql://localhost/db",
+            extensions=["pg_trgm", "some-extension", "ext_with-both"],
+        )
+        assert config.extensions == ["pg_trgm", "some-extension", "ext_with-both"]
 
 
 @pytest.mark.skipif(

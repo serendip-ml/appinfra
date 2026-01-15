@@ -1,11 +1,13 @@
 """Tests for appinfra.db.pg.pg error handling and edge cases."""
 
-from unittest.mock import Mock
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import pytest
 
 from appinfra.db.pg.connection import validate_readonly_config
 from appinfra.db.pg.core import validate_init_params
+from appinfra.db.pg.pg import PG
 
 
 @pytest.mark.unit
@@ -217,3 +219,349 @@ class TestPGErrorHandlers:
         # Verify exception was wrapped
         assert "Database connection failed" in str(exc_info.value)
         assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.unit
+class TestPGDictConfig:
+    """Test PG class dict config normalization."""
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_pg_accepts_dict_config(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that PG accepts dict config and normalizes it to SimpleNamespace."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        dict_config = {
+            "url": "postgresql://user:pass@localhost/testdb",
+            "create_db": True,
+            "readonly": False,
+        }
+
+        pg = PG(mock_logger, dict_config)
+
+        # Verify config was normalized to SimpleNamespace
+        assert isinstance(pg._cfg, SimpleNamespace)
+        assert pg._cfg.url == "postgresql://user:pass@localhost/testdb"
+        assert pg._cfg.create_db is True
+        assert pg._cfg.readonly is False
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_pg_preserves_object_config(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that PG preserves object config without converting."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        object_config = SimpleNamespace(
+            url="postgresql://user:pass@localhost/testdb",
+            create_db=False,
+        )
+
+        pg = PG(mock_logger, object_config)
+
+        # Verify config was preserved as-is
+        assert pg._cfg is object_config
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_dict_config_create_db_accessible_via_getattr(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that dict config values are accessible via getattr after normalization."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        dict_config = {
+            "url": "postgresql://user:pass@localhost/testdb",
+            "create_db": True,
+            "pool_size": 10,
+        }
+
+        pg = PG(mock_logger, dict_config)
+
+        # Verify getattr works as expected (this was the original bug)
+        assert getattr(pg._cfg, "create_db", False) is True
+        assert getattr(pg._cfg, "pool_size", 5) == 10
+        assert getattr(pg._cfg, "missing_key", "default") == "default"
+
+
+@pytest.mark.unit
+class TestPGLifecycleHooks:
+    """Test PG lifecycle hook registration."""
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_hook_lists_initialized_empty(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that hook lists are initialized as empty."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        pg = PG(mock_logger, {"url": "postgresql://localhost/testdb"})
+
+        assert pg._before_migrate_hooks == []
+        assert pg._after_migrate_hooks == []
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_on_before_migrate_registers_hook(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that on_before_migrate registers a hook."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        pg = PG(mock_logger, {"url": "postgresql://localhost/testdb"})
+
+        def my_hook(conn):
+            pass
+
+        result = pg.on_before_migrate(my_hook)
+
+        assert my_hook in pg._before_migrate_hooks
+        assert result is my_hook  # Returns callback for decorator use
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_on_after_migrate_registers_hook(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that on_after_migrate registers a hook."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        pg = PG(mock_logger, {"url": "postgresql://localhost/testdb"})
+
+        def my_hook(conn):
+            pass
+
+        result = pg.on_after_migrate(my_hook)
+
+        assert my_hook in pg._after_migrate_hooks
+        assert result is my_hook  # Returns callback for decorator use
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_hooks_can_be_used_as_decorators(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that hook methods work as decorators."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        pg = PG(mock_logger, {"url": "postgresql://localhost/testdb"})
+
+        @pg.on_before_migrate
+        def setup_schema(conn):
+            pass
+
+        @pg.on_after_migrate
+        def seed_data(conn):
+            pass
+
+        assert setup_schema in pg._before_migrate_hooks
+        assert seed_data in pg._after_migrate_hooks
+
+
+@pytest.mark.unit
+class TestPGExtensionValidation:
+    """Test PG extension name validation."""
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_valid_extension_names(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that valid extension names pass validation."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        pg = PG(mock_logger, {"url": "postgresql://localhost/testdb"})
+
+        valid_names = ["vector", "pg_trgm", "postgis", "timescaledb", "some-ext"]
+        for name in valid_names:
+            assert pg._is_valid_extension_name(name), f"{name} should be valid"
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_invalid_extension_names(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that invalid extension names fail validation."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        pg = PG(mock_logger, {"url": "postgresql://localhost/testdb"})
+
+        invalid_names = [
+            "Vector",  # uppercase
+            "123ext",  # starts with number
+            "ext.name",  # contains dot
+            "ext name",  # contains space
+            "ext;drop",  # contains semicolon (SQL injection attempt)
+            "",  # empty
+        ]
+        for name in invalid_names:
+            assert not pg._is_valid_extension_name(name), f"{name} should be invalid"
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_create_extensions_skips_invalid(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that _create_extensions skips invalid extension names."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        pg = PG(
+            mock_logger,
+            {"url": "postgresql://localhost/testdb", "extensions": ["Invalid_Ext"]},
+        )
+        pg._lg_extra = {}
+
+        # Mock the engine.connect() context manager
+        mock_conn = Mock()
+        mock_context = Mock()
+        mock_context.__enter__ = Mock(return_value=mock_conn)
+        mock_context.__exit__ = Mock(return_value=False)
+        pg._engine = Mock()
+        pg._engine.connect.return_value = mock_context
+
+        # Call _create_extensions
+        pg._create_extensions()
+
+        # Verify warning was logged for invalid name
+        mock_logger.warning.assert_called_once()
+        assert "skipping invalid extension" in mock_logger.warning.call_args[0][0]
+
+        # Verify no execute was called (extension was skipped)
+        mock_conn.execute.assert_not_called()
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_create_extensions_creates_valid(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that _create_extensions creates valid extensions."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        pg = PG(
+            mock_logger,
+            {
+                "url": "postgresql://localhost/testdb",
+                "extensions": ["pg_trgm", "vector"],
+            },
+        )
+        pg._lg_extra = {}
+
+        # Mock the engine.connect() context manager
+        mock_conn = Mock()
+        mock_context = Mock()
+        mock_context.__enter__ = Mock(return_value=mock_conn)
+        mock_context.__exit__ = Mock(return_value=False)
+        pg._engine = Mock()
+        pg._engine.connect.return_value = mock_context
+
+        # Call _create_extensions
+        pg._create_extensions()
+
+        # Verify execute was called for each extension
+        assert mock_conn.execute.call_count == 2
+        mock_conn.commit.assert_called_once()
+
+    @patch("appinfra.db.pg.pg.LoggerFactory")
+    @patch.object(PG, "_create_managers")
+    @patch.object(PG, "_initialize_subsystems")
+    @patch.object(PG, "_create_engine_and_session")
+    def test_create_extensions_no_extensions(
+        self,
+        mock_create_engine,
+        mock_init_subsystems,
+        mock_create_managers,
+        mock_logger_factory,
+    ):
+        """Test that _create_extensions does nothing with no extensions."""
+        mock_logger = Mock()
+        mock_logger_factory.derive.return_value = mock_logger
+
+        pg = PG(mock_logger, {"url": "postgresql://localhost/testdb"})
+        pg._engine = Mock()
+
+        # Call _create_extensions
+        pg._create_extensions()
+
+        # Verify connect was never called (early return)
+        pg._engine.connect.assert_not_called()
