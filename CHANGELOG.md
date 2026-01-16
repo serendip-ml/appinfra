@@ -23,6 +23,12 @@ For API stability guarantees and deprecation policy, see
 - Startup callback failures now include callback name in error message for easier debugging
 - Shutdown callbacks continue executing even if earlier callbacks fail (errors are logged)
 
+### Fixed
+- `with_on_startup()` no longer breaks IPC response queue in subprocess mode. Previously, using
+  lifecycle callbacks with `.subprocess.with_ipc()` caused responses to never be delivered because
+  FastAPI ignores `on_event()` handlers when a lifespan is present. IPC polling is now integrated
+  directly into the adapter's lifespan context manager.
+
 ## [0.3.0] - 2026-01-15
 
 ### Added

@@ -264,16 +264,12 @@ class FastAPIAdapter:
         Build the FastAPI application.
 
         Args:
-            ipc_channel: Optional IPCChannel to store in app.state.
-                When provided, enables IPC-based route handlers and
-                health reporting (if configured).
+            ipc_channel: Optional IPCChannel for IPC-based handlers and health reporting.
 
         Returns:
             Configured FastAPI application
         """
-        # Build lifespan from user-provided lifespan or startup/shutdown callbacks
-        lifespan = self._build_lifespan()
-
+        lifespan = self._build_lifespan(ipc_channel)
         app = FastAPI(
             title=self._config.title,
             description=self._config.description,
@@ -281,47 +277,54 @@ class FastAPIAdapter:
             lifespan=lifespan,
         )
 
-        # Store IPC channel in app state for dependency injection
-        if ipc_channel is not None:
-            app.state.ipc_channel = ipc_channel
-
-        # Callback middleware added first = runs innermost (after CORS/user middleware, LIFO order)
+        self._configure_ipc(app, ipc_channel)
         self._configure_request_response_middleware(app)
         self._configure_middleware(app)
         self._configure_exception_handlers(app)
         self._configure_routes(app)
         self._configure_routers(app)
 
-        # Add built-in health route if IPC enabled and configured
-        if (
-            ipc_channel is not None
-            and self._config.ipc
-            and self._config.ipc.enable_health_reporting
-        ):
-            self._add_health_route(app, ipc_channel)
-
         return app
 
-    def _build_lifespan(self) -> LifespanCallable | None:
+    def _configure_ipc(self, app: FastAPI, ipc_channel: IPCChannel | None) -> None:
+        """Configure IPC channel on the app."""
+        if ipc_channel is None:
+            return
+        app.state.ipc_channel = ipc_channel
+        if self._config.ipc and self._config.ipc.enable_health_reporting:
+            self._add_health_route(app, ipc_channel)
+
+    def _build_lifespan(
+        self, ipc_channel: IPCChannel | None = None
+    ) -> LifespanCallable | None:
         """
-        Build lifespan context manager from user callbacks.
+        Build lifespan context manager from user callbacks and IPC lifecycle.
 
         If user provided a lifespan, use it directly.
         Otherwise, wrap startup/shutdown callbacks into a lifespan.
-        Returns None if no lifecycle callbacks configured.
+        If ipc_channel is provided, wrap the result with IPC start/stop.
+        Returns None if no lifecycle callbacks configured and no IPC channel.
         """
+        # Get user-provided lifespan or create one from callbacks
+        user_lifespan: LifespanCallable | None = None
+
         if self._lifespan is not None:
             if self._startup_callbacks or self._shutdown_callbacks:
                 logger.warning(
                     "Both lifespan and startup/shutdown callbacks provided. "
                     "startup/shutdown callbacks will be ignored when lifespan is set."
                 )
-            return self._lifespan.lifespan
+            user_lifespan = self._lifespan.lifespan
+        elif self._startup_callbacks or self._shutdown_callbacks:
+            user_lifespan = self._create_lifespan_from_callbacks()
 
-        if not self._startup_callbacks and not self._shutdown_callbacks:
-            return None
+        # If no IPC channel, just return user lifespan (may be None)
+        if ipc_channel is None:
+            return user_lifespan
 
-        return self._create_lifespan_from_callbacks()
+        # Wrap with IPC lifecycle - IPC polling must be integrated into lifespan
+        # because FastAPI ignores on_event() handlers when a lifespan is present
+        return self._wrap_lifespan_with_ipc(user_lifespan, ipc_channel)
 
     def _create_lifespan_from_callbacks(self) -> LifespanCallable:
         """Create a lifespan context manager from startup/shutdown callbacks."""
@@ -347,6 +350,34 @@ class FastAPIAdapter:
                     logger.exception(f"Error in shutdown callback '{name}'")
 
         return lifespan
+
+    def _wrap_lifespan_with_ipc(
+        self,
+        user_lifespan: LifespanCallable | None,
+        ipc_channel: IPCChannel,
+    ) -> LifespanCallable:
+        """
+        Wrap a lifespan with IPC channel start/stop.
+
+        IPC polling is started before user startup so it's available during
+        user callbacks. IPC is stopped after user shutdown completes.
+        """
+
+        @asynccontextmanager
+        async def ipc_lifespan(app: Any) -> AsyncIterator[None]:
+            # Start IPC polling first so it's available during user callbacks
+            await ipc_channel.start_polling()
+            try:
+                if user_lifespan is not None:
+                    async with user_lifespan(app):
+                        yield
+                else:
+                    yield
+            finally:
+                # Stop IPC polling after user shutdown completes
+                await ipc_channel.stop_polling()
+
+        return ipc_lifespan
 
     def _configure_request_response_middleware(self, app: FastAPI) -> None:
         """Configure request/response/exception callback middleware."""
