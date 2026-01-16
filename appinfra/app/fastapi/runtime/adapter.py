@@ -127,6 +127,20 @@ class ExceptionCallbackDefinition:
     name: str | None = None
 
 
+async def _run_exception_callbacks(
+    exception_callbacks: list[ExceptionCallbackDefinition],
+    request: Any,
+    exc: Exception,
+) -> None:
+    """Run exception callbacks, logging errors but not raising."""
+    for exc_cb in exception_callbacks:
+        try:
+            await exc_cb.callback(request, exc)
+        except Exception:
+            name = exc_cb.name or exc_cb.callback.__name__
+            logger.exception(f"Error in exception callback '{name}'")
+
+
 def _create_callback_middleware(
     request_callbacks: list[RequestCallbackDefinition],
     response_callbacks: list[ResponseCallbackDefinition],
@@ -140,15 +154,22 @@ def _create_callback_middleware(
     class CallbackMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Response:
             for req_cb in request_callbacks:
-                await req_cb.callback(request)
+                try:
+                    await req_cb.callback(request)
+                except Exception as e:
+                    name = req_cb.name or req_cb.callback.__name__
+                    raise RuntimeError(f"Request callback '{name}' failed") from e
             try:
                 response = await call_next(request)
             except Exception as exc:
-                for exc_cb in exception_callbacks:
-                    await exc_cb.callback(request, exc)
+                await _run_exception_callbacks(exception_callbacks, request, exc)
                 raise
             for resp_cb in response_callbacks:
-                response = await resp_cb.callback(request, response)
+                try:
+                    response = await resp_cb.callback(request, response)
+                except Exception as e:
+                    name = resp_cb.name or resp_cb.callback.__name__
+                    raise RuntimeError(f"Response callback '{name}' failed") from e
             return response  # type: ignore[return-value,no-any-return]
 
     return CallbackMiddleware

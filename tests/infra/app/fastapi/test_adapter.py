@@ -826,3 +826,110 @@ class TestLifecycleCallbackExecution:
 
             # Both callbacks should have run despite the first one failing
             assert called == ["failing", "second"]
+
+    @pytest.mark.asyncio
+    async def test_request_callback_failure_wraps_exception(self):
+        """Test that request callback failure wraps exception with context."""
+        from appinfra.app.fastapi.runtime.adapter import (
+            RequestCallbackDefinition,
+            _create_callback_middleware,
+        )
+
+        async def failing_request(request):
+            raise ValueError("auth failed")
+
+        middleware_cls = _create_callback_middleware(
+            request_callbacks=[
+                RequestCallbackDefinition(callback=failing_request, name="auth_check")
+            ],
+            response_callbacks=[],
+            exception_callbacks=[],
+        )
+
+        mock_app = MagicMock()
+        middleware = middleware_cls(mock_app)
+        mock_request = MagicMock()
+
+        async def mock_call_next(req):
+            return MagicMock()
+
+        with pytest.raises(RuntimeError, match="Request callback 'auth_check' failed"):
+            await middleware.dispatch(mock_request, mock_call_next)
+
+    @pytest.mark.asyncio
+    async def test_response_callback_failure_wraps_exception(self):
+        """Test that response callback failure wraps exception with context."""
+        from appinfra.app.fastapi.runtime.adapter import (
+            ResponseCallbackDefinition,
+            _create_callback_middleware,
+        )
+
+        async def failing_response(request, response):
+            raise ValueError("header injection failed")
+
+        middleware_cls = _create_callback_middleware(
+            request_callbacks=[],
+            response_callbacks=[
+                ResponseCallbackDefinition(
+                    callback=failing_response, name="add_headers"
+                )
+            ],
+            exception_callbacks=[],
+        )
+
+        mock_app = MagicMock()
+        middleware = middleware_cls(mock_app)
+        mock_request = MagicMock()
+        mock_response = MagicMock()
+
+        async def mock_call_next(req):
+            return mock_response
+
+        with pytest.raises(
+            RuntimeError, match="Response callback 'add_headers' failed"
+        ):
+            await middleware.dispatch(mock_request, mock_call_next)
+
+    @pytest.mark.asyncio
+    async def test_exception_callback_failure_does_not_swallow_original(self):
+        """Test that failing exception callback doesn't swallow original exception."""
+        from appinfra.app.fastapi.runtime.adapter import (
+            ExceptionCallbackDefinition,
+            _create_callback_middleware,
+        )
+
+        called = []
+
+        async def failing_exc_callback(request, exc):
+            called.append("failing_cb")
+            raise RuntimeError("logging service unavailable")
+
+        async def second_exc_callback(request, exc):
+            called.append("second_cb")
+
+        middleware_cls = _create_callback_middleware(
+            request_callbacks=[],
+            response_callbacks=[],
+            exception_callbacks=[
+                ExceptionCallbackDefinition(
+                    callback=failing_exc_callback, name="error_logger"
+                ),
+                ExceptionCallbackDefinition(
+                    callback=second_exc_callback, name="metrics"
+                ),
+            ],
+        )
+
+        mock_app = MagicMock()
+        middleware = middleware_cls(mock_app)
+        mock_request = MagicMock()
+
+        async def mock_call_next(req):
+            raise ValueError("original request error")
+
+        # Should raise the ORIGINAL exception, not the callback's exception
+        with pytest.raises(ValueError, match="original request error"):
+            await middleware.dispatch(mock_request, mock_call_next)
+
+        # Both exception callbacks should have been called despite first one failing
+        assert called == ["failing_cb", "second_cb"]
