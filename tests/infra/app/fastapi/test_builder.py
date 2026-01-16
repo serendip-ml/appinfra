@@ -495,3 +495,144 @@ class TestUvicornConfigurer:
         builder.uvicorn.with_backlog(4096).done()
 
         assert builder._uvicorn_config.backlog == 4096
+
+
+@pytest.mark.unit
+class TestServerBuilderLifecycleCallbacks:
+    """Tests for ServerBuilder lifecycle callback methods."""
+
+    @pytest.fixture
+    def mock_fastapi(self):
+        """Mock FastAPI to avoid import dependency."""
+        with patch("appinfra.app.fastapi.builder.server.FastAPIAdapter") as mock:
+            mock.return_value = MagicMock()
+            yield mock
+
+    def test_with_on_startup(self, mock_fastapi):
+        """Test with_on_startup adds callback."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        async def startup(app):
+            pass
+
+        builder = ServerBuilder("test-api").with_on_startup(startup, name="init")
+
+        assert len(builder._startup_callbacks) == 1
+        assert builder._startup_callbacks[0].callback is startup
+        assert builder._startup_callbacks[0].name == "init"
+
+    def test_with_on_shutdown(self, mock_fastapi):
+        """Test with_on_shutdown adds callback."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        async def shutdown(app):
+            pass
+
+        builder = ServerBuilder("test-api").with_on_shutdown(shutdown)
+
+        assert len(builder._shutdown_callbacks) == 1
+        assert builder._shutdown_callbacks[0].callback is shutdown
+
+    def test_with_lifespan(self, mock_fastapi):
+        """Test with_lifespan sets lifespan."""
+        from contextlib import asynccontextmanager
+
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        @asynccontextmanager
+        async def lifespan(app):
+            yield
+
+        builder = ServerBuilder("test-api").with_lifespan(lifespan)
+
+        assert builder._lifespan is not None
+        assert builder._lifespan.lifespan is lifespan
+
+    def test_with_on_request(self, mock_fastapi):
+        """Test with_on_request adds callback."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        async def on_request(request):
+            pass
+
+        builder = ServerBuilder("test-api").with_on_request(on_request)
+
+        assert len(builder._request_callbacks) == 1
+        assert builder._request_callbacks[0].callback is on_request
+
+    def test_with_on_response(self, mock_fastapi):
+        """Test with_on_response adds callback."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        async def on_response(request, response):
+            return response
+
+        builder = ServerBuilder("test-api").with_on_response(on_response)
+
+        assert len(builder._response_callbacks) == 1
+        assert builder._response_callbacks[0].callback is on_response
+
+    def test_with_on_exception(self, mock_fastapi):
+        """Test with_on_exception adds callback."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        async def on_exception(request, exc):
+            pass
+
+        builder = ServerBuilder("test-api").with_on_exception(on_exception)
+
+        assert len(builder._exception_callbacks) == 1
+        assert builder._exception_callbacks[0].callback is on_exception
+
+    def test_lifecycle_callbacks_chaining(self, mock_fastapi):
+        """Test lifecycle callbacks can be chained."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        async def startup(app):
+            pass
+
+        async def shutdown(app):
+            pass
+
+        async def on_request(request):
+            pass
+
+        builder = (
+            ServerBuilder("test-api")
+            .with_on_startup(startup)
+            .with_on_shutdown(shutdown)
+            .with_on_request(on_request)
+            .with_port(8080)
+        )
+
+        assert len(builder._startup_callbacks) == 1
+        assert len(builder._shutdown_callbacks) == 1
+        assert len(builder._request_callbacks) == 1
+        assert builder._port == 8080
+
+    def test_configure_adapter_passes_lifecycle_callbacks(self, mock_fastapi):
+        """Test _configure_adapter passes lifecycle callbacks to adapter."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        async def startup(app):
+            pass
+
+        async def on_request(request):
+            pass
+
+        builder = (
+            ServerBuilder("test-api")
+            .with_on_startup(startup)
+            .with_on_request(on_request)
+        )
+
+        with (
+            patch("appinfra.app.fastapi.builder.server.FastAPIAdapter") as mock_adapter,
+            patch("appinfra.app.fastapi.builder.server.Server") as mock_server,
+        ):
+            server = builder.build()
+
+            # Verify adapter methods were called
+            adapter = mock_adapter.return_value
+            adapter.add_startup_callback.assert_called_once()
+            adapter.add_request_callback.assert_called_once()

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -75,6 +76,84 @@ class ExceptionHandlerDefinition:
     handler: Callable[..., Any]
 
 
+@dataclass
+class LifecycleCallbackDefinition:
+    """Definition for startup/shutdown lifecycle callback."""
+
+    callback: Callable[
+        [Any], Awaitable[None]
+    ]  # async def callback(app: FastAPI) -> None
+    name: str | None = None  # Optional name for debugging
+
+
+# Type alias for lifespan context manager
+LifespanCallable = Callable[[Any], AbstractAsyncContextManager[None]]
+
+
+@dataclass
+class LifespanDefinition:
+    """Definition for lifespan context manager."""
+
+    lifespan: LifespanCallable
+
+
+@dataclass
+class RequestCallbackDefinition:
+    """Definition for request callback (runs before each request handler)."""
+
+    callback: Callable[
+        [Any], Awaitable[None]
+    ]  # async def callback(request: Request) -> None
+    name: str | None = None
+
+
+@dataclass
+class ResponseCallbackDefinition:
+    """Definition for response callback (runs after each request handler)."""
+
+    callback: Callable[
+        [Any, Any], Awaitable[Any]
+    ]  # async def callback(request, response) -> response
+    name: str | None = None
+
+
+@dataclass
+class ExceptionCallbackDefinition:
+    """Definition for exception callback (runs when unhandled exceptions occur)."""
+
+    callback: Callable[
+        [Any, Exception], Awaitable[None]
+    ]  # async def callback(request, exc) -> None
+    name: str | None = None
+
+
+def _create_callback_middleware(
+    request_callbacks: list[RequestCallbackDefinition],
+    response_callbacks: list[ResponseCallbackDefinition],
+    exception_callbacks: list[ExceptionCallbackDefinition],
+) -> type:
+    """Create a middleware class for request/response/exception callbacks."""
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    class CallbackMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next: Any) -> Response:
+            for req_cb in request_callbacks:
+                await req_cb.callback(request)
+            try:
+                response = await call_next(request)
+            except Exception as exc:
+                for exc_cb in exception_callbacks:
+                    await exc_cb.callback(request, exc)
+                raise
+            for resp_cb in response_callbacks:
+                response = await resp_cb.callback(request, response)
+            return response  # type: ignore[return-value,no-any-return]
+
+    return CallbackMiddleware
+
+
 class FastAPIAdapter:
     """
     Adapter for constructing FastAPI applications.
@@ -109,6 +188,14 @@ class FastAPIAdapter:
         self._exception_handlers: list[ExceptionHandlerDefinition] = []
         self._cors: CORSDefinition | None = None
 
+        # Lifecycle callbacks
+        self._startup_callbacks: list[LifecycleCallbackDefinition] = []
+        self._shutdown_callbacks: list[LifecycleCallbackDefinition] = []
+        self._lifespan: LifespanDefinition | None = None
+        self._request_callbacks: list[RequestCallbackDefinition] = []
+        self._response_callbacks: list[ResponseCallbackDefinition] = []
+        self._exception_callbacks: list[ExceptionCallbackDefinition] = []
+
     def add_route(self, route: RouteDefinition) -> None:
         """Add a route definition."""
         self._routes.append(route)
@@ -129,6 +216,30 @@ class FastAPIAdapter:
         """Set CORS configuration."""
         self._cors = cors
 
+    def add_startup_callback(self, callback: LifecycleCallbackDefinition) -> None:
+        """Add a startup callback."""
+        self._startup_callbacks.append(callback)
+
+    def add_shutdown_callback(self, callback: LifecycleCallbackDefinition) -> None:
+        """Add a shutdown callback."""
+        self._shutdown_callbacks.append(callback)
+
+    def set_lifespan(self, lifespan: LifespanDefinition) -> None:
+        """Set the lifespan context manager."""
+        self._lifespan = lifespan
+
+    def add_request_callback(self, callback: RequestCallbackDefinition) -> None:
+        """Add a request callback (runs before each request)."""
+        self._request_callbacks.append(callback)
+
+    def add_response_callback(self, callback: ResponseCallbackDefinition) -> None:
+        """Add a response callback (runs after each request)."""
+        self._response_callbacks.append(callback)
+
+    def add_exception_callback(self, callback: ExceptionCallbackDefinition) -> None:
+        """Add an exception callback (runs when unhandled exceptions occur)."""
+        self._exception_callbacks.append(callback)
+
     def build(self, ipc_channel: IPCChannel | None = None) -> FastAPI:
         """
         Build the FastAPI application.
@@ -141,10 +252,14 @@ class FastAPIAdapter:
         Returns:
             Configured FastAPI application
         """
+        # Build lifespan from user-provided lifespan or startup/shutdown callbacks
+        lifespan = self._build_lifespan()
+
         app = FastAPI(
             title=self._config.title,
             description=self._config.description,
             version=self._config.version,
+            lifespan=lifespan,
         )
 
         # Store IPC channel in app state for dependency injection
@@ -152,6 +267,7 @@ class FastAPIAdapter:
             app.state.ipc_channel = ipc_channel
 
         self._configure_middleware(app)
+        self._configure_request_response_middleware(app)
         self._configure_exception_handlers(app)
         self._configure_routes(app)
         self._configure_routers(app)
@@ -165,6 +281,63 @@ class FastAPIAdapter:
             self._add_health_route(app, ipc_channel)
 
         return app
+
+    def _build_lifespan(self) -> LifespanCallable | None:
+        """
+        Build lifespan context manager from user callbacks.
+
+        If user provided a lifespan, use it directly.
+        Otherwise, wrap startup/shutdown callbacks into a lifespan.
+        Returns None if no lifecycle callbacks configured.
+        """
+        if self._lifespan is not None:
+            if self._startup_callbacks or self._shutdown_callbacks:
+                logger.warning(
+                    "Both lifespan and startup/shutdown callbacks provided. "
+                    "startup/shutdown callbacks will be ignored when lifespan is set."
+                )
+            return self._lifespan.lifespan
+
+        if not self._startup_callbacks and not self._shutdown_callbacks:
+            return None
+
+        return self._create_lifespan_from_callbacks()
+
+    def _create_lifespan_from_callbacks(self) -> LifespanCallable:
+        """Create a lifespan context manager from startup/shutdown callbacks."""
+        startup_callbacks = self._startup_callbacks
+        shutdown_callbacks = self._shutdown_callbacks
+
+        @asynccontextmanager
+        async def lifespan(app: Any) -> AsyncIterator[None]:
+            for cb in startup_callbacks:
+                name = cb.name or cb.callback.__name__
+                logger.debug(f"Running startup callback: {name}")
+                await cb.callback(app)
+            yield
+            for cb in shutdown_callbacks:
+                name = cb.name or cb.callback.__name__
+                logger.debug(f"Running shutdown callback: {name}")
+                await cb.callback(app)
+
+        return lifespan
+
+    def _configure_request_response_middleware(self, app: FastAPI) -> None:
+        """Configure request/response/exception callback middleware."""
+        has_callbacks = (
+            self._request_callbacks
+            or self._response_callbacks
+            or self._exception_callbacks
+        )
+        if not has_callbacks:
+            return
+
+        middleware_cls = _create_callback_middleware(
+            self._request_callbacks,
+            self._response_callbacks,
+            self._exception_callbacks,
+        )
+        app.add_middleware(middleware_cls)  # type: ignore[arg-type]
 
     def _configure_middleware(self, app: FastAPI) -> None:
         """Configure middleware on the app."""
