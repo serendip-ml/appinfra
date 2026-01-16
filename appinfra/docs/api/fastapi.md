@@ -223,6 +223,19 @@ server = (ServerBuilder("myapi")
 callbacks (via `request.body()` or `request.json()`) will prevent the route handler from reading it
 again. For body access, use custom middleware via `routes.with_middleware()` instead.
 
+#### Execution Order
+
+Request/response callbacks run **inside** custom middleware (added via `routes.with_middleware()`).
+This means callbacks have access to state set by your middleware:
+
+```
+Request flow:  CORS → custom middleware → request callbacks → route handler
+Response flow: route handler → response callbacks → custom middleware → CORS
+```
+
+This allows request callbacks to access authentication state, user context, or other values injected
+by your middleware.
+
 #### Error Handling
 
 - **Startup failures:** Wrapped with callback name for debugging:

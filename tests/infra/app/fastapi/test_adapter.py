@@ -573,6 +573,28 @@ class TestFastAPIAdapterLifecycleCallbacks:
         call_kwargs = mock_fastapi["FastAPI"].call_args.kwargs
         assert call_kwargs["lifespan"] is my_lifespan
 
+    def test_build_with_lifespan_and_callbacks_warns(self, mock_fastapi, caplog):
+        """Test build warns when both lifespan and startup/shutdown callbacks are set."""
+        import logging
+        from contextlib import asynccontextmanager
+
+        adapter = FastAPIAdapter(ApiConfig())
+
+        @asynccontextmanager
+        async def my_lifespan(app):
+            yield
+
+        async def startup(app):
+            pass
+
+        adapter.set_lifespan(LifespanDefinition(lifespan=my_lifespan))
+        adapter.add_startup_callback(LifecycleCallbackDefinition(callback=startup))
+
+        with caplog.at_level(logging.WARNING):
+            adapter.build()
+
+        assert "startup/shutdown callbacks will be ignored" in caplog.text
+
     def test_build_with_request_response_callbacks_adds_middleware(self, mock_fastapi):
         """Test build adds middleware for request/response callbacks."""
         adapter = FastAPIAdapter(ApiConfig())

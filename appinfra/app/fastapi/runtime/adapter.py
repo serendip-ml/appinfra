@@ -11,6 +11,9 @@ from typing import TYPE_CHECKING, Any
 from ..config.api import ApiConfig
 
 if TYPE_CHECKING:
+    from starlette.requests import Request
+    from starlette.responses import Response
+
     from .ipc import IPCChannel
 
 logger = logging.getLogger("fastapi.adapter")
@@ -80,14 +83,12 @@ class ExceptionHandlerDefinition:
 class LifecycleCallbackDefinition:
     """Definition for startup/shutdown lifecycle callback."""
 
-    callback: Callable[
-        [Any], Awaitable[None]
-    ]  # async def callback(app: FastAPI) -> None
+    callback: Callable[[FastAPI], Awaitable[None]]
     name: str | None = None  # Optional name for debugging
 
 
 # Type alias for lifespan context manager
-LifespanCallable = Callable[[Any], AbstractAsyncContextManager[None]]
+LifespanCallable = Callable[[FastAPI], AbstractAsyncContextManager[None]]
 
 
 @dataclass
@@ -101,9 +102,7 @@ class LifespanDefinition:
 class RequestCallbackDefinition:
     """Definition for request callback (runs before each request handler)."""
 
-    callback: Callable[
-        [Any], Awaitable[None]
-    ]  # async def callback(request: Request) -> None
+    callback: Callable[[Request], Awaitable[None]]
     name: str | None = None
 
 
@@ -111,9 +110,7 @@ class RequestCallbackDefinition:
 class ResponseCallbackDefinition:
     """Definition for response callback (runs after each request handler)."""
 
-    callback: Callable[
-        [Any, Any], Awaitable[Any]
-    ]  # async def callback(request, response) -> response
+    callback: Callable[[Request, Response], Awaitable[Response]]
     name: str | None = None
 
 
@@ -121,15 +118,13 @@ class ResponseCallbackDefinition:
 class ExceptionCallbackDefinition:
     """Definition for exception callback (runs when unhandled exceptions occur)."""
 
-    callback: Callable[
-        [Any, Exception], Awaitable[None]
-    ]  # async def callback(request, exc) -> None
+    callback: Callable[[Request, Exception], Awaitable[None]]
     name: str | None = None
 
 
 async def _run_exception_callbacks(
     exception_callbacks: list[ExceptionCallbackDefinition],
-    request: Any,
+    request: Request,
     exc: Exception,
 ) -> None:
     """Run exception callbacks, logging errors but not raising."""
@@ -148,8 +143,6 @@ def _create_callback_middleware(
 ) -> type:
     """Create a middleware class for request/response/exception callbacks."""
     from starlette.middleware.base import BaseHTTPMiddleware
-    from starlette.requests import Request
-    from starlette.responses import Response
 
     class CallbackMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Response:
@@ -287,8 +280,9 @@ class FastAPIAdapter:
         if ipc_channel is not None:
             app.state.ipc_channel = ipc_channel
 
-        self._configure_middleware(app)
+        # Callback middleware added first = runs innermost (after CORS/user middleware, LIFO order)
         self._configure_request_response_middleware(app)
+        self._configure_middleware(app)
         self._configure_exception_handlers(app)
         self._configure_routes(app)
         self._configure_routers(app)

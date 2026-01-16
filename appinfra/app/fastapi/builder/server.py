@@ -5,7 +5,12 @@ from __future__ import annotations
 import multiprocessing as mp
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+    from starlette.requests import Request
+    from starlette.responses import Response
 
 from ..config.api import ApiConfig
 from ..config.ipc import IPCConfig
@@ -181,7 +186,7 @@ class ServerBuilder:
 
     def with_on_startup(
         self,
-        callback: Callable[[Any], Awaitable[None]],
+        callback: Callable[[FastAPI], Awaitable[None]],
         name: str | None = None,
     ) -> ServerBuilder:
         """
@@ -207,7 +212,7 @@ class ServerBuilder:
 
     def with_on_shutdown(
         self,
-        callback: Callable[[Any], Awaitable[None]],
+        callback: Callable[[FastAPI], Awaitable[None]],
         name: str | None = None,
     ) -> ServerBuilder:
         """
@@ -233,7 +238,7 @@ class ServerBuilder:
 
     def with_lifespan(
         self,
-        lifespan: Callable[[Any], AbstractAsyncContextManager[None]],
+        lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]],
     ) -> ServerBuilder:
         """
         Register a lifespan context manager.
@@ -260,7 +265,7 @@ class ServerBuilder:
 
     def with_on_request(
         self,
-        callback: Callable[[Any], Awaitable[None]],
+        callback: Callable[[Request], Awaitable[None]],
         name: str | None = None,
     ) -> ServerBuilder:
         """
@@ -291,7 +296,7 @@ class ServerBuilder:
 
     def with_on_response(
         self,
-        callback: Callable[[Any, Any], Awaitable[Any]],
+        callback: Callable[[Request, Response], Awaitable[Response]],
         name: str | None = None,
     ) -> ServerBuilder:
         """
@@ -319,7 +324,7 @@ class ServerBuilder:
 
     def with_on_exception(
         self,
-        callback: Callable[[Any, Exception], Awaitable[None]],
+        callback: Callable[[Request, Exception], Awaitable[None]],
         name: str | None = None,
     ) -> ServerBuilder:
         """
