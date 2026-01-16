@@ -37,18 +37,6 @@ def _get_real_fastapi():
         sys.path = original_path
 
 
-def _is_fastapi_shadowed():
-    """Check if fastapi package is shadowed by test directory."""
-    import sys
-
-    # Check if the fastapi module location suggests shadowing
-    if "fastapi" in sys.modules:
-        fastapi_path = getattr(sys.modules["fastapi"], "__file__", "")
-        if "tests/infra/app" in fastapi_path:
-            return True
-    return False
-
-
 # Skip entire module if FastAPI is shadowed (happens in xdist workers)
 def _check_module_requirements():
     """Check requirements at module load time."""
@@ -171,7 +159,7 @@ class TestFastAPIIPCWithLifecycleCallbacks:
 
         try:
             # Start the subprocess
-            proc = server.start_subprocess()
+            server.start_subprocess()
 
             # Wait for server to be ready (poll the /ping endpoint)
             ready = False
@@ -265,7 +253,7 @@ class TestFastAPIIPCWithLifecycleCallbacks:
 
         try:
             # Start the subprocess
-            proc = server.start_subprocess()
+            server.start_subprocess()
 
             # Wait for server to be ready
             ready = False

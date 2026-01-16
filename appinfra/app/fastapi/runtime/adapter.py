@@ -359,9 +359,8 @@ class FastAPIAdapter:
         """
         Wrap a lifespan with IPC channel start/stop.
 
-        IPC polling is started after user startup completes and stopped
-        before user shutdown runs. This ensures IPC is available during
-        both user startup and shutdown callbacks.
+        IPC polling is started before user startup so it's available during
+        user callbacks. IPC is stopped after user shutdown completes.
         """
 
         @asynccontextmanager
