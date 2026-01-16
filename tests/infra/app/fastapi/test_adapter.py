@@ -759,3 +759,70 @@ class TestLifecycleCallbackExecution:
             await middleware.dispatch(mock_request, mock_call_next)
 
         assert called == [("exception", "test error")]
+
+    @pytest.mark.asyncio
+    async def test_startup_callback_failure_wraps_exception(self):
+        """Test that startup callback failure wraps exception with context."""
+        from appinfra.app.fastapi.runtime.adapter import (
+            FastAPIAdapter,
+            LifecycleCallbackDefinition,
+        )
+
+        async def failing_startup(app):
+            raise ValueError("db connection failed")
+
+        with (
+            patch("appinfra.app.fastapi.runtime.adapter.FASTAPI_AVAILABLE", True),
+            patch("appinfra.app.fastapi.runtime.adapter.FastAPI"),
+            patch("appinfra.app.fastapi.runtime.adapter.CORSMiddleware"),
+        ):
+            adapter = FastAPIAdapter(ApiConfig())
+            adapter.add_startup_callback(
+                LifecycleCallbackDefinition(callback=failing_startup, name="init_db")
+            )
+
+            lifespan = adapter._create_lifespan_from_callbacks()
+
+            mock_app = MagicMock()
+            with pytest.raises(RuntimeError, match="Startup callback 'init_db' failed"):
+                async with lifespan(mock_app):
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_shutdown_callbacks_continue_on_failure(self):
+        """Test that shutdown callbacks continue even if one fails."""
+        from appinfra.app.fastapi.runtime.adapter import (
+            FastAPIAdapter,
+            LifecycleCallbackDefinition,
+        )
+
+        called = []
+
+        async def failing_shutdown(app):
+            called.append("failing")
+            raise ValueError("cleanup failed")
+
+        async def second_shutdown(app):
+            called.append("second")
+
+        with (
+            patch("appinfra.app.fastapi.runtime.adapter.FASTAPI_AVAILABLE", True),
+            patch("appinfra.app.fastapi.runtime.adapter.FastAPI"),
+            patch("appinfra.app.fastapi.runtime.adapter.CORSMiddleware"),
+        ):
+            adapter = FastAPIAdapter(ApiConfig())
+            adapter.add_shutdown_callback(
+                LifecycleCallbackDefinition(callback=failing_shutdown, name="cleanup")
+            )
+            adapter.add_shutdown_callback(
+                LifecycleCallbackDefinition(callback=second_shutdown, name="second")
+            )
+
+            lifespan = adapter._create_lifespan_from_callbacks()
+
+            mock_app = MagicMock()
+            async with lifespan(mock_app):
+                pass
+
+            # Both callbacks should have run despite the first one failing
+            assert called == ["failing", "second"]

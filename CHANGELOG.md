@@ -10,6 +10,17 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Added
+- Lifecycle callback support for FastAPI ServerBuilder:
+  - `with_on_startup(callback)` - Run async callbacks when app starts
+  - `with_on_shutdown(callback)` - Run async callbacks when app shuts down (continues on errors)
+  - `with_lifespan(context_manager)` - Use FastAPI's modern lifespan pattern
+  - `with_on_request(callback)` - Run callbacks before each request
+  - `with_on_response(callback)` - Run callbacks after each request (can modify response)
+  - `with_on_exception(callback)` - Run callbacks on unhandled exceptions
+- Startup callback failures now include callback name in error message for easier debugging
+- Shutdown callbacks continue executing even if earlier callbacks fail (errors are logged)
+
 ## [0.3.0] - 2026-01-15
 
 ### Added

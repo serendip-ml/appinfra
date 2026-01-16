@@ -313,12 +313,18 @@ class FastAPIAdapter:
             for cb in startup_callbacks:
                 name = cb.name or cb.callback.__name__
                 logger.debug(f"Running startup callback: {name}")
-                await cb.callback(app)
+                try:
+                    await cb.callback(app)
+                except Exception as e:
+                    raise RuntimeError(f"Startup callback '{name}' failed") from e
             yield
             for cb in shutdown_callbacks:
                 name = cb.name or cb.callback.__name__
                 logger.debug(f"Running shutdown callback: {name}")
-                await cb.callback(app)
+                try:
+                    await cb.callback(app)
+                except Exception:
+                    logger.exception(f"Error in shutdown callback '{name}'")
 
         return lifespan
 

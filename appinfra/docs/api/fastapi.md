@@ -158,6 +158,78 @@ server = (ServerBuilder("myapi")
     .build())
 ```
 
+### Lifecycle Callbacks
+
+Register callbacks for application lifecycle events:
+
+```python
+from contextlib import asynccontextmanager
+
+# Startup/shutdown callbacks
+async def init_db(app):
+    app.state.db = await create_db_pool()
+
+async def close_db(app):
+    await app.state.db.close()
+
+server = (ServerBuilder("myapi")
+    .with_on_startup(init_db, name="init_db")
+    .with_on_shutdown(close_db, name="close_db")
+    .build())
+```
+
+Or use FastAPI's modern lifespan pattern:
+
+```python
+@asynccontextmanager
+async def lifespan(app):
+    # Startup
+    app.state.db = await create_db_pool()
+    yield
+    # Shutdown
+    await app.state.db.close()
+
+server = (ServerBuilder("myapi")
+    .with_lifespan(lifespan)
+    .build())
+```
+
+**Note:** If both `with_lifespan()` and startup/shutdown callbacks are set, the lifespan takes
+precedence and callbacks are ignored (with a warning).
+
+#### Request/Response Callbacks
+
+Run callbacks on every request:
+
+```python
+async def log_request(request):
+    logger.info(f"{request.method} {request.url}")
+
+async def add_headers(request, response):
+    response.headers["X-Request-ID"] = str(uuid4())
+    return response  # Must return response
+
+async def log_error(request, exc):
+    logger.error(f"Error handling {request.url}: {exc}")
+
+server = (ServerBuilder("myapi")
+    .with_on_request(log_request)
+    .with_on_response(add_headers)
+    .with_on_exception(log_error)
+    .build())
+```
+
+**Note:** Due to BaseHTTPMiddleware limitations, reading the request body in `with_on_request`
+callbacks (via `request.body()` or `request.json()`) will prevent the route handler from reading it
+again. For body access, use custom middleware via `routes.with_middleware()` instead.
+
+#### Error Handling
+
+- **Startup failures:** Wrapped with callback name for debugging:
+  `RuntimeError("Startup callback 'init_db' failed")`
+- **Shutdown failures:** Logged but don't prevent other callbacks from running. All shutdown
+  callbacks execute even if earlier ones fail.
+
 ### Uvicorn Configuration
 
 Access via `.uvicorn`:

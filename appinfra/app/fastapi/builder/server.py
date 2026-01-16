@@ -269,6 +269,11 @@ class ServerBuilder:
         The callback runs before each request handler is invoked.
         Useful for logging, authentication checks, or request modification.
 
+        Note: Due to BaseHTTPMiddleware limitations, reading the request body
+        (via request.body() or request.json()) in this callback will prevent
+        the route handler from reading it again. For body access, use custom
+        middleware via routes.with_middleware() instead.
+
         Args:
             callback: Async function with signature `async def callback(request: Request) -> None`
             name: Optional name for debugging/logging
