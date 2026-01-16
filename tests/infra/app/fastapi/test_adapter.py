@@ -955,3 +955,36 @@ class TestLifecycleCallbackExecution:
 
         # Both exception callbacks should have been called despite first one failing
         assert called == ["failing_cb", "second_cb"]
+
+    @pytest.mark.asyncio
+    async def test_response_callback_returning_none_raises_error(self):
+        """Test that response callback returning None raises clear error."""
+        from appinfra.app.fastapi.runtime.adapter import (
+            ResponseCallbackDefinition,
+            _create_callback_middleware,
+        )
+
+        async def bad_callback(request, response):
+            # Forgot to return response!
+            pass
+
+        middleware_cls = _create_callback_middleware(
+            request_callbacks=[],
+            response_callbacks=[
+                ResponseCallbackDefinition(callback=bad_callback, name="bad_cb")
+            ],
+            exception_callbacks=[],
+        )
+
+        mock_app = MagicMock()
+        middleware = middleware_cls(mock_app)
+        mock_request = MagicMock()
+        mock_response = MagicMock()
+
+        async def mock_call_next(req):
+            return mock_response
+
+        with pytest.raises(
+            RuntimeError, match="Response callback 'bad_cb' returned None"
+        ):
+            await middleware.dispatch(mock_request, mock_call_next)

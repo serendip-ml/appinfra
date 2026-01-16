@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..config.api import ApiConfig
 
@@ -143,6 +143,7 @@ def _create_callback_middleware(
 ) -> type:
     """Create a middleware class for request/response/exception callbacks."""
     from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import Response as ResponseType
 
     class CallbackMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Response:
@@ -158,12 +159,16 @@ def _create_callback_middleware(
                 await _run_exception_callbacks(exception_callbacks, request, exc)
                 raise
             for resp_cb in response_callbacks:
+                name = resp_cb.name or resp_cb.callback.__name__
                 try:
                     response = await resp_cb.callback(request, response)
                 except Exception as e:
-                    name = resp_cb.name or resp_cb.callback.__name__
                     raise RuntimeError(f"Response callback '{name}' failed") from e
-            return response  # type: ignore[return-value,no-any-return]
+                if response is None:
+                    raise RuntimeError(
+                        f"Response callback '{name}' returned None (must return Response)"
+                    )
+            return cast(ResponseType, response)
 
     return CallbackMiddleware
 
