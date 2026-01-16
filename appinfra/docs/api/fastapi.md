@@ -229,12 +229,13 @@ Request/response callbacks run **inside** custom middleware (added via `routes.w
 This means callbacks have access to state set by your middleware:
 
 ```
-Request flow:  CORS → custom middleware → request callbacks → route handler
-Response flow: route handler → response callbacks → custom middleware → CORS
+Request flow:  custom middleware → CORS → request callbacks → route handler
+Response flow: route handler → response callbacks → CORS → custom middleware
 ```
 
-This allows request callbacks to access authentication state, user context, or other values injected
-by your middleware.
+Due to Starlette's LIFO (Last In, First Out) middleware ordering, custom middleware (added last)
+runs first on requests. This allows request callbacks to access authentication state, user context,
+or other values injected by your middleware.
 
 #### Error Handling
 

@@ -628,9 +628,9 @@ class TestServerBuilderLifecycleCallbacks:
 
         with (
             patch("appinfra.app.fastapi.builder.server.FastAPIAdapter") as mock_adapter,
-            patch("appinfra.app.fastapi.builder.server.Server") as mock_server,
+            patch("appinfra.app.fastapi.builder.server.Server"),
         ):
-            server = builder.build()
+            builder.build()
 
             # Verify adapter methods were called
             adapter = mock_adapter.return_value
