@@ -225,3 +225,179 @@ class TestMainToolWorkflow:
         assert tool.captured_port == 4000
         assert app.config.logging.level == "debug"
         assert result == 0
+
+
+@pytest.mark.e2e
+class TestMainToolPositionalArgsConflict:
+    """
+    E2E tests for positional argument conflict resolution.
+
+    When main tool and subcommands both have positional arguments,
+    subcommand positional args should not be consumed by the main tool's
+    positional args at the root parser level.
+    """
+
+    def test_subcommand_positional_not_consumed_by_main_tool(self):
+        """Test subcommand's positional arg is not consumed by main tool."""
+
+        class ProcessTool(Tool):
+            """Main tool with positional argument."""
+
+            def __init__(self, parent=None):
+                super().__init__(
+                    parent,
+                    ToolConfig(name="process", aliases=["p"], help_text="Process data"),
+                )
+                self.captured_target = None
+                self.run_called = False
+
+            def add_args(self, parser):
+                parser.add_argument("target", nargs="?", help="Target to process")
+                parser.add_argument("--verbose", action="store_true")
+
+            def run(self, **kwargs):
+                self.run_called = True
+                self.captured_target = getattr(self.args, "target", None)
+                return 0
+
+        class AnalyzeTool(Tool):
+            """Subcommand with its own positional argument."""
+
+            def __init__(self, parent=None):
+                super().__init__(
+                    parent,
+                    ToolConfig(name="analyze", aliases=["a"], help_text="Analyze data"),
+                )
+                self.captured_filename = None
+                self.run_called = False
+
+            def add_args(self, parser):
+                parser.add_argument("filename", help="File to analyze")
+                parser.add_argument("--deep", action="store_true")
+
+            def run(self, **kwargs):
+                self.run_called = True
+                self.captured_filename = self.args.filename
+                return 0
+
+        process_tool = ProcessTool()
+        analyze_tool = AnalyzeTool()
+
+        app = (
+            AppBuilder("cli")
+            .without_standard_args()
+            .tools.with_tool(process_tool)
+            .with_tool(analyze_tool)
+            .done()
+            .with_main_tool("process")
+            .build()
+        )
+
+        # Key test: "analyze" should be recognized as subcommand,
+        # "/tmp/data.csv" should go to AnalyzeTool's filename arg
+        with patch.object(sys, "argv", ["cli", "analyze", "/tmp/data.csv"]):
+            app.setup()
+            result = app.run()
+
+        assert analyze_tool.run_called
+        assert analyze_tool.captured_filename == "/tmp/data.csv"
+        assert not process_tool.run_called
+        assert result == 0
+
+    def test_main_tool_optional_args_still_hoisted(self):
+        """Test main tool's optional args work at root level."""
+
+        class ProcessTool(Tool):
+            def __init__(self, parent=None):
+                super().__init__(
+                    parent,
+                    ToolConfig(name="process", help_text="Process data"),
+                )
+                self.captured_verbose = None
+                self.run_called = False
+
+            def add_args(self, parser):
+                parser.add_argument("target", nargs="?", help="Target to process")
+                parser.add_argument("--verbose", action="store_true")
+
+            def run(self, **kwargs):
+                self.run_called = True
+                self.captured_verbose = self.args.verbose
+                return 0
+
+        tool = ProcessTool()
+        app = (
+            AppBuilder("cli")
+            .without_standard_args()
+            .tools.with_tool(tool)
+            .done()
+            .with_main_tool("process")
+            .build()
+        )
+
+        # Optional args from main tool should work without subcommand
+        with patch.object(sys, "argv", ["cli", "--verbose"]):
+            app.setup()
+            result = app.run()
+
+        assert tool.run_called
+        assert tool.captured_verbose is True
+        assert result == 0
+
+    def test_subcommand_with_multiple_positional_args(self):
+        """Test subcommand with multiple positional args works correctly."""
+
+        class MainTool(Tool):
+            def __init__(self, parent=None):
+                super().__init__(parent, ToolConfig(name="main", help_text="Main tool"))
+                self.run_called = False
+
+            def add_args(self, parser):
+                parser.add_argument("input", nargs="?", help="Input")
+
+            def run(self, **kwargs):
+                self.run_called = True
+                return 0
+
+        class CopyTool(Tool):
+            def __init__(self, parent=None):
+                super().__init__(
+                    parent, ToolConfig(name="copy", help_text="Copy files")
+                )
+                self.captured_src = None
+                self.captured_dst = None
+                self.run_called = False
+
+            def add_args(self, parser):
+                parser.add_argument("src", help="Source path")
+                parser.add_argument("dst", help="Destination path")
+
+            def run(self, **kwargs):
+                self.run_called = True
+                self.captured_src = self.args.src
+                self.captured_dst = self.args.dst
+                return 0
+
+        main_tool = MainTool()
+        copy_tool = CopyTool()
+
+        app = (
+            AppBuilder("cli")
+            .without_standard_args()
+            .tools.with_tool(main_tool)
+            .with_tool(copy_tool)
+            .done()
+            .with_main_tool("main")
+            .build()
+        )
+
+        # Both positional args should go to copy tool
+        with patch.object(sys, "argv", ["cli", "copy", "/src/file", "/dst/file"]):
+            app.setup()
+            result = app.run()
+
+        assert copy_tool.run_called
+        assert copy_tool.captured_src == "/src/file"
+        assert copy_tool.captured_dst == "/dst/file"
+        assert not main_tool.run_called
+        assert result == 0

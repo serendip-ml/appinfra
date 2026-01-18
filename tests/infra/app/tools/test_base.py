@@ -319,6 +319,199 @@ class TestToolArgPrsProperty:
 
 
 # =============================================================================
+# Test _PositionalFilteringParser
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestPositionalFilteringParser:
+    """Test _PositionalFilteringParser wrapper."""
+
+    def test_adds_optional_arguments(self):
+        """Test adds arguments starting with dash."""
+        from appinfra.app.tools.base import _PositionalFilteringParser
+
+        parser = argparse.ArgumentParser()
+        wrapper = _PositionalFilteringParser(parser)
+
+        wrapper.add_argument("--verbose", action="store_true")
+        wrapper.add_argument("-p", "--port", type=int)
+
+        # Parse to verify args were added
+        ns = parser.parse_args(["--verbose", "--port", "8080"])
+        assert ns.verbose is True
+        assert ns.port == 8080
+
+    def test_skips_positional_arguments(self):
+        """Test skips arguments not starting with dash (positional)."""
+        from appinfra.app.tools.base import _PositionalFilteringParser
+
+        parser = argparse.ArgumentParser()
+        wrapper = _PositionalFilteringParser(parser)
+
+        result = wrapper.add_argument("filename", help="Input file")
+        wrapper.add_argument("--verbose", action="store_true")
+
+        assert result is None  # Positional was skipped
+
+        # Parser should only have --verbose, not filename
+        ns = parser.parse_args(["--verbose"])
+        assert ns.verbose is True
+        assert not hasattr(ns, "filename")
+
+    def test_delegates_add_argument_group(self):
+        """Test delegates add_argument_group and filters positionals in group."""
+        from appinfra.app.tools.base import _PositionalFilteringParser
+
+        parser = argparse.ArgumentParser()
+        wrapper = _PositionalFilteringParser(parser)
+
+        group = wrapper.add_argument_group("Options")
+        group.add_argument("--test", help="Test arg")
+        result = group.add_argument("positional", help="Should be skipped")
+
+        assert result is None  # Positional was skipped
+        ns = parser.parse_args(["--test", "value"])
+        assert ns.test == "value"
+        assert not hasattr(ns, "positional")
+
+    def test_delegates_add_mutually_exclusive_group(self):
+        """Test delegates add_mutually_exclusive_group and filters positionals."""
+        from appinfra.app.tools.base import _PositionalFilteringParser
+
+        parser = argparse.ArgumentParser()
+        wrapper = _PositionalFilteringParser(parser)
+
+        group = wrapper.add_mutually_exclusive_group()
+        group.add_argument("--a", action="store_true")
+        group.add_argument("--b", action="store_true")
+
+        ns = parser.parse_args(["--a"])
+        assert ns.a is True
+        assert ns.b is False
+
+    def test_delegates_unknown_attributes_via_getattr(self):
+        """Test delegates unknown attributes to underlying parser."""
+        from appinfra.app.tools.base import _PositionalFilteringParser
+
+        parser = argparse.ArgumentParser(description="Test parser")
+        wrapper = _PositionalFilteringParser(parser)
+
+        # Access attributes that exist on the underlying parser
+        assert wrapper.description == "Test parser"
+
+        # Access methods that exist on the underlying parser
+        wrapper.set_defaults(foo="bar")
+        ns = parser.parse_args([])
+        assert ns.foo == "bar"
+
+
+# =============================================================================
+# Test _PositionalFilteringGroup
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestPositionalFilteringGroup:
+    """Test _PositionalFilteringGroup wrapper."""
+
+    def test_adds_optional_arguments(self):
+        """Test adds arguments starting with dash."""
+        from appinfra.app.tools.base import _PositionalFilteringGroup
+
+        parser = argparse.ArgumentParser()
+        raw_group = parser.add_argument_group("Options")
+        wrapper = _PositionalFilteringGroup(raw_group)
+
+        wrapper.add_argument("--verbose", action="store_true")
+        wrapper.add_argument("-p", "--port", type=int)
+
+        ns = parser.parse_args(["--verbose", "--port", "8080"])
+        assert ns.verbose is True
+        assert ns.port == 8080
+
+    def test_skips_positional_arguments(self):
+        """Test skips arguments not starting with dash (positional)."""
+        from appinfra.app.tools.base import _PositionalFilteringGroup
+
+        parser = argparse.ArgumentParser()
+        raw_group = parser.add_argument_group("Options")
+        wrapper = _PositionalFilteringGroup(raw_group)
+
+        result = wrapper.add_argument("filename", help="Input file")
+        wrapper.add_argument("--verbose", action="store_true")
+
+        assert result is None  # Positional was skipped
+
+        ns = parser.parse_args(["--verbose"])
+        assert ns.verbose is True
+        assert not hasattr(ns, "filename")
+
+    def test_delegates_unknown_attributes(self):
+        """Test delegates unknown attributes to underlying group."""
+        from appinfra.app.tools.base import _PositionalFilteringGroup
+
+        parser = argparse.ArgumentParser()
+        raw_group = parser.add_argument_group("TestGroup")
+        wrapper = _PositionalFilteringGroup(raw_group)
+
+        # Access title attribute from underlying group
+        assert wrapper.title == "TestGroup"
+
+    def test_nested_groups_also_filter_positionals(self):
+        """Test nested argument groups maintain positional filtering."""
+        import warnings
+
+        from appinfra.app.tools.base import _PositionalFilteringGroup
+
+        parser = argparse.ArgumentParser()
+        raw_group = parser.add_argument_group("Outer")
+        wrapper = _PositionalFilteringGroup(raw_group)
+
+        # Nested groups are deprecated but still allowed - suppress warning
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            nested = wrapper.add_argument_group("Nested")
+
+        # Nested group should also be wrapped
+        assert isinstance(nested, _PositionalFilteringGroup)
+
+        # Add args to nested group - positional should be skipped
+        result = nested.add_argument("positional", help="Should be skipped")
+        nested.add_argument("--opt", help="Should be added")
+
+        assert result is None  # Positional was skipped
+        ns = parser.parse_args(["--opt", "value"])
+        assert ns.opt == "value"
+        assert not hasattr(ns, "positional")
+
+    def test_mutually_exclusive_group_filters_positionals(self):
+        """Test mutually exclusive groups within argument groups filter positionals."""
+        from appinfra.app.tools.base import _PositionalFilteringGroup
+
+        parser = argparse.ArgumentParser()
+        raw_group = parser.add_argument_group("Options")
+        wrapper = _PositionalFilteringGroup(raw_group)
+
+        # Create mutually exclusive group from within argument group
+        mutex = wrapper.add_mutually_exclusive_group()
+
+        # Should be wrapped
+        assert isinstance(mutex, _PositionalFilteringGroup)
+
+        # Add positional - should be skipped
+        result = mutex.add_argument("positional", nargs="?", help="Should be skipped")
+        mutex.add_argument("--opt-a", action="store_true")
+        mutex.add_argument("--opt-b", action="store_true")
+
+        assert result is None  # Positional was skipped
+        ns = parser.parse_args(["--opt-a"])
+        assert ns.opt_a is True
+        assert ns.opt_b is False
+        assert not hasattr(ns, "positional")
+
+
+# =============================================================================
 # Test set_args Method
 # =============================================================================
 
@@ -361,6 +554,48 @@ class TestToolSetArgs:
         mock_group.add_tool_args.assert_called_once_with(parser)
         tool.add_group_args.assert_called_once()
         mock_group.finalize_args.assert_called_once_with(parser)
+
+    def test_skip_positional_uses_filtering_wrapper(self):
+        """Test skip_positional=True uses _PositionalFilteringParser."""
+
+        class ToolWithPositional(Tool):
+            def _create_config(self):
+                return ToolConfig(name="test")
+
+            def add_args(self, parser):
+                parser.add_argument("target", help="Target path")
+                parser.add_argument("--verbose", action="store_true")
+
+        tool = ToolWithPositional()
+        parser = argparse.ArgumentParser()
+
+        tool.set_args(parser, skip_positional=True)
+
+        # Parser should only have --verbose, not target
+        ns = parser.parse_args(["--verbose"])
+        assert ns.verbose is True
+        assert not hasattr(ns, "target")
+
+    def test_skip_positional_false_adds_all_args(self):
+        """Test skip_positional=False (default) adds all args including positional."""
+
+        class ToolWithPositional(Tool):
+            def _create_config(self):
+                return ToolConfig(name="test")
+
+            def add_args(self, parser):
+                parser.add_argument("target", help="Target path")
+                parser.add_argument("--verbose", action="store_true")
+
+        tool = ToolWithPositional()
+        parser = argparse.ArgumentParser()
+
+        tool.set_args(parser, skip_positional=False)
+
+        # Parser should have both target and --verbose
+        ns = parser.parse_args(["/tmp/file", "--verbose"])
+        assert ns.target == "/tmp/file"
+        assert ns.verbose is True
 
 
 # =============================================================================

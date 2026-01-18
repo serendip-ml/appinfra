@@ -44,8 +44,10 @@ class CommandHandler:
         if self.application._main_tool:
             main_tool = self.application.registry.get_tool(self.application._main_tool)
             if main_tool:
-                # Add main tool's args to root parser so they work without subcommand
-                main_tool.set_args(self.application.parser.parser)
+                # Add main tool's args to root parser so they work without subcommand.
+                # Skip positional args to avoid conflict with subcommand parsing -
+                # positional args on root would be consumed before the subcommand name.
+                main_tool.set_args(self.application.parser.parser, skip_positional=True)
             self.application.parser.parser.set_defaults(
                 tool=self.application._main_tool
             )
