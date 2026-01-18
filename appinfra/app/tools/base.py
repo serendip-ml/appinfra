@@ -88,6 +88,14 @@ class _PositionalFilteringGroup:
             self._group.add_argument_group(*args, **kwargs)
         )
 
+    def add_mutually_exclusive_group(
+        self, *args: Any, **kwargs: Any
+    ) -> _PositionalFilteringGroup:
+        """Wrap mutually exclusive groups to maintain positional filtering."""
+        return _PositionalFilteringGroup(
+            self._group.add_mutually_exclusive_group(*args, **kwargs)
+        )
+
     def __getattr__(self, name: str) -> Any:
         """Delegate unknown attributes to underlying group."""
         return getattr(self._group, name)

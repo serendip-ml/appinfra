@@ -485,6 +485,31 @@ class TestPositionalFilteringGroup:
         assert ns.opt == "value"
         assert not hasattr(ns, "positional")
 
+    def test_mutually_exclusive_group_filters_positionals(self):
+        """Test mutually exclusive groups within argument groups filter positionals."""
+        from appinfra.app.tools.base import _PositionalFilteringGroup
+
+        parser = argparse.ArgumentParser()
+        raw_group = parser.add_argument_group("Options")
+        wrapper = _PositionalFilteringGroup(raw_group)
+
+        # Create mutually exclusive group from within argument group
+        mutex = wrapper.add_mutually_exclusive_group()
+
+        # Should be wrapped
+        assert isinstance(mutex, _PositionalFilteringGroup)
+
+        # Add positional - should be skipped
+        result = mutex.add_argument("positional", nargs="?", help="Should be skipped")
+        mutex.add_argument("--opt-a", action="store_true")
+        mutex.add_argument("--opt-b", action="store_true")
+
+        assert result is None  # Positional was skipped
+        ns = parser.parse_args(["--opt-a"])
+        assert ns.opt_a is True
+        assert ns.opt_b is False
+        assert not hasattr(ns, "positional")
+
 
 # =============================================================================
 # Test set_args Method
