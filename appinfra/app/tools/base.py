@@ -56,6 +56,10 @@ class _PositionalFilteringParser:
         """Delegate to underlying parser."""
         return self._parser.add_mutually_exclusive_group(*args, **kwargs)
 
+    def __getattr__(self, name: str) -> Any:
+        """Delegate unknown attributes to underlying parser."""
+        return getattr(self._parser, name)
+
 
 @dataclass
 class ToolConfig:

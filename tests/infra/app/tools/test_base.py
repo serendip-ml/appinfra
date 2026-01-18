@@ -387,6 +387,21 @@ class TestPositionalFilteringParser:
         assert ns.a is True
         assert ns.b is False
 
+    def test_delegates_unknown_attributes_via_getattr(self):
+        """Test delegates unknown attributes to underlying parser."""
+        from appinfra.app.tools.base import _PositionalFilteringParser
+
+        parser = argparse.ArgumentParser(description="Test parser")
+        wrapper = _PositionalFilteringParser(parser)
+
+        # Access attributes that exist on the underlying parser
+        assert wrapper.description == "Test parser"
+
+        # Access methods that exist on the underlying parser
+        wrapper.set_defaults(foo="bar")
+        ns = parser.parse_args([])
+        assert ns.foo == "bar"
+
 
 # =============================================================================
 # Test set_args Method
