@@ -319,6 +319,76 @@ class TestToolArgPrsProperty:
 
 
 # =============================================================================
+# Test _PositionalFilteringParser
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestPositionalFilteringParser:
+    """Test _PositionalFilteringParser wrapper."""
+
+    def test_adds_optional_arguments(self):
+        """Test adds arguments starting with dash."""
+        from appinfra.app.tools.base import _PositionalFilteringParser
+
+        parser = argparse.ArgumentParser()
+        wrapper = _PositionalFilteringParser(parser)
+
+        wrapper.add_argument("--verbose", action="store_true")
+        wrapper.add_argument("-p", "--port", type=int)
+
+        # Parse to verify args were added
+        ns = parser.parse_args(["--verbose", "--port", "8080"])
+        assert ns.verbose is True
+        assert ns.port == 8080
+
+    def test_skips_positional_arguments(self):
+        """Test skips arguments not starting with dash (positional)."""
+        from appinfra.app.tools.base import _PositionalFilteringParser
+
+        parser = argparse.ArgumentParser()
+        wrapper = _PositionalFilteringParser(parser)
+
+        result = wrapper.add_argument("filename", help="Input file")
+        wrapper.add_argument("--verbose", action="store_true")
+
+        assert result is None  # Positional was skipped
+
+        # Parser should only have --verbose, not filename
+        ns = parser.parse_args(["--verbose"])
+        assert ns.verbose is True
+        assert not hasattr(ns, "filename")
+
+    def test_delegates_add_argument_group(self):
+        """Test delegates add_argument_group to underlying parser."""
+        from appinfra.app.tools.base import _PositionalFilteringParser
+
+        parser = argparse.ArgumentParser()
+        wrapper = _PositionalFilteringParser(parser)
+
+        group = wrapper.add_argument_group("Options")
+        group.add_argument("--test", help="Test arg")
+
+        ns = parser.parse_args(["--test", "value"])
+        assert ns.test == "value"
+
+    def test_delegates_add_mutually_exclusive_group(self):
+        """Test delegates add_mutually_exclusive_group to underlying parser."""
+        from appinfra.app.tools.base import _PositionalFilteringParser
+
+        parser = argparse.ArgumentParser()
+        wrapper = _PositionalFilteringParser(parser)
+
+        group = wrapper.add_mutually_exclusive_group()
+        group.add_argument("--a", action="store_true")
+        group.add_argument("--b", action="store_true")
+
+        ns = parser.parse_args(["--a"])
+        assert ns.a is True
+        assert ns.b is False
+
+
+# =============================================================================
 # Test set_args Method
 # =============================================================================
 
@@ -361,6 +431,48 @@ class TestToolSetArgs:
         mock_group.add_tool_args.assert_called_once_with(parser)
         tool.add_group_args.assert_called_once()
         mock_group.finalize_args.assert_called_once_with(parser)
+
+    def test_skip_positional_uses_filtering_wrapper(self):
+        """Test skip_positional=True uses _PositionalFilteringParser."""
+
+        class ToolWithPositional(Tool):
+            def _create_config(self):
+                return ToolConfig(name="test")
+
+            def add_args(self, parser):
+                parser.add_argument("target", help="Target path")
+                parser.add_argument("--verbose", action="store_true")
+
+        tool = ToolWithPositional()
+        parser = argparse.ArgumentParser()
+
+        tool.set_args(parser, skip_positional=True)
+
+        # Parser should only have --verbose, not target
+        ns = parser.parse_args(["--verbose"])
+        assert ns.verbose is True
+        assert not hasattr(ns, "target")
+
+    def test_skip_positional_false_adds_all_args(self):
+        """Test skip_positional=False (default) adds all args including positional."""
+
+        class ToolWithPositional(Tool):
+            def _create_config(self):
+                return ToolConfig(name="test")
+
+            def add_args(self, parser):
+                parser.add_argument("target", help="Target path")
+                parser.add_argument("--verbose", action="store_true")
+
+        tool = ToolWithPositional()
+        parser = argparse.ArgumentParser()
+
+        tool.set_args(parser, skip_positional=False)
+
+        # Parser should have both target and --verbose
+        ns = parser.parse_args(["/tmp/file", "--verbose"])
+        assert ns.target == "/tmp/file"
+        assert ns.verbose is True
 
 
 # =============================================================================

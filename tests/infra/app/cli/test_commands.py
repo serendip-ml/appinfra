@@ -128,8 +128,8 @@ class TestSetupSubcommands:
         handler = CommandHandler(app)
         handler.setup_subcommands()
 
-        # Should add main tool's args to root parser
-        main_tool.set_args.assert_any_call(app.parser.parser)
+        # Should add main tool's args to root parser (skip_positional=True)
+        main_tool.set_args.assert_any_call(app.parser.parser, skip_positional=True)
         # Should set defaults on root parser
         app.parser.parser.set_defaults.assert_called_once_with(tool="main")
 

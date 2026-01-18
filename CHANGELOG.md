@@ -28,6 +28,10 @@ For API stability guarantees and deprecation policy, see
   lifecycle callbacks with `.subprocess.with_ipc()` caused responses to never be delivered because
   FastAPI ignores `on_event()` handlers when a lifespan is present. IPC polling is now integrated
   directly into the adapter's lifespan context manager.
+- `with_main_tool()` no longer causes positional argument conflicts with subcommands. Previously,
+  main tool positional args were hoisted to the root parser, consuming arguments before the
+  subcommand name could be recognized (e.g., `./app query "file"` would fail because `"query"` was
+  consumed by the main tool's positional arg). Now only optional arguments are hoisted.
 
 ## [0.3.0] - 2026-01-15
 
