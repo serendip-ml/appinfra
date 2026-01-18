@@ -47,18 +47,42 @@ class _PositionalFilteringParser:
         return self._parser.add_argument(*args, **kwargs)
 
     def add_argument_group(self, *args: Any, **kwargs: Any) -> argparse._ArgumentGroup:
-        """Delegate to underlying parser."""
-        return self._parser.add_argument_group(*args, **kwargs)
+        """Delegate to underlying parser, wrapping result to filter positionals."""
+        group = self._parser.add_argument_group(*args, **kwargs)
+        return _PositionalFilteringGroup(group)  # type: ignore[return-value]
 
     def add_mutually_exclusive_group(
         self, *args: Any, **kwargs: Any
     ) -> argparse._MutuallyExclusiveGroup:
-        """Delegate to underlying parser."""
-        return self._parser.add_mutually_exclusive_group(*args, **kwargs)
+        """Delegate to underlying parser, wrapping result to filter positionals."""
+        group = self._parser.add_mutually_exclusive_group(*args, **kwargs)
+        return _PositionalFilteringGroup(group)  # type: ignore[return-value]
 
     def __getattr__(self, name: str) -> Any:
         """Delegate unknown attributes to underlying parser."""
         return getattr(self._parser, name)
+
+
+class _PositionalFilteringGroup:
+    """
+    Wrapper that filters out positional arguments from argument groups.
+
+    Used by _PositionalFilteringParser to ensure positional arguments cannot
+    bypass filtering by being added through argument groups.
+    """
+
+    def __init__(self, group: argparse._ArgumentGroup):
+        self._group = group
+
+    def add_argument(self, *args: Any, **kwargs: Any) -> argparse.Action | None:
+        """Add argument only if it's optional (starts with '-')."""
+        if args and not str(args[0]).startswith("-"):
+            return None
+        return self._group.add_argument(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate unknown attributes to underlying group."""
+        return getattr(self._group, name)
 
 
 @dataclass

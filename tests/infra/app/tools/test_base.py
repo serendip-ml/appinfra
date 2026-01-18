@@ -360,7 +360,7 @@ class TestPositionalFilteringParser:
         assert not hasattr(ns, "filename")
 
     def test_delegates_add_argument_group(self):
-        """Test delegates add_argument_group to underlying parser."""
+        """Test delegates add_argument_group and filters positionals in group."""
         from appinfra.app.tools.base import _PositionalFilteringParser
 
         parser = argparse.ArgumentParser()
@@ -368,12 +368,15 @@ class TestPositionalFilteringParser:
 
         group = wrapper.add_argument_group("Options")
         group.add_argument("--test", help="Test arg")
+        result = group.add_argument("positional", help="Should be skipped")
 
+        assert result is None  # Positional was skipped
         ns = parser.parse_args(["--test", "value"])
         assert ns.test == "value"
+        assert not hasattr(ns, "positional")
 
     def test_delegates_add_mutually_exclusive_group(self):
-        """Test delegates add_mutually_exclusive_group to underlying parser."""
+        """Test delegates add_mutually_exclusive_group and filters positionals."""
         from appinfra.app.tools.base import _PositionalFilteringParser
 
         parser = argparse.ArgumentParser()
@@ -401,6 +404,59 @@ class TestPositionalFilteringParser:
         wrapper.set_defaults(foo="bar")
         ns = parser.parse_args([])
         assert ns.foo == "bar"
+
+
+# =============================================================================
+# Test _PositionalFilteringGroup
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestPositionalFilteringGroup:
+    """Test _PositionalFilteringGroup wrapper."""
+
+    def test_adds_optional_arguments(self):
+        """Test adds arguments starting with dash."""
+        from appinfra.app.tools.base import _PositionalFilteringGroup
+
+        parser = argparse.ArgumentParser()
+        raw_group = parser.add_argument_group("Options")
+        wrapper = _PositionalFilteringGroup(raw_group)
+
+        wrapper.add_argument("--verbose", action="store_true")
+        wrapper.add_argument("-p", "--port", type=int)
+
+        ns = parser.parse_args(["--verbose", "--port", "8080"])
+        assert ns.verbose is True
+        assert ns.port == 8080
+
+    def test_skips_positional_arguments(self):
+        """Test skips arguments not starting with dash (positional)."""
+        from appinfra.app.tools.base import _PositionalFilteringGroup
+
+        parser = argparse.ArgumentParser()
+        raw_group = parser.add_argument_group("Options")
+        wrapper = _PositionalFilteringGroup(raw_group)
+
+        result = wrapper.add_argument("filename", help="Input file")
+        wrapper.add_argument("--verbose", action="store_true")
+
+        assert result is None  # Positional was skipped
+
+        ns = parser.parse_args(["--verbose"])
+        assert ns.verbose is True
+        assert not hasattr(ns, "filename")
+
+    def test_delegates_unknown_attributes(self):
+        """Test delegates unknown attributes to underlying group."""
+        from appinfra.app.tools.base import _PositionalFilteringGroup
+
+        parser = argparse.ArgumentParser()
+        raw_group = parser.add_argument_group("TestGroup")
+        wrapper = _PositionalFilteringGroup(raw_group)
+
+        # Access title attribute from underlying group
+        assert wrapper.title == "TestGroup"
 
 
 # =============================================================================
