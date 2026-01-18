@@ -80,6 +80,14 @@ class _PositionalFilteringGroup:
             return None
         return self._group.add_argument(*args, **kwargs)
 
+    def add_argument_group(
+        self, *args: Any, **kwargs: Any
+    ) -> _PositionalFilteringGroup:
+        """Wrap nested groups to maintain positional filtering."""
+        return _PositionalFilteringGroup(
+            self._group.add_argument_group(*args, **kwargs)
+        )
+
     def __getattr__(self, name: str) -> Any:
         """Delegate unknown attributes to underlying group."""
         return getattr(self._group, name)
