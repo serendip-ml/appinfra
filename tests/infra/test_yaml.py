@@ -1867,3 +1867,139 @@ outer:
         assert data["value"] == 42
         assert data["name"] == "app"
         assert source_map is not None
+
+
+class TestYAMLMergeKeys:
+    """Test YAML merge key (<<) support with anchors and aliases."""
+
+    def test_merge_key_without_source_tracking(self):
+        """Test basic merge key works without source tracking."""
+        content = """
+templates:
+  common: &common
+    setting1: value1
+    setting2: value2
+
+models:
+  model_a:
+    <<: *common
+    setting3: value3
+"""
+        from io import StringIO
+
+        result = load(StringIO(content), track_sources=False)
+        assert result["models"]["model_a"] == {
+            "setting1": "value1",
+            "setting2": "value2",
+            "setting3": "value3",
+        }
+
+    def test_merge_key_with_source_tracking(self):
+        """Test merge key works with source tracking enabled."""
+        content = """
+templates:
+  common: &common
+    setting1: value1
+    setting2: value2
+
+models:
+  model_a:
+    <<: *common
+    setting3: value3
+"""
+        from io import StringIO
+
+        result, source_map = load(StringIO(content), track_sources=True)
+        assert result["models"]["model_a"] == {
+            "setting1": "value1",
+            "setting2": "value2",
+            "setting3": "value3",
+        }
+        assert source_map is not None
+
+    def test_merge_key_override(self):
+        """Test that local keys override merged keys."""
+        content = """
+defaults: &defaults
+  adapter: postgres
+  host: localhost
+  port: 5432
+
+production:
+  <<: *defaults
+  host: prod-server
+"""
+        from io import StringIO
+
+        result, _ = load(StringIO(content), track_sources=True)
+        assert result["production"] == {
+            "adapter": "postgres",
+            "host": "prod-server",
+            "port": 5432,
+        }
+
+    def test_multiple_merge_keys(self):
+        """Test multiple merge keys in same mapping."""
+        content = """
+base: &base
+  a: 1
+extra: &extra
+  b: 2
+combined:
+  <<: *base
+  <<: *extra
+  c: 3
+"""
+        from io import StringIO
+
+        result, _ = load(StringIO(content), track_sources=True)
+        assert result["combined"] == {"a": 1, "b": 2, "c": 3}
+
+    def test_nested_merge_keys(self):
+        """Test merge keys in nested structures."""
+        content = """
+defaults: &defaults
+  database:
+    adapter: postgres
+
+development:
+  <<: *defaults
+  database:
+    name: dev_db
+
+production:
+  <<: *defaults
+  database:
+    name: prod_db
+"""
+        from io import StringIO
+
+        result, _ = load(StringIO(content), track_sources=True)
+        # Note: nested merge replaces entire sub-dict, doesn't deep merge
+        assert result["development"]["database"] == {"name": "dev_db"}
+        assert result["production"]["database"] == {"name": "prod_db"}
+
+    def test_deeply_nested_merge_keys(self):
+        """Test merge keys work in deeply nested structures with source tracking."""
+        content = """
+level1:
+  defaults: &l1_defaults
+    timeout: 30
+  service:
+    <<: *l1_defaults
+    name: test
+    level2:
+      defaults: &l2_defaults
+        retries: 3
+      handler:
+        <<: *l2_defaults
+        endpoint: /api
+"""
+        from io import StringIO
+
+        result, source_map = load(StringIO(content), track_sources=True)
+        assert result["level1"]["service"]["timeout"] == 30
+        assert result["level1"]["service"]["name"] == "test"
+        assert result["level1"]["service"]["level2"]["handler"]["retries"] == 3
+        assert result["level1"]["service"]["level2"]["handler"]["endpoint"] == "/api"
+        assert source_map is not None

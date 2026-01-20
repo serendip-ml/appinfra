@@ -393,6 +393,11 @@ class Loader(yaml.SafeLoader):
             mapping = super().construct_mapping(node, deep=deep)
             return self._convert_mapping_keys(mapping)
 
+        # Handle YAML merge keys (<<: *anchor) before processing.
+        # flatten_mapping expands merge keys into regular key-value pairs.
+        if isinstance(node, yaml.MappingNode):
+            self.flatten_mapping(node)
+
         # Real YAML parsing with source tracking
         mapping = {}
         for key_node, value_node in node.value:
