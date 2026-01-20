@@ -7,6 +7,7 @@
 #   INFRA_DEV_PKG_NAME      - Package name (default: appinfra)
 #   INFRA_DEV_CQ_STRICT     - Code quality strictness (default: false)
 #   INFRA_DEV_CQ_EXCLUDE    - Patterns to exclude from cq checks (e.g., "examples/*")
+#                             Note: patterns cannot contain spaces (Make limitation)
 #   INFRA_DEV_PROJECT_ROOT  - Project root path (default: $(CURDIR))
 #   INFRA_DEV_CHECK_SCRIPT  - Path to check.sh (default: auto-derived)
 #   INFRA_DEV_INSTALL_EXTRAS - Optional extras for install (e.g., "ui,fastapi")
@@ -36,8 +37,8 @@ export INFRA_DEFAULT_CONFIG_FILE
 export INFRA_PYTEST_COVERAGE_MARKERS
 export INFRA_PYTEST_COVERAGE_THRESHOLD
 
-# Expand CQ_EXCLUDE patterns to --exclude flags
-_CQ_EXCLUDE_FLAGS := $(foreach pat,$(INFRA_DEV_CQ_EXCLUDE),--exclude "$(pat)")
+# Expand CQ_EXCLUDE patterns to --exclude flags (empty if no exclusions)
+_CQ_EXCLUDE_FLAGS := $(if $(INFRA_DEV_CQ_EXCLUDE),$(foreach pat,$(INFRA_DEV_CQ_EXCLUDE),--exclude "$(pat)"))
 
 # Python test wrapper with warning suppression
 PYTHON_TEST = PYTHONWARNINGS="ignore::ResourceWarning,ignore::RuntimeWarning" ${PYTHON}
