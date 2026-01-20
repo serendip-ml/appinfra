@@ -94,14 +94,17 @@ if [ -n "$EXAMPLES_DIR" ]; then
     CHECKS+=("Type checking (examples)|type|${PYTHON} -m mypy ${EXAMPLES_DIR}/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports|")
 fi
 
-# Build exclude flags from INFRA_DEV_CQ_EXCLUDE
+# Build exclude flags from INFRA_DEV_CQ_EXCLUDE (subshell contains set -f scope)
 CQ_EXCLUDE_FLAGS=""
 if [ -n "${INFRA_DEV_CQ_EXCLUDE:-}" ]; then
-    set -f  # Disable glob expansion to preserve patterns like "examples/*"
-    for pat in ${INFRA_DEV_CQ_EXCLUDE}; do
-        CQ_EXCLUDE_FLAGS="${CQ_EXCLUDE_FLAGS} --exclude \"${pat}\""
-    done
-    set +f  # Re-enable glob expansion
+    CQ_EXCLUDE_FLAGS=$(
+        set -f  # Disable glob expansion to preserve patterns like "examples/*"
+        sep=""
+        for pat in ${INFRA_DEV_CQ_EXCLUDE}; do
+            printf '%s--exclude "%s"' "$sep" "$pat"
+            sep=" "
+        done
+    )
 fi
 
 # Build CQ command and label based on strictness setting
