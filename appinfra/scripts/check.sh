@@ -97,17 +97,19 @@ fi
 # Build exclude flags from INFRA_DEV_CQ_EXCLUDE
 CQ_EXCLUDE_FLAGS=""
 if [ -n "${INFRA_DEV_CQ_EXCLUDE:-}" ]; then
+    set -f  # Disable glob expansion to preserve patterns like "examples/*"
     for pat in ${INFRA_DEV_CQ_EXCLUDE}; do
         CQ_EXCLUDE_FLAGS="${CQ_EXCLUDE_FLAGS} --exclude \"${pat}\""
     done
+    set +f  # Re-enable glob expansion
 fi
 
 # Build CQ command and label based on strictness setting
 if [ "$CQ_STRICT" = "true" ]; then
-    CQ_CMD="${PYTHON} -m appinfra.cli.cli -l error cq cf --strict${CQ_EXCLUDE_FLAGS}"
+    CQ_CMD="${PYTHON} -m appinfra.cli.cli -l error cq cf --strict ${CQ_EXCLUDE_FLAGS}"
     CQ_LABEL="Function size check (strict)"
 else
-    CQ_CMD="${PYTHON} -m appinfra.cli.cli -l error cq cf${CQ_EXCLUDE_FLAGS}"
+    CQ_CMD="${PYTHON} -m appinfra.cli.cli -l error cq cf ${CQ_EXCLUDE_FLAGS}"
     CQ_LABEL="Function size check (non-strict)"
 fi
 
