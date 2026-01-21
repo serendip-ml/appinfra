@@ -10,6 +10,8 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-01-20
+
 ### Added
 - Lifecycle callback support for FastAPI ServerBuilder:
   - `with_on_startup(callback)` - Run async callbacks when app starts
@@ -22,6 +24,9 @@ For API stability guarantees and deprecation policy, see
   middleware-injected context
 - Startup callback failures now include callback name in error message for easier debugging
 - Shutdown callbacks continue executing even if earlier callbacks fail (errors are logged)
+- `INFRA_DEV_CQ_EXCLUDE` variable for excluding directories from function size checks. Set glob
+  patterns (e.g., `INFRA_DEV_CQ_EXCLUDE := examples/* scripts/*`) to skip specified paths in both
+  `make cq` and `make check`.
 
 ### Fixed
 - `with_on_startup()` no longer breaks IPC response queue in subprocess mode. Previously, using
@@ -32,6 +37,9 @@ For API stability guarantees and deprecation policy, see
   main tool positional args were hoisted to the root parser, consuming arguments before the
   subcommand name could be recognized (e.g., `./app query "file"` would fail because `"query"` was
   consumed by the main tool's positional arg). Now only optional arguments are hoisted.
+- YAML merge keys (`<<: *anchor`) now work correctly when source tracking is enabled. Previously,
+  Config class would fail with `ConstructorError` when loading YAML files using anchors and merge
+  keys.
 
 ## [0.3.0] - 2026-01-15
 
