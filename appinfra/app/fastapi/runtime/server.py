@@ -55,18 +55,6 @@ def _create_subprocess_logger(config: ApiConfig) -> Any:
     return LoggerFactory.create_root(log_config)
 
 
-def _register_ipc_lifecycle_events(app: Any, ipc_channel: Any) -> None:
-    """Register FastAPI lifecycle events for IPC polling."""
-
-    @app.on_event("startup")
-    async def startup() -> None:
-        await ipc_channel.start_polling()
-
-    @app.on_event("shutdown")
-    async def shutdown() -> None:
-        await ipc_channel.stop_polling()
-
-
 def _uvicorn_subprocess_entry(
     adapter: FastAPIAdapter,
     config: ApiConfig,
@@ -95,9 +83,9 @@ def _uvicorn_subprocess_entry(
     ):
         assert config.ipc is not None  # We're in subprocess mode
         ipc_channel = IPCChannel(request_q, response_q, config.ipc)
+        # IPC lifecycle (start_polling/stop_polling) is now integrated into
+        # the adapter's lifespan, so no separate event registration needed
         app = adapter.build(ipc_channel=ipc_channel)
-
-        _register_ipc_lifecycle_events(app, ipc_channel)
 
         uvicorn_kwargs = config.uvicorn.to_uvicorn_kwargs()
         uvicorn_kwargs["log_config"] = _build_uvicorn_log_config(config)

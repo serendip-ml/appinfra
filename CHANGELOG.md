@@ -10,6 +10,37 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-01-20
+
+### Added
+- Lifecycle callback support for FastAPI ServerBuilder:
+  - `with_on_startup(callback)` - Run async callbacks when app starts
+  - `with_on_shutdown(callback)` - Run async callbacks when app shuts down (continues on errors)
+  - `with_lifespan(context_manager)` - Use FastAPI's modern lifespan pattern
+  - `with_on_request(callback)` - Run callbacks before each request (after custom middleware)
+  - `with_on_response(callback)` - Run callbacks after each request (can modify response)
+  - `with_on_exception(callback)` - Run callbacks on unhandled exceptions
+- Request/response callbacks run inside custom middleware, allowing access to auth state and other
+  middleware-injected context
+- Startup callback failures now include callback name in error message for easier debugging
+- Shutdown callbacks continue executing even if earlier callbacks fail (errors are logged)
+- `INFRA_DEV_CQ_EXCLUDE` variable for excluding directories from function size checks. Set glob
+  patterns (e.g., `INFRA_DEV_CQ_EXCLUDE := examples/* scripts/*`) to skip specified paths in both
+  `make cq` and `make check`.
+
+### Fixed
+- `with_on_startup()` no longer breaks IPC response queue in subprocess mode. Previously, using
+  lifecycle callbacks with `.subprocess.with_ipc()` caused responses to never be delivered because
+  FastAPI ignores `on_event()` handlers when a lifespan is present. IPC polling is now integrated
+  directly into the adapter's lifespan context manager.
+- `with_main_tool()` no longer causes positional argument conflicts with subcommands. Previously,
+  main tool positional args were hoisted to the root parser, consuming arguments before the
+  subcommand name could be recognized (e.g., `./app query "file"` would fail because `"query"` was
+  consumed by the main tool's positional arg). Now only optional arguments are hoisted.
+- YAML merge keys (`<<: *anchor`) now work correctly when source tracking is enabled. Previously,
+  Config class would fail with `ConstructorError` when loading YAML files using anchors and merge
+  keys.
+
 ## [0.3.0] - 2026-01-15
 
 ### Added
@@ -139,7 +170,9 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/serendip-ml/appinfra/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/serendip-ml/appinfra/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/serendip-ml/appinfra/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/serendip-ml/appinfra/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/serendip-ml/appinfra/compare/v0.1.2...v0.1.3

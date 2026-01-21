@@ -27,6 +27,80 @@ if TYPE_CHECKING:
     from .group import ToolGroup
 
 
+class _PositionalFilteringParser:
+    """
+    Wrapper that filters out positional arguments when adding to a parser.
+
+    Used when hoisting main tool arguments to the root parser to avoid conflicts
+    with subcommand parsing. Only optional arguments (those starting with '-')
+    are added to the underlying parser.
+    """
+
+    def __init__(self, parser: argparse.ArgumentParser):
+        self._parser = parser
+
+    def add_argument(self, *args: Any, **kwargs: Any) -> argparse.Action | None:
+        """Add argument only if it's optional (starts with '-')."""
+        if args and not str(args[0]).startswith("-"):
+            # Skip positional arguments - return None (caller shouldn't rely on return)
+            return None
+        return self._parser.add_argument(*args, **kwargs)
+
+    def add_argument_group(self, *args: Any, **kwargs: Any) -> argparse._ArgumentGroup:
+        """Delegate to underlying parser, wrapping result to filter positionals."""
+        group = self._parser.add_argument_group(*args, **kwargs)
+        return _PositionalFilteringGroup(group)  # type: ignore[return-value]
+
+    def add_mutually_exclusive_group(
+        self, *args: Any, **kwargs: Any
+    ) -> argparse._MutuallyExclusiveGroup:
+        """Delegate to underlying parser, wrapping result to filter positionals."""
+        group = self._parser.add_mutually_exclusive_group(*args, **kwargs)
+        return _PositionalFilteringGroup(group)  # type: ignore[return-value]
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate unknown attributes to underlying parser."""
+        return getattr(self._parser, name)
+
+
+class _PositionalFilteringGroup:
+    """
+    Wrapper that filters out positional arguments from argument groups.
+
+    Used by _PositionalFilteringParser to ensure positional arguments cannot
+    bypass filtering by being added through argument groups.
+    """
+
+    def __init__(self, group: argparse._ArgumentGroup):
+        self._group = group
+
+    def add_argument(self, *args: Any, **kwargs: Any) -> argparse.Action | None:
+        """Add argument only if it's optional (starts with '-')."""
+        if args and not str(args[0]).startswith("-"):
+            return None
+        return self._group.add_argument(*args, **kwargs)
+
+    def add_argument_group(
+        self, *args: Any, **kwargs: Any
+    ) -> _PositionalFilteringGroup:
+        """Wrap nested groups to maintain positional filtering."""
+        return _PositionalFilteringGroup(
+            self._group.add_argument_group(*args, **kwargs)
+        )
+
+    def add_mutually_exclusive_group(
+        self, *args: Any, **kwargs: Any
+    ) -> _PositionalFilteringGroup:
+        """Wrap mutually exclusive groups to maintain positional filtering."""
+        return _PositionalFilteringGroup(
+            self._group.add_mutually_exclusive_group(*args, **kwargs)
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate unknown attributes to underlying group."""
+        return getattr(self._group, name)
+
+
 @dataclass
 class ToolConfig:
     """Configuration for a tool."""
@@ -184,14 +258,29 @@ class Tool(Traceable, ToolProtocol):
             node = getattr(node, "parent", None)
         raise MissingParentError(self.name, "app (tool is not attached to an App)")
 
-    def set_args(self, parser: argparse.ArgumentParser) -> None:
-        """Set up argument parser for this tool."""
+    def set_args(
+        self, parser: argparse.ArgumentParser, skip_positional: bool = False
+    ) -> None:
+        """
+        Set up argument parser for this tool.
+
+        Args:
+            parser: The argument parser to add arguments to
+            skip_positional: If True, skip positional arguments (used when hoisting
+                main tool args to root parser to avoid conflict with subcommands)
+        """
         self._arg_prs = parser
         if self._group is not None:
             subs = self._group.add_tool_args(parser)
             self.add_group_args(subs)
             self._group.finalize_args(parser)
-        self.add_args(parser)
+
+        if skip_positional:
+            # Use filtering wrapper to skip positional args
+            wrapper = _PositionalFilteringParser(parser)
+            self.add_args(wrapper)  # type: ignore[arg-type]
+        else:
+            self.add_args(parser)
 
     def add_args(self, parser: argparse.ArgumentParser) -> None:
         """
