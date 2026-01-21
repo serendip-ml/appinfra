@@ -3,7 +3,8 @@
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)
 ![Type Hints](https://img.shields.io/badge/type%20hints-100%25-brightgreen.svg)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Linting:
+Ruff](https://img.shields.io/badge/linting-ruff-yellowgreen)](https://github.com/astral-sh/ruff)
 [![CI](https://github.com/serendip-ml/appinfra/actions/workflows/test-docker.yml/badge.svg)](https://github.com/serendip-ml/appinfra/actions/workflows/test-docker.yml)
 [![PyPI](https://img.shields.io/pypi/v/appinfra)](https://pypi.org/project/appinfra/)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
