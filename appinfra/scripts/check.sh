@@ -22,13 +22,13 @@ SUMMARY=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --sequential) PARALLEL=false; PYTEST_PARALLEL=""; shift ;;
+        --sequential) PARALLEL=false; PYTEST_PARALLEL="-n 0"; shift ;;
         --coverage-target) COVERAGE_TARGET="$2"; shift 2 ;;
         --fail-fast) FAIL_FAST=true; shift ;;
         --raw)
             RAW=true
             PARALLEL=false
-            PYTEST_PARALLEL=""
+            PYTEST_PARALLEL="-n 0"
             FAIL_FAST=true
             shift
             ;;
