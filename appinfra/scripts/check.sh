@@ -131,9 +131,9 @@ fi
 declare -a TEST_SUBCHECKS=(
     "Unit tests|test.unit|${PYTHON} -m pytest tests/ -m unit --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
     "Integration tests|test.integration|${PYTHON} -m pytest tests/ -m integration --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
-    "E2E tests|test.e2e|${PYTHON} -m pytest tests/ -m e2e --tb=short --no-header -qq|"
+    "E2E tests|test.e2e|${PYTHON} -m pytest tests/ -m e2e --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
     "Security tests|test.security|${PYTHON} -m pytest tests/ -m security --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
-    "Performance tests|test.perf|${PYTHON} -m pytest tests/ -m performance --tb=short --no-header -qq|"
+    "Performance tests|test.perf|${PYTHON} -m pytest tests/ -m performance --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
 )
 # Add coverage check only if threshold > 0 (awk is more portable than bc)
 if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then
@@ -144,9 +144,9 @@ fi
 declare -a TEST_SUBCHECKS_RAW=(
     "Unit tests|test.unit.v|${PYTHON} -m pytest tests/ -m unit -v --tb=short ${PYTEST_PARALLEL}|"
     "Integration tests|test.integration.v|${PYTHON} -m pytest tests/ -m integration -v --tb=short ${PYTEST_PARALLEL}|"
-    "E2E tests|test.e2e.v|${PYTHON} -m pytest tests/ -m e2e -v --tb=short|"
+    "E2E tests|test.e2e.v|${PYTHON} -m pytest tests/ -m e2e -v --tb=short ${PYTEST_PARALLEL}|"
     "Security tests|test.security.v|${PYTHON} -m pytest tests/ -m security -v --tb=short ${PYTEST_PARALLEL}|"
-    "Performance tests|test.perf.v|${PYTHON} -m pytest tests/ -m performance -v --tb=short|"
+    "Performance tests|test.perf.v|${PYTHON} -m pytest tests/ -m performance -v --tb=short ${PYTEST_PARALLEL}|"
 )
 # Add coverage check only if threshold > 0 (awk is more portable than bc)
 if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then
