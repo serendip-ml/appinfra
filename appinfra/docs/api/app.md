@@ -273,10 +273,10 @@ options on the command line:
 
 **Background:** This is a limitation of Python's `argparse` module. The `parse_args()` method stops
 consuming positional arguments after encountering options. While `argparse` provides
-`parse_intermixed_args()` to handle intermixed arguments, that method does not support subparsers,
+`parse_intermixed_args()` to handle intermixed arguments, that method
+[does not support
+subparsers](https://docs.python.org/3/library/argparse.html#argparse.ArgumentParser.parse_intermixed_args),
 which appinfra uses for tool hierarchies.
-
-See [python/cpython#53749](https://github.com/python/cpython/issues/53749) for details.
 
 **Workaround:** Place positional arguments before options in CLI invocations.
 
