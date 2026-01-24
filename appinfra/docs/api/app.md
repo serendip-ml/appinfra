@@ -256,6 +256,30 @@ if __name__ == "__main__":
     exit(app.main())
 ```
 
+## Known Limitations
+
+### Argument Ordering: Positionals Must Come Before Options
+
+When a tool has both positional arguments and options, positional arguments must appear before
+options on the command line:
+
+```bash
+# Correct - positionals first
+./cli.py cmd config.yaml "my comment" --option value
+
+# Incorrect - will fail with "unrecognized arguments"
+./cli.py cmd config.yaml --option value "my comment"
+```
+
+**Background:** This is a limitation of Python's `argparse` module. The `parse_args()` method stops
+consuming positional arguments after encountering options. While `argparse` provides
+`parse_intermixed_args()` to handle intermixed arguments, that method does not support subparsers,
+which appinfra uses for tool hierarchies.
+
+See [python/cpython#53749](https://github.com/python/cpython/issues/53749) for details.
+
+**Workaround:** Place positional arguments before options in CLI invocations.
+
 ## See Also
 
 - [AppBuilder](app-builder.md) - Fluent builder API
