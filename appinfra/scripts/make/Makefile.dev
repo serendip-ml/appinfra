@@ -86,10 +86,12 @@ endif
 endif # skip fmt
 .PHONY: fmt
 
+ifeq ($(filter fmt,$(INFRA_DEV_SKIP_TARGETS)),)
 fmt.check:: ## Check if code is formatted (CI)
 	@echo "* checking formatting..."
 	@${PYTHON} -m ruff format --check . || (echo "ERROR: Code needs formatting. Run 'make fmt' first." && exit 1)
 	@echo "* formatting check passed"
+endif # skip fmt.check
 .PHONY: fmt.check
 
 ifeq ($(filter lint,$(INFRA_DEV_SKIP_TARGETS)),)
@@ -104,16 +106,18 @@ endif
 endif # skip lint
 .PHONY: lint
 
+ifeq ($(filter lint,$(INFRA_DEV_SKIP_TARGETS)),)
 lint.fix:: ## Auto-fix linting issues
 	@echo "* running linter with auto-fix..."
 	@${PYTHON} -m ruff check . --fix
 	@echo "* linter auto-fix done"
-.PHONY: lint.fix
 
 lint.unsafe:: ## Auto-fix linting issues (including unsafe fixes)
 	@echo "* running linter with unsafe fixes..."
 	@${PYTHON} -m ruff check . --fix --unsafe-fixes
 	@echo "* linter unsafe fixes done"
+endif # skip lint.fix, lint.unsafe
+.PHONY: lint.fix
 .PHONY: lint.unsafe
 
 ifeq ($(filter type,$(INFRA_DEV_SKIP_TARGETS)),)
@@ -147,10 +151,12 @@ cq:: ## Check function sizes (reports violations, does not fail)
 endif # skip cq
 .PHONY: cq
 
+ifeq ($(filter cq,$(INFRA_DEV_SKIP_TARGETS)),)
 cq.strict:: ## Check function sizes (fails on violations)
 	@echo "* checking function sizes (strict mode)..."
 	@$(PYTHON) -m appinfra.cli.cli -l error cq cf --strict $(_CQ_EXCLUDE_FLAGS)
 	@echo "* function size check passed"
+endif # skip cq.strict
 .PHONY: cq.strict
 
 export PYTHON
