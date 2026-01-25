@@ -250,6 +250,11 @@ different directories).
 
 **Supported targets:** `fmt`, `lint`, `type`, `cq`
 
+> **Note:** Skipping a target also skips its helper variants:
+> - `fmt` → also skips `fmt.check`
+> - `lint` → also skips `lint.fix`, `lint.unsafe`
+> - `cq` → also skips `cq.strict`
+
 ### Example: Custom Type Checking
 
 Projects with mixed dependencies (e.g., core package uses SQLAlchemy, examples import torch) may
