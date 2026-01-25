@@ -20,6 +20,8 @@ For API stability guarantees and deprecation policy, see
   projects can provide their own implementations (e.g., custom mypy flags per directory)
 
 ### Fixed
+- `Tool.lg` property now typed as `Logger | None` instead of `Any | None`. Downstream code using
+  type checkers will get proper type inference for logger methods.
 - `check.sh` now runs E2E and Performance tests sequentially using `-n 0` instead of `-n 1`.
   Previously, `-n 1` still used pytest-xdist with a single worker, which behaves differently than
   true sequential execution.

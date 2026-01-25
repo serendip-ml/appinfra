@@ -425,14 +425,23 @@ class TestPGComplexScenarios:
 class TestPGStaleTableCleanup:
     """Test that stale debug tables are cleaned at session start."""
 
-    def test_stale_tables_cleaned_at_session_start(self, pg_session):
+    def test_stale_tables_cleaned_at_session_start(self, pg_session, worker_id):
         """
         Verify no tables with old timestamps exist after session starts.
 
         The pg_cleanup_stale_debug_tables fixture runs at session start and
         removes all tables matching the debug pattern. Any debug tables that
         exist at this point should be from the current session (recent timestamp).
+
+        Note: This test only runs on master (non-xdist) because the cleanup
+        fixture only runs on master. With xdist, workers create tables that
+        won't be cleaned by the master's session-scoped fixture.
         """
+        if worker_id != "master":
+            pytest.skip(
+                "Cleanup only runs on master; test not valid with xdist workers"
+            )
+
         import re
         import time
 
