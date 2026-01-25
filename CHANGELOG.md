@@ -12,6 +12,8 @@ For API stability guarantees and deprecation policy, see
 
 ### Added
 - Documentation for argparse positional argument ordering limitation in `app.md`
+- `INFRA_DEV_MYPY_FLAGS` variable for passing extra flags to mypy (e.g., `--follow-imports=skip`
+  for projects with large dependencies like torch/transformers that cause mypy to hang)
 
 ### Fixed
 - `check.sh` now runs E2E and Performance tests sequentially using `-n 0` instead of `-n 1`.
