@@ -242,6 +242,57 @@ lint::
 	./scripts/validate-config.sh
 ```
 
+## Overriding Targets Completely
+
+Some targets can be completely replaced by your project using `INFRA_DEV_SKIP_TARGETS`. This is
+useful when a project needs fundamentally different behavior (e.g., different mypy flags for
+different directories).
+
+**Supported targets:** `fmt`, `lint`, `type`, `cq`
+
+> **Note:** Skipping a target also skips its helper variants:
+> - `fmt` → also skips `fmt.check`
+> - `lint` → also skips `lint.fix`, `lint.unsafe`
+> - `cq` → also skips `cq.strict`
+
+### Example: Custom Type Checking
+
+Projects with mixed dependencies (e.g., core package uses SQLAlchemy, examples import torch) may
+need different mypy configurations per directory:
+
+```makefile
+# Skip the built-in type target
+INFRA_DEV_SKIP_TARGETS := type
+
+include $(infra)/make/Makefile.dev
+
+# Define your own type target
+type::
+	@echo "* running type checker..."
+	@$(PYTHON) -m mypy $(INFRA_DEV_PKG_NAME)/ --exclude 'examples/' --strict
+	@$(PYTHON) -m mypy examples/ --follow-imports=skip --ignore-missing-imports
+	@echo "* type checking done"
+```
+
+### Example: Multiple Overrides
+
+```makefile
+# Skip multiple targets
+INFRA_DEV_SKIP_TARGETS := type lint
+
+include $(infra)/make/Makefile.dev
+
+type::
+	@echo "* custom type checking..."
+	# ... your implementation
+
+lint::
+	@echo "* custom linting..."
+	# ... your implementation
+```
+
+> **Note:** `INFRA_DEV_SKIP_TARGETS` must be set **before** the include statement.
+
 ## Overriding Variables
 
 All framework variables use `?=` (conditional assignment), making them easy to override:
@@ -347,6 +398,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 | `INFRA_DEV_PROJECT_ROOT` | `$(CURDIR)` | Project root for check.sh |
 | `INFRA_DEV_INSTALL_EXTRAS` | (empty) | Optional extras for install (e.g., `ui,fastapi`) |
 | `INFRA_DEV_MYPY_FLAGS` | (empty) | Extra mypy flags (e.g., `--follow-imports=skip` for large deps) |
+| `INFRA_DEV_SKIP_TARGETS` | (empty) | Targets to skip so project can override (e.g., `type` or `fmt lint`) |
 | `INFRA_DRY_RUN` | `0` | Set to `1` to preview commands without executing |
 
 **Testing (PYTEST):**

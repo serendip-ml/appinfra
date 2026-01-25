@@ -14,6 +14,8 @@ For API stability guarantees and deprecation policy, see
 - Documentation for argparse positional argument ordering limitation in `app.md`
 - `INFRA_DEV_MYPY_FLAGS` variable for passing extra flags to mypy (e.g., `--follow-imports=skip`
   for projects with large dependencies like torch/transformers that cause mypy to hang)
+- `INFRA_DEV_SKIP_TARGETS` variable to skip built-in targets (`fmt`, `lint`, `type`, `cq`) so
+  projects can provide their own implementations (e.g., custom mypy flags per directory)
 
 ### Fixed
 - `check.sh` now runs E2E and Performance tests sequentially using `-n 0` instead of `-n 1`.
