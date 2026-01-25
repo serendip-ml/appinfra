@@ -11,6 +11,8 @@ For API stability guarantees and deprecation policy, see
 ## [Unreleased]
 
 ### Added
+- PEP 561 `py.typed` marker file for type checker support. Downstream packages can now use appinfra's
+  type annotations with mypy/pyright without `--ignore-missing-imports`.
 - Documentation for argparse positional argument ordering limitation in `app.md`
 - `INFRA_DEV_MYPY_FLAGS` variable for passing extra flags to mypy (e.g., `--follow-imports=skip`
   for projects with large dependencies like torch/transformers that cause mypy to hang)
