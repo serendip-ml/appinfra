@@ -12,6 +12,8 @@
 #   INFRA_DEV_CHECK_SCRIPT  - Path to check.sh (default: auto-derived)
 #   INFRA_DEV_INSTALL_EXTRAS - Optional extras for install (e.g., "ui,fastapi")
 #   INFRA_DEV_MYPY_FLAGS    - Extra flags for mypy (e.g., "--follow-imports=skip" for large deps)
+#   INFRA_DEV_SKIP_TARGETS  - Space-separated list of targets to skip (project provides own)
+#                             Supported: fmt lint type cq
 
 # Path to this Makefile's directory (for deriving paths)
 _MAKEFILE_DEV_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
@@ -72,6 +74,7 @@ setup:: ## sets up dev environment with all dependencies for all PYTHON_ENVS
 
 ##@ Code Quality
 
+ifeq ($(filter fmt,$(INFRA_DEV_SKIP_TARGETS)),)
 fmt:: ## Format code with ruff
 ifeq ($(INFRA_DRY_RUN),1)
 	@echo "[DRY RUN] Would run: ruff format ."
@@ -80,6 +83,7 @@ else
 	@${PYTHON} -m ruff format .
 	@echo "* formatter done"
 endif
+endif # skip fmt
 .PHONY: fmt
 
 fmt.check:: ## Check if code is formatted (CI)
@@ -88,6 +92,7 @@ fmt.check:: ## Check if code is formatted (CI)
 	@echo "* formatting check passed"
 .PHONY: fmt.check
 
+ifeq ($(filter lint,$(INFRA_DEV_SKIP_TARGETS)),)
 lint:: ## Lint code with ruff
 ifeq ($(INFRA_DRY_RUN),1)
 	@echo "[DRY RUN] Would run: ruff check ."
@@ -96,6 +101,7 @@ else
 	@${PYTHON} -m ruff check .
 	@echo "* linter done"
 endif
+endif # skip lint
 .PHONY: lint
 
 lint.fix:: ## Auto-fix linting issues
@@ -110,6 +116,7 @@ lint.unsafe:: ## Auto-fix linting issues (including unsafe fixes)
 	@echo "* linter unsafe fixes done"
 .PHONY: lint.unsafe
 
+ifeq ($(filter type,$(INFRA_DEV_SKIP_TARGETS)),)
 type:: ## Run type checking with mypy
 	@if [ ! -d "$(INFRA_DEV_PKG_NAME)" ]; then \
 		echo ""; \
@@ -129,12 +136,15 @@ else
 	elif [ -d "$(INFRA_DEV_PKG_NAME)/examples" ]; then ${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports $(INFRA_DEV_MYPY_FLAGS); fi
 	@echo "* type checking done"
 endif
+endif # skip type
 .PHONY: type
 
+ifeq ($(filter cq,$(INFRA_DEV_SKIP_TARGETS)),)
 cq:: ## Check function sizes (reports violations, does not fail)
 	@echo "* checking function sizes..."
 	@$(PYTHON) -m appinfra.cli.cli -l error cq cf $(_CQ_EXCLUDE_FLAGS)
 	@echo "* function size check done"
+endif # skip cq
 .PHONY: cq
 
 cq.strict:: ## Check function sizes (fails on violations)
