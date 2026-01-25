@@ -11,6 +11,7 @@
 #   INFRA_DEV_PROJECT_ROOT  - Project root path (default: $(CURDIR))
 #   INFRA_DEV_CHECK_SCRIPT  - Path to check.sh (default: auto-derived)
 #   INFRA_DEV_INSTALL_EXTRAS - Optional extras for install (e.g., "ui,fastapi")
+#   INFRA_DEV_MYPY_FLAGS    - Extra flags for mypy (e.g., "--follow-imports=skip" for large deps)
 
 # Path to this Makefile's directory (for deriving paths)
 _MAKEFILE_DEV_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
@@ -33,6 +34,7 @@ export INFRA_DEV_CQ_STRICT
 export INFRA_DEV_CQ_EXCLUDE
 export INFRA_DEV_PROJECT_ROOT
 export INFRA_DEV_INSTALL_EXTRAS
+export INFRA_DEV_MYPY_FLAGS
 export INFRA_DEFAULT_CONFIG_FILE
 export INFRA_PYTEST_COVERAGE_MARKERS
 export INFRA_PYTEST_COVERAGE_THRESHOLD
@@ -122,9 +124,9 @@ ifeq ($(INFRA_DRY_RUN),1)
 	@echo "[DRY RUN] Would run: mypy $(INFRA_DEV_PKG_NAME)/"
 else
 	@echo "* running type checker..."
-	@${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/ --exclude 'examples/'
-	@if [ -d "examples" ]; then ${PYTHON} -m mypy examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports; \
-	elif [ -d "$(INFRA_DEV_PKG_NAME)/examples" ]; then ${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports; fi
+	@${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/ --exclude 'examples/' $(INFRA_DEV_MYPY_FLAGS)
+	@if [ -d "examples" ]; then ${PYTHON} -m mypy examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports $(INFRA_DEV_MYPY_FLAGS); \
+	elif [ -d "$(INFRA_DEV_PKG_NAME)/examples" ]; then ${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports $(INFRA_DEV_MYPY_FLAGS); fi
 	@echo "* type checking done"
 endif
 .PHONY: type

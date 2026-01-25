@@ -346,6 +346,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 | `INFRA_DEV_CQ_STRICT` | `false` | Code quality: `true`=30-line, `false`=50-line |
 | `INFRA_DEV_PROJECT_ROOT` | `$(CURDIR)` | Project root for check.sh |
 | `INFRA_DEV_INSTALL_EXTRAS` | (empty) | Optional extras for install (e.g., `ui,fastapi`) |
+| `INFRA_DEV_MYPY_FLAGS` | (empty) | Extra mypy flags (e.g., `--follow-imports=skip` for large deps) |
 | `INFRA_DRY_RUN` | `0` | Set to `1` to preview commands without executing |
 
 **Testing (PYTEST):**
