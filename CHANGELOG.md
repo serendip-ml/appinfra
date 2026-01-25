@@ -10,6 +10,16 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Added
+- Documentation for argparse positional argument ordering limitation in `app.md`
+
+### Fixed
+- `check.sh` now runs E2E and Performance tests sequentially using `-n 0` instead of `-n 1`.
+  Previously, `-n 1` still used pytest-xdist with a single worker, which behaves differently than
+  true sequential execution.
+- `check.sh` now respects `PYTEST_PARALLEL` for E2E and Performance test commands, allowing parallel
+  execution when explicitly enabled.
+
 ## [0.3.1] - 2026-01-20
 
 ### Added
