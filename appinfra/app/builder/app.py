@@ -245,13 +245,7 @@ class CommandTool(Tool):
             # Otherwise, assume success
             return 0
         except Exception as e:
-            if self.lg:
-                self.lg.error(f"command '{self.name}' failed", extra={"exception": e})
-            else:
-                # Fallback to root logger if tool logger not available
-                import logging
-
-                logging.error(f"command '{self.name}' failed", extra={"exception": e})
+            self.lg.error(f"command '{self.name}' failed", extra={"exception": e})
             return 1
 
 

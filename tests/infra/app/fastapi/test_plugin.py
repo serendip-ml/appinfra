@@ -41,6 +41,7 @@ class TestServeTool:
         server.config.port = 8000
 
         tool = ServeTool(server)
+        tool._logger = MagicMock()
 
         result = tool.run()
 
@@ -58,6 +59,7 @@ class TestServeTool:
         server.start.side_effect = KeyboardInterrupt()
 
         tool = ServeTool(server)
+        tool._logger = MagicMock()
 
         result = tool.run()
 
@@ -75,6 +77,7 @@ class TestServeTool:
         server.start.side_effect = RuntimeError("Server error")
 
         tool = ServeTool(server)
+        tool._logger = MagicMock()
 
         result = tool.run()
 

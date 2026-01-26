@@ -39,7 +39,6 @@ class ServeCommand(Tool):
 
     def setup(self, **kwargs: Any) -> None:
         """Register section callbacks on startup."""
-        assert self.lg is not None
         self.request_count = 0
         self.timeout = 30
         self.max_connections = 100
@@ -55,7 +54,6 @@ class ServeCommand(Tool):
 
     def _on_server_config_changed(self, server_config: Any) -> None:
         """Called when server section in config changes."""
-        assert self.lg is not None
         old_timeout = self.timeout
         old_max = self.max_connections
 
@@ -72,7 +70,6 @@ class ServeCommand(Tool):
 
     def run(self, **kwargs: Any) -> int:
         """Simulate a long-running server."""
-        assert self.lg is not None
         self.lg.info(
             "server started",
             extra={"timeout": self.timeout, "max_connections": self.max_connections},
@@ -109,7 +106,6 @@ class ReloadCommand(Tool):
 
     def run(self, **kwargs: Any) -> int:
         """Force immediate config reload."""
-        assert self.lg is not None
         watcher = self.app.config_watcher
         if watcher:
             self.lg.info("triggering manual reload...")

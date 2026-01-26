@@ -184,8 +184,7 @@ class BuiltTool(Tool):
             return self._group.run(**kwargs)
         else:
             # Default behavior - just log that the tool ran
-            if self.lg:
-                self.lg.info(f"running {self.name}...")
+            self.lg.info(f"running {self.name}...")
             return 0
 
 

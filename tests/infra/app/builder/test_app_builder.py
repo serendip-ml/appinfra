@@ -343,21 +343,6 @@ class TestCommandTool:
         assert result == 1
         tool._logger.error.assert_called()
 
-    def test_run_handles_exception_without_logger(self):
-        """Test run() handles exceptions when no logger."""
-
-        def failing_func():
-            raise ValueError("Test error")
-
-        cmd = Command(name="test", run_func=failing_func)
-        tool = CommandTool(cmd)
-
-        with patch("logging.error") as mock_log:
-            result = tool.run()
-
-            assert result == 1
-            mock_log.assert_called()
-
     def test_run_passes_kwargs(self):
         """Test run() passes kwargs to run_func."""
         received_kwargs = {}

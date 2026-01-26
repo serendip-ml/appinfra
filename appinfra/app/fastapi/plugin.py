@@ -61,22 +61,19 @@ class ServeTool(Tool):
         Returns:
             Exit code (0 for success, non-zero for error)
         """
-        if self.lg:
-            self.lg.info(
-                f"Starting server on {self._server.config.host}:{self._server.config.port}"
-            )
+        self.lg.info(
+            f"Starting server on {self._server.config.host}:{self._server.config.port}"
+        )
 
         try:
             self._server.start()
             return 0
         except KeyboardInterrupt:
-            if self.lg:
-                self.lg.info("server interrupted by user")
+            self.lg.info("server interrupted by user")
             self._server.stop()
             return 130  # Standard exit code for SIGINT
         except Exception as e:
-            if self.lg:
-                self.lg.error("server error", extra={"exception": e})
+            self.lg.error("server error", extra={"exception": e})
             self._server.stop()
             return 1
 
