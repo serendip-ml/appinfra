@@ -54,7 +54,6 @@ class ServeCommand(Tool):
 
     def _on_server_config_changed(self, server_config: Any) -> None:
         """Called when server section in config changes."""
-        assert self.lg is not None
         old_timeout = self.timeout
         old_max = self.max_connections
 
@@ -107,7 +106,6 @@ class ReloadCommand(Tool):
 
     def run(self, **kwargs: Any) -> int:
         """Force immediate config reload."""
-        assert self.lg is not None
         watcher = self.app.config_watcher
         if watcher:
             self.lg.info("triggering manual reload...")
