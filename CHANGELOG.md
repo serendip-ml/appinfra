@@ -10,6 +10,8 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-01-25
+
 ### Added
 - PEP 561 `py.typed` marker file for type checker support. Downstream packages can now use appinfra's
   type annotations with mypy/pyright without `--ignore-missing-imports`.
@@ -20,10 +22,9 @@ For API stability guarantees and deprecation policy, see
   projects can provide their own implementations (e.g., custom mypy flags per directory)
 
 ### Changed
-- **Breaking:** `Tool.lg` property now returns `Logger` instead of `Logger | None`. Raises
-  `MissingLoggerError` if accessed before `setup()`. This eliminates the need for defensive
-  `if self.lg:` checks or `assert self.lg is not None` in tool code. The logger is always available
-  after `setup()` runs.
+- `Tool.lg` property now returns `Logger` instead of `Logger | None`. Raises `MissingLoggerError`
+  if accessed before `setup()`. This eliminates the need for defensive `if self.lg:` checks or
+  `assert self.lg is not None` in tool code. The logger is always available after `setup()` runs.
 
 ### Fixed
 - `check.sh` now runs E2E and Performance tests sequentially using `-n 0` instead of `-n 1`.
