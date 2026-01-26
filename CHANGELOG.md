@@ -19,9 +19,13 @@ For API stability guarantees and deprecation policy, see
 - `INFRA_DEV_SKIP_TARGETS` variable to skip built-in targets (`fmt`, `lint`, `type`, `cq`) so
   projects can provide their own implementations (e.g., custom mypy flags per directory)
 
+### Changed
+- **Breaking:** `Tool.lg` property now returns `Logger` instead of `Logger | None`. Raises
+  `MissingLoggerError` if accessed before `setup()`. This eliminates the need for defensive
+  `if self.lg:` checks or `assert self.lg is not None` in tool code. The logger is always available
+  after `setup()` runs.
+
 ### Fixed
-- `Tool.lg` property now typed as `Logger | None` instead of `Any | None`. Downstream code using
-  type checkers will get proper type inference for logger methods.
 - `check.sh` now runs E2E and Performance tests sequentially using `-n 0` instead of `-n 1`.
   Previously, `-n 1` still used pytest-xdist with a single worker, which behaves differently than
   true sequential execution.

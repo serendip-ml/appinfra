@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 from ...log import Logger, LoggerFactory
 from ..errors import (
     LifecycleError,
+    MissingLoggerError,
     MissingParentError,
     UndefGroupError,
     UndefNameError,
@@ -192,8 +193,20 @@ class Tool(Traceable, ToolProtocol):
         return self._group
 
     @property
-    def lg(self) -> Logger | None:
-        """Get the logger instance."""
+    def lg(self) -> Logger:
+        """Get the logger instance.
+
+        Returns:
+            Logger: The logger instance for this tool
+
+        Raises:
+            MissingLoggerError: If accessed before setup() is called
+        """
+        if self._logger is None:
+            raise MissingLoggerError(
+                f"Logger not initialized for tool '{self.name}'. "
+                "Ensure setup() has been called before accessing lg."
+            )
         return self._logger
 
     @property

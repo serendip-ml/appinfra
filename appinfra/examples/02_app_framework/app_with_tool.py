@@ -26,8 +26,7 @@ class DemoTool(Tool):
         parser.add_argument("-d", action="store_true", help="demo")
 
     def run(self, **kwargs: Any) -> int:
-        if self.lg:
-            self.lg.info("running demo...")
+        self.lg.info("running demo...")
         return 0
 
 

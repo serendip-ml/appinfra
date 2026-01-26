@@ -44,7 +44,6 @@ class InfoTool(Tool):
 
     def run(self, **kwargs) -> int:
         """Display version info."""
-        assert self.lg is not None
         self.lg.info("Tracked Package Information")
         self.lg.info("-" * 40)
 

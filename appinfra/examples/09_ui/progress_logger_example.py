@@ -40,7 +40,6 @@ class SpinnerDemo(Tool):
         )
 
     def run(self, **kwargs) -> int:
-        assert self.lg is not None
         self.lg.info("Starting spinner demo...")
 
         # Spinner mode - no total specified
@@ -65,7 +64,6 @@ class ProgressDemo(Tool):
         )
 
     def run(self, **kwargs) -> int:
-        assert self.lg is not None
         self.lg.info("Starting progress bar demo...")
 
         total_items = 20
@@ -93,7 +91,6 @@ class SwitchDemo(Tool):
         )
 
     def run(self, **kwargs) -> int:
-        assert self.lg is not None
         self.lg.info("Starting mode switch demo...")
 
         with ProgressLogger(self.lg, "Scanning directory...") as pl:
@@ -129,7 +126,6 @@ class JustifiedDemo(Tool):
         )
 
     def run(self, **kwargs) -> int:
-        assert self.lg is not None
         self.lg.info("Starting right-justified demo...")
         self.lg.info("Notice how the progress bar stays anchored to the right edge:\n")
 
@@ -164,7 +160,6 @@ class AllDemo(Tool):
         )
 
     def run(self, **kwargs) -> int:
-        assert self.lg is not None
         self.lg.info("Running all demos...\n")
 
         # Get other tools from registry

@@ -39,7 +39,6 @@ class ServeCommand(Tool):
 
     def setup(self, **kwargs: Any) -> None:
         """Register section callbacks on startup."""
-        assert self.lg is not None
         self.request_count = 0
         self.timeout = 30
         self.max_connections = 100
@@ -72,7 +71,6 @@ class ServeCommand(Tool):
 
     def run(self, **kwargs: Any) -> int:
         """Simulate a long-running server."""
-        assert self.lg is not None
         self.lg.info(
             "server started",
             extra={"timeout": self.timeout, "max_connections": self.max_connections},
