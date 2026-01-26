@@ -185,6 +185,7 @@ exclude = ["tests*", "scripts*", "etc*"]
 
 [tool.setuptools.package-data]
 appinfra = [
+    "py.typed",
     "docs/**/*.md",
     "docs/LICENSE",
     "examples/**/*.py",

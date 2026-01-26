@@ -12,9 +12,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
-from ...log import LoggerFactory
+from ...log import Logger, LoggerFactory
 from ..errors import (
     LifecycleError,
+    MissingLoggerError,
     MissingParentError,
     UndefGroupError,
     UndefNameError,
@@ -131,7 +132,7 @@ class Tool(Traceable, ToolProtocol):
         """
         super().__init__(parent)
         self.config = config or self._create_config()
-        self._logger: Any | None = None
+        self._logger: Logger | None = None
         self._kwargs: dict[str, Any] | None = None
         self._arg_prs: argparse.ArgumentParser | None = None
         self._group: ToolGroup | None = None
@@ -192,8 +193,20 @@ class Tool(Traceable, ToolProtocol):
         return self._group
 
     @property
-    def lg(self) -> Any | None:
-        """Get the logger instance."""
+    def lg(self) -> Logger:
+        """Get the logger instance.
+
+        Returns:
+            Logger: The logger instance for this tool
+
+        Raises:
+            MissingLoggerError: If accessed before setup() is called
+        """
+        if self._logger is None:
+            raise MissingLoggerError(
+                f"Logger not initialized for tool '{self.name}'. "
+                "Ensure setup() has been called before accessing lg."
+            )
         return self._logger
 
     @property

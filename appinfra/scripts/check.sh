@@ -22,13 +22,13 @@ SUMMARY=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --sequential) PARALLEL=false; PYTEST_PARALLEL=""; shift ;;
+        --sequential) PARALLEL=false; PYTEST_PARALLEL="-n 0"; shift ;;
         --coverage-target) COVERAGE_TARGET="$2"; shift 2 ;;
         --fail-fast) FAIL_FAST=true; shift ;;
         --raw)
             RAW=true
             PARALLEL=false
-            PYTEST_PARALLEL=""
+            PYTEST_PARALLEL="-n 0"
             FAIL_FAST=true
             shift
             ;;
@@ -63,6 +63,7 @@ PYTHON="${PYTHON:-~/.venv/bin/python}"
 PKG_NAME="${INFRA_DEV_PKG_NAME:-appinfra}"
 CQ_STRICT="${INFRA_DEV_CQ_STRICT:-false}"
 COVERAGE_MARKERS="${INFRA_PYTEST_COVERAGE_MARKERS:-unit}"
+MYPY_FLAGS="${INFRA_DEV_MYPY_FLAGS:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${INFRA_DEV_PROJECT_ROOT:-$(dirname "$SCRIPT_DIR")}"
 
@@ -80,7 +81,7 @@ COVERAGE_TARGET="${COVERAGE_TARGET:-$DEFAULT_COVERAGE_TARGET}"
 declare -a CHECKS=(
     "Formatting check|fmt.check|${PYTHON} -m ruff format --check .|fmt"
     "Linting|lint|${PYTHON} -m ruff check .|lint.fix"
-    "Type checking|type|${PYTHON} -m mypy ${PKG_NAME}/ --exclude 'examples/'|"
+    "Type checking|type|${PYTHON} -m mypy ${PKG_NAME}/ --exclude 'examples/' ${MYPY_FLAGS}|"
 )
 
 # Add examples type check only if directory exists (top-level or inside package)
@@ -91,7 +92,7 @@ elif [ -d "${PKG_NAME}/examples" ]; then
     EXAMPLES_DIR="${PKG_NAME}/examples"
 fi
 if [ -n "$EXAMPLES_DIR" ]; then
-    CHECKS+=("Type checking (examples)|type|${PYTHON} -m mypy ${EXAMPLES_DIR}/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports|")
+    CHECKS+=("Type checking (examples)|type|${PYTHON} -m mypy ${EXAMPLES_DIR}/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports ${MYPY_FLAGS}|")
 fi
 
 # Build exclude flags from INFRA_DEV_CQ_EXCLUDE (subshell contains set -f scope)
@@ -131,9 +132,9 @@ fi
 declare -a TEST_SUBCHECKS=(
     "Unit tests|test.unit|${PYTHON} -m pytest tests/ -m unit --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
     "Integration tests|test.integration|${PYTHON} -m pytest tests/ -m integration --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
-    "E2E tests|test.e2e|${PYTHON} -m pytest tests/ -m e2e --tb=short --no-header -qq|"
+    "E2E tests|test.e2e|${PYTHON} -m pytest tests/ -m e2e --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
     "Security tests|test.security|${PYTHON} -m pytest tests/ -m security --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
-    "Performance tests|test.perf|${PYTHON} -m pytest tests/ -m performance --tb=short --no-header -qq|"
+    "Performance tests|test.perf|${PYTHON} -m pytest tests/ -m performance --tb=short --no-header -qq ${PYTEST_PARALLEL}|"
 )
 # Add coverage check only if threshold > 0 (awk is more portable than bc)
 if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then
@@ -144,9 +145,9 @@ fi
 declare -a TEST_SUBCHECKS_RAW=(
     "Unit tests|test.unit.v|${PYTHON} -m pytest tests/ -m unit -v --tb=short ${PYTEST_PARALLEL}|"
     "Integration tests|test.integration.v|${PYTHON} -m pytest tests/ -m integration -v --tb=short ${PYTEST_PARALLEL}|"
-    "E2E tests|test.e2e.v|${PYTHON} -m pytest tests/ -m e2e -v --tb=short|"
+    "E2E tests|test.e2e.v|${PYTHON} -m pytest tests/ -m e2e -v --tb=short ${PYTEST_PARALLEL}|"
     "Security tests|test.security.v|${PYTHON} -m pytest tests/ -m security -v --tb=short ${PYTEST_PARALLEL}|"
-    "Performance tests|test.perf.v|${PYTHON} -m pytest tests/ -m performance -v --tb=short|"
+    "Performance tests|test.perf.v|${PYTHON} -m pytest tests/ -m performance -v --tb=short ${PYTEST_PARALLEL}|"
 )
 # Add coverage check only if threshold > 0 (awk is more portable than bc)
 if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then

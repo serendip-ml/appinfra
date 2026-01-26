@@ -17,6 +17,7 @@ import pytest
 
 from appinfra.app.errors import (
     LifecycleError,
+    MissingLoggerError,
     MissingParentError,
     UndefGroupError,
     UndefNameError,
@@ -192,11 +193,15 @@ class TestToolGroupProperty:
 class TestToolLgProperty:
     """Test Tool.lg property."""
 
-    def test_returns_none_initially(self):
-        """Test returns None when logger not set."""
+    def test_raises_error_before_setup(self):
+        """Test raises MissingLoggerError when accessed before setup."""
         tool = ConcreteTool()
 
-        assert tool.lg is None
+        with pytest.raises(MissingLoggerError) as exc_info:
+            _ = tool.lg
+
+        assert "concrete" in str(exc_info.value)
+        assert "setup()" in str(exc_info.value)
 
     def test_returns_logger_when_set(self):
         """Test returns logger when set."""

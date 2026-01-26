@@ -75,8 +75,7 @@ class ServeTool(Tool):
         self.port = self.server_cfg.get("port", 8080)
         self.workers = self.engine_cfg.get("workers", 4)
 
-        if self.lg:
-            self.lg.debug(f"Configured server: {self.host}:{self.port}")
+        self.lg.debug(f"Configured server: {self.host}:{self.port}")
 
     def _print_tool_config(self) -> None:
         """Print Tool config (metadata about the tool)."""
@@ -106,8 +105,7 @@ class ServeTool(Tool):
 
     def run(self, **kwargs: Any) -> int:
         """Run the tool."""
-        if self.lg:
-            self.lg.info("ServeTool running")
+        self.lg.info("ServeTool running")
         print("\n=== Accessing Config from Tool ===\n")
         self._print_tool_config()
         self._print_app_config()
