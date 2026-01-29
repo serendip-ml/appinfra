@@ -284,6 +284,8 @@ class PG(Interface):
         if self._schema_mgr:
             from .schema import create_all_in_schema
 
+            # Auto-create schema if it doesn't exist (idempotent, prevents common footgun)
+            self._schema_mgr.create_schema()
             create_all_in_schema(base, self._engine, self._schema_mgr.schema)
         else:
             base.metadata.create_all(self._engine)

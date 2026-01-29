@@ -213,7 +213,7 @@ class TestSchemaManagerListeners:
         # Verify cursor was used to set search_path
         mock_dbapi_conn.cursor.assert_called_once()
         mock_cursor.execute.assert_called_once_with(
-            "SET search_path TO test_schema, public"
+            'SET search_path TO "test_schema", public'
         )
         mock_cursor.close.assert_called_once()
 
@@ -246,7 +246,7 @@ class TestSchemaManagerListeners:
         # Verify cursor was used to set search_path
         mock_dbapi_conn.cursor.assert_called_once()
         mock_cursor.execute.assert_called_once_with(
-            "SET search_path TO test_schema, public"
+            'SET search_path TO "test_schema", public'
         )
         mock_cursor.close.assert_called_once()
 

@@ -84,38 +84,28 @@ class SchemaManager:
         return self._search_path
 
     def setup_listeners(self) -> None:
-        """
-        Install event listeners to set search_path on all connections.
-
-        Listens on both 'connect' (new connections) and 'checkout' (reused
-        connections from pool) to ensure search_path is always set.
-        """
+        """Install event listeners to set search_path on all connections."""
         if self._listeners_installed:
             return
 
+        # Quote schema for reserved word safety (consistent with CREATE SCHEMA)
+        set_path_sql = f'SET search_path TO "{self._schema}", public'
+
         @event.listens_for(self._engine, "connect")
-        def _set_search_path_on_connect(
-            dbapi_conn: Any, connection_record: Any
-        ) -> None:
-            """Set search_path when a new connection is created."""
+        def _on_connect(dbapi_conn: Any, connection_record: Any) -> None:
             cursor = dbapi_conn.cursor()
-            cursor.execute(f"SET search_path TO {self._search_path}")
+            cursor.execute(set_path_sql)
             cursor.close()
 
         @event.listens_for(self._engine, "checkout")
-        def _set_search_path_on_checkout(
-            dbapi_conn: Any, connection_record: Any, connection_proxy: Any
-        ) -> None:
-            """Set search_path when a connection is checked out from pool."""
+        def _on_checkout(dbapi_conn: Any, rec: Any, proxy: Any) -> None:
             cursor = dbapi_conn.cursor()
-            cursor.execute(f"SET search_path TO {self._search_path}")
+            cursor.execute(set_path_sql)
             cursor.close()
 
-        # Store references for cleanup
-        self._connect_listener = _set_search_path_on_connect
-        self._checkout_listener = _set_search_path_on_checkout
+        self._connect_listener = _on_connect
+        self._checkout_listener = _on_checkout
         self._listeners_installed = True
-
         self._lg.debug(
             "installed schema listeners",
             extra={"schema": self._schema, "search_path": self._search_path},
