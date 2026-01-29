@@ -189,24 +189,43 @@ def test_parallel_safe(pg_isolated, pg_session_isolated):
 | `pg_session_isolated` | function | Per-test session with auto commit/rollback        |
 | `pg_clean_schema`     | function | Fresh schema (drop + create) for each test        |
 | `pg_schema_info`      | session  | Dict with schema configuration details            |
+| `pg_migrate_factory`  | session  | Factory for creating PG instances with migrations |
 
 ### Migration Fixtures
 
-For tests that need tables:
+For tests that need tables, use the `pg_migrate_factory` fixture (recommended):
 
 ```python
+# conftest.py - no import from testing module needed
 from myapp.models import Base
-from appinfra.db.pg.testing import make_migrate_fixture
 
 pytest_plugins = ["appinfra.db.pg.testing"]
 
-# Creates fixture that runs migrations
-pg_with_tables = make_migrate_fixture(Base, extensions=["vector"])
+@pytest.fixture(scope="session")
+def pg_with_tables(pg_migrate_factory):
+    with pg_migrate_factory(Base, extensions=["vector"]) as pg:
+        yield pg
 
+# In tests
 def test_with_tables(pg_with_tables):
     # Tables from Base are available in isolated schema
     with pg_with_tables.session() as session:
         session.execute(text("SELECT * FROM my_table"))
+```
+
+The `pg_migrate_factory` fixture returns a context manager factory that:
+1. Creates a fresh schema
+2. Runs migrations to create all tables
+3. Cleans up the schema when the context exits
+
+**Legacy approach** (causes `PytestAssertRewriteWarning`):
+
+```python
+# This pattern causes a warning because importing from the module
+# while also using it as a pytest plugin triggers assertion rewrite issues
+from appinfra.db.pg.testing import make_migrate_fixture
+
+pg_with_tables = make_migrate_fixture(Base, extensions=["vector"])
 ```
 
 ### How It Works

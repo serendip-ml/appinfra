@@ -25,13 +25,16 @@ For API stability guarantees and deprecation policy, see
   - `pg_isolated` - Session-scoped PG with schema isolation
   - `pg_session_isolated` - Per-test session with auto commit/rollback
   - `pg_clean_schema` - Fresh schema for each test
-  - `make_migrate_fixture(Base)` - Factory for migration fixtures
+  - `pg_migrate_factory` - Context manager factory for PG with migrations (recommended)
+  - `make_migrate_fixture(Base)` - Legacy factory for migration fixtures
 - `schema` field in database config for declarative schema isolation
 
 ### Fixed
 - `make check` fail-fast now immediately kills remaining background jobs when a check fails.
   Previously, fail-fast only stopped waiting for results while other checks (especially tests)
   continued running in the background until script exit.
+- `PytestAssertRewriteWarning` when using `appinfra.db.pg.testing` with `make_migrate_fixture`.
+  The new `pg_migrate_factory` fixture avoids the warning by not requiring imports from the module.
 
 ## [0.3.2] - 2026-01-25
 

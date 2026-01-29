@@ -122,6 +122,78 @@ class TestMakeMigrateFixture:
 
 
 @pytest.mark.integration
+class TestPgMigrateFactory:
+    """Test the pg_migrate_factory fixture."""
+
+    def test_factory_creates_tables_in_schema(self, pg_migrate_factory):
+        """Test that pg_migrate_factory creates tables in the schema."""
+        Base = declarative_base()
+
+        class FactoryTestModel(Base):
+            __tablename__ = "factory_test_table"
+            id = Column(Integer, primary_key=True)
+            name = Column(String(50))
+
+        with pg_migrate_factory(Base) as pg:
+            # Verify table exists in correct schema
+            with pg.engine.connect() as conn:
+                result = conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM information_schema.tables
+                        WHERE table_schema = :schema
+                        AND table_name = 'factory_test_table'
+                        """
+                    ),
+                    {"schema": pg.schema},
+                )
+                assert result.scalar() == 1
+
+    def test_factory_cleans_up_on_exit(self, pg_migrate_factory, pg_test_schema):
+        """Test that pg_migrate_factory cleans up schema on context exit."""
+        Base = declarative_base()
+
+        class CleanupTestModel(Base):
+            __tablename__ = "cleanup_test_table"
+            id = Column(Integer, primary_key=True)
+
+        # Use the factory and exit the context
+        with pg_migrate_factory(Base) as pg:
+            engine = pg.engine
+            schema = pg.schema
+
+        # After context exit, schema should be dropped
+        # We need a new connection to check (the old PG is cleaned up)
+        # The schema should not exist anymore
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM information_schema.schemata
+                    WHERE schema_name = :schema
+                    """
+                ),
+                {"schema": schema},
+            )
+            assert result.scalar() == 0
+
+    def test_factory_accepts_extensions(self, pg_migrate_factory):
+        """Test that pg_migrate_factory accepts extensions parameter."""
+        Base = declarative_base()
+
+        class ExtensionsTestModel(Base):
+            __tablename__ = "extensions_test_table"
+            id = Column(Integer, primary_key=True)
+
+        # Just verify it doesn't error with extensions parameter
+        # (actual extension creation depends on DB having the extension available)
+        with pg_migrate_factory(Base, extensions=[]) as pg:
+            assert pg.schema is not None
+
+
+@pytest.mark.integration
 class TestPgCleanSchemaFixture:
     """Test the pg_clean_schema fixture."""
 

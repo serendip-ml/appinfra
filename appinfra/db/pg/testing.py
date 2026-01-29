@@ -8,7 +8,16 @@ race conditions when tests share the same database.
 Usage (minimal - one line in conftest.py):
     pytest_plugins = ["appinfra.db.pg.testing"]
 
-Usage (with migrations):
+Usage (with migrations - recommended):
+    # conftest.py - no import needed, avoids PytestAssertRewriteWarning
+    pytest_plugins = ["appinfra.db.pg.testing"]
+
+    @pytest.fixture(scope="session")
+    def pg_with_tables(pg_migrate_factory):
+        with pg_migrate_factory(Base, extensions=["vector"]) as pg:
+            yield pg
+
+Usage (with migrations - legacy, causes warning):
     from myapp.models import Base
     from appinfra.db.pg.testing import make_migrate_fixture
 
@@ -25,6 +34,7 @@ read from environment variables (APPINFRA_TEST_PG_URL) or skip the tests.
 """
 
 from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -194,12 +204,81 @@ def pg_clean_schema(pg_isolated: "PG") -> Generator["PG", None, None]:
 # =============================================================================
 
 
+@pytest.fixture(scope="session")
+def pg_migrate_factory(
+    pg_test_config: dict[str, Any],
+    pg_test_logger: "Logger",
+    pg_test_schema: str,
+) -> Callable[..., Any]:
+    """
+    Factory for creating schema-isolated PG instances with migrations.
+
+    Returns a context manager factory that handles setup (schema creation,
+    migrations) and cleanup (schema drop). This avoids the need to import
+    from this module, preventing PytestAssertRewriteWarning.
+
+    Args:
+        pg_test_config: Database configuration
+        pg_test_logger: Logger instance
+        pg_test_schema: Schema name for isolation
+
+    Returns:
+        A factory function that creates context managers
+
+    Example:
+        # In conftest.py - no import needed
+        pytest_plugins = ["appinfra.db.pg.testing"]
+
+        @pytest.fixture(scope="session")
+        def pg_with_tables(pg_migrate_factory):
+            with pg_migrate_factory(Base, extensions=["vector"]) as pg:
+                yield pg
+
+        # In tests
+        def test_something(pg_with_tables):
+            session = pg_with_tables.session()
+            # Tables from Base are available
+    """
+
+    @contextmanager
+    def _factory(
+        base: "DeclarativeBase", extensions: list[str] | None = None
+    ) -> Generator["PG", None, None]:
+        from .pg import PG
+
+        # Merge extensions into config if provided
+        config = dict(pg_test_config)
+        if extensions is not None:
+            config["extensions"] = extensions
+
+        pg = PG(pg_test_logger, config, schema=pg_test_schema)
+
+        # Create fresh schema and run migrations
+        if pg._schema_mgr:
+            pg._schema_mgr.reset_schema()
+
+        pg.migrate(base)
+
+        try:
+            yield pg
+        finally:
+            if pg._schema_mgr:
+                pg._schema_mgr.drop_schema(cascade=True)
+                pg._schema_mgr.remove_listeners()
+
+    return _factory
+
+
 def make_migrate_fixture(
     base: "DeclarativeBase",
     extensions: list[str] | None = None,
 ) -> Callable[..., Generator["PG", None, None]]:
     """
     Create a fixture that runs migrations before tests.
+
+    Note: This is the legacy approach. Prefer using the `pg_migrate_factory`
+    fixture instead to avoid PytestAssertRewriteWarning (importing from this
+    module while also using it as a pytest plugin causes the warning).
 
     This factory function creates a session-scoped fixture that:
     1. Creates a fresh schema
@@ -213,17 +292,21 @@ def make_migrate_fixture(
     Returns:
         A pytest fixture function
 
-    Example:
+    Example (legacy - causes PytestAssertRewriteWarning):
         # In conftest.py
         from myapp.models import Base
         from appinfra.db.pg.testing import make_migrate_fixture
 
         pg_with_tables = make_migrate_fixture(Base, extensions=["vector"])
 
-        # In tests
-        def test_something(pg_with_tables):
-            session = pg_with_tables.session()
-            # Tables from Base are available
+    Example (recommended - use pg_migrate_factory instead):
+        # In conftest.py - no import needed
+        pytest_plugins = ["appinfra.db.pg.testing"]
+
+        @pytest.fixture(scope="session")
+        def pg_with_tables(pg_migrate_factory):
+            with pg_migrate_factory(Base, extensions=["vector"]) as pg:
+                yield pg
     """
 
     @pytest.fixture(scope="session")
