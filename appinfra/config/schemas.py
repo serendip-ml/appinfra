@@ -134,6 +134,11 @@ try:
             default_factory=list,
             description="PostgreSQL extensions to create (e.g., ['vector', 'postgis'])",
         )
+        isolation_schema: str | None = Field(
+            default=None,
+            alias="schema",
+            description="PostgreSQL schema for isolation (e.g., 'test_gw0')",
+        )
 
         @field_validator("url")
         @classmethod
@@ -157,6 +162,20 @@ try:
                         "letter and contain only lowercase letters, numbers, "
                         "underscores, and hyphens."
                     )
+            return v
+
+        @field_validator("isolation_schema")
+        @classmethod
+        def validate_isolation_schema(cls, v: str | None) -> str | None:
+            """Validate schema name is a safe SQL identifier."""
+            if v is None:
+                return v
+            pattern = re.compile(r"^[a-z][a-z0-9_]*$")
+            if not pattern.match(v):
+                raise ValueError(
+                    f"Invalid schema name '{v}'. Must start with lowercase letter "
+                    "and contain only lowercase letters, numbers, and underscores."
+                )
             return v
 
         model_config = ConfigDict(extra="allow")
