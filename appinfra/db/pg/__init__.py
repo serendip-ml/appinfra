@@ -1,5 +1,15 @@
 from .interface import Interface
 from .pg import PG
+from .schema import SchemaManager, create_all_in_schema, validate_schema_name
 from .vector import Vector, create_vector_index, enable_pgvector
 
-__all__ = ["PG", "Interface", "Vector", "enable_pgvector", "create_vector_index"]
+__all__ = [
+    "PG",
+    "Interface",
+    "Vector",
+    "enable_pgvector",
+    "create_vector_index",
+    "SchemaManager",
+    "create_all_in_schema",
+    "validate_schema_name",
+]

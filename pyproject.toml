@@ -152,7 +152,7 @@ markers = [
 
 [tool.coverage.run]
 source = ["appinfra"]
-omit = ["*/test/*", "*/tests/*", "*_test.py"]
+omit = ["*/test/*", "*/tests/*", "*_test.py", "*/testing.py"]
 
 [tool.coverage.report]
 precision = 2
