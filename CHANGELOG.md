@@ -10,6 +10,8 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-01-29
+
 ### Added
 - PostgreSQL schema isolation for parallel test execution and multi-tenant applications. Each `PG`
   instance can use a dedicated schema (e.g., `test_gw0`, `test_gw1`) to isolate data. Useful for
