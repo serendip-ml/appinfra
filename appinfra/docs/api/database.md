@@ -182,13 +182,13 @@ def test_parallel_safe(pg_isolated, pg_session_isolated):
 
 ### Available Fixtures
 
-| Fixture | Scope | Description |
-|---------|-------|-------------|
-| `pg_test_schema` | session | Schema name for current worker (e.g., `test_gw0`) |
-| `pg_isolated` | session | PG instance with schema isolation |
-| `pg_session_isolated` | function | Per-test session with auto commit/rollback |
-| `pg_clean_schema` | function | Fresh schema (drop + create) for each test |
-| `pg_schema_info` | session | Dict with schema configuration details |
+| Fixture               | Scope    | Description                                       |
+|-----------------------|----------|---------------------------------------------------|
+| `pg_test_schema`      | session  | Schema name for current worker (e.g., `test_gw0`) |
+| `pg_isolated`         | session  | PG instance with schema isolation                 |
+| `pg_session_isolated` | function | Per-test session with auto commit/rollback        |
+| `pg_clean_schema`     | function | Fresh schema (drop + create) for each test        |
+| `pg_schema_info`      | session  | Dict with schema configuration details            |
 
 ### Migration Fixtures
 

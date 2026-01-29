@@ -182,7 +182,16 @@ def create_all_in_schema(base: "DeclarativeBase", engine: Engine, schema: str) -
         base: SQLAlchemy declarative base with table definitions
         engine: SQLAlchemy engine instance
         schema: Target schema name
+
+    Raises:
+        ValueError: If schema name is invalid
     """
+    if not validate_schema_name(schema):
+        raise ValueError(
+            f"Invalid schema name '{schema}'. Must start with lowercase letter "
+            "and contain only lowercase letters, numbers, and underscores."
+        )
+
     # Store original schemas and temporarily set target schema
     original_schemas: dict[Any, str | None] = {}
 

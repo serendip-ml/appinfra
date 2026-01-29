@@ -234,9 +234,9 @@ def make_migrate_fixture(
     ) -> Generator["PG", None, None]:
         from .pg import PG
 
-        # Merge extensions into config if provided
+        # Merge extensions into config if provided (use None check so empty list clears extensions)
         config = dict(pg_test_config)
-        if extensions:
+        if extensions is not None:
             config["extensions"] = extensions
 
         pg = PG(pg_test_logger, config, schema=pg_test_schema)

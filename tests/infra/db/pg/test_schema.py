@@ -386,3 +386,19 @@ class TestCreateAllInSchema:
         create_all_in_schema(mock_base, engine, "test_schema")
 
         mock_metadata.create_all.assert_called_once_with(engine)
+
+    def test_rejects_invalid_schema_name(self):
+        """Test function rejects invalid schema names."""
+        mock_base = Mock()
+        engine = Mock()
+
+        with pytest.raises(ValueError, match="Invalid schema name"):
+            create_all_in_schema(mock_base, engine, "Invalid-Schema")
+
+    def test_rejects_empty_schema_name(self):
+        """Test function rejects empty schema name."""
+        mock_base = Mock()
+        engine = Mock()
+
+        with pytest.raises(ValueError, match="Invalid schema name"):
+            create_all_in_schema(mock_base, engine, "")

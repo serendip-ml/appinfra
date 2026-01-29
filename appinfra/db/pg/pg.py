@@ -167,11 +167,14 @@ class PG(Interface):
         """Initialize schema isolation if configured."""
         self._schema_mgr = None
         # Check parameter first, then config (supports both 'schema' and 'isolation_schema')
-        effective_schema = schema or getattr(cfg, "isolation_schema", None)
+        # Use None checks (not truthiness) so empty strings propagate to SchemaManager for validation
+        effective_schema = schema
+        if effective_schema is None:
+            effective_schema = getattr(cfg, "isolation_schema", None)
         if effective_schema is None:
             effective_schema = getattr(cfg, "schema", None)
-        # Only use schema if it's a valid string (handles Mock objects in tests)
-        if effective_schema and isinstance(effective_schema, str):
+        # Only use schema if it's a string (handles Mock objects in tests)
+        if isinstance(effective_schema, str):
             from .schema import SchemaManager
 
             self._schema_mgr = SchemaManager(self._engine, effective_schema, self._lg)
