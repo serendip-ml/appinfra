@@ -10,6 +10,34 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-01-29
+
+### Added
+- PostgreSQL schema isolation for parallel test execution and multi-tenant applications. Each `PG`
+  instance can use a dedicated schema (e.g., `test_gw0`, `test_gw1`) to isolate data. Useful for
+  running tests with pytest-xdist without race conditions.
+  - `PG(logger, config, schema="my_schema")` - Initialize with schema isolation
+  - `pg.schema` property - Get configured schema name
+  - `pg.create_schema()` - Create the schema if it doesn't exist
+  - Tables are created in the schema during `pg.migrate()`
+  - Queries are routed via `search_path` (includes `public` for extension visibility)
+- `SchemaManager` class for direct schema management (`appinfra.db.pg.SchemaManager`)
+- Pytest fixtures module for schema-isolated testing (`appinfra.db.pg.testing`):
+  - `pg_test_schema` - Generates unique schema name per pytest-xdist worker
+  - `pg_isolated` - Session-scoped PG with schema isolation
+  - `pg_session_isolated` - Per-test session with auto commit/rollback
+  - `pg_clean_schema` - Fresh schema for each test
+  - `pg_migrate_factory` - Context manager factory for PG with migrations (recommended)
+  - `make_migrate_fixture(Base)` - Legacy factory for migration fixtures
+- `schema` field in database config for declarative schema isolation
+
+### Fixed
+- `make check` fail-fast now immediately kills remaining background jobs when a check fails.
+  Previously, fail-fast only stopped waiting for results while other checks (especially tests)
+  continued running in the background until script exit.
+- `PytestAssertRewriteWarning` when using `appinfra.db.pg.testing` with `make_migrate_fixture`.
+  The new `pg_migrate_factory` fixture avoids the warning by not requiring imports from the module.
+
 ## [0.3.2] - 2026-01-25
 
 ### Added

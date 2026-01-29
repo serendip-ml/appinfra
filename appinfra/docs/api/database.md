@@ -18,6 +18,11 @@ keywords:
   - extensions
   - create extension
   - dbs
+  - schema
+  - schema isolation
+  - parallel tests
+  - pytest-xdist
+  - multi-tenant
 aliases:
   - db-api
   - postgres-api
@@ -114,6 +119,121 @@ dbs:
 | `readonly` | bool | false | Read-only mode |
 | `create_db` | bool | false | Create database if not exists |
 | `extensions` | list | [] | PostgreSQL extensions to create |
+| `schema` | string | null | PostgreSQL schema for isolation |
+
+## Schema Isolation
+
+Schema isolation enables parallel test execution and multi-tenant applications by routing all
+queries to a dedicated PostgreSQL schema.
+
+### Basic Usage
+
+```python
+from appinfra.db.pg import PG
+
+# Create PG with schema isolation
+pg = PG(logger, config, schema="tenant_a")
+pg.create_schema()  # Create schema if it doesn't exist
+pg.migrate(Base)    # Tables created in tenant_a schema
+
+# All queries now use tenant_a schema
+with pg.session() as session:
+    session.execute(text("INSERT INTO users ..."))  # Goes to tenant_a.users
+```
+
+### Configuration
+
+Schema can be set via parameter or config:
+
+```yaml
+dbs:
+  tenant_a:
+    url: "postgresql://localhost/myapp"
+    schema: tenant_a    # All queries use this schema
+
+  tenant_b:
+    url: "postgresql://localhost/myapp"
+    schema: tenant_b    # Isolated from tenant_a
+```
+
+### Parallel Testing with pytest-xdist
+
+The `appinfra.db.pg.testing` module provides fixtures for parallel test execution:
+
+```python
+# conftest.py - Minimal setup (one line)
+pytest_plugins = ["appinfra.db.pg.testing"]
+
+# Override config fixture to use your database
+@pytest.fixture(scope="session")
+def pg_test_config():
+    return {"url": "postgresql://localhost/test_db"}
+```
+
+Each pytest-xdist worker gets an isolated schema (`test_gw0`, `test_gw1`, etc.):
+
+```python
+def test_parallel_safe(pg_isolated, pg_session_isolated):
+    # This test can run in parallel - each worker has its own schema
+    pg_session_isolated.execute(text("INSERT INTO users (id) VALUES (1)"))
+    pg_session_isolated.commit()
+    # No conflicts with other workers
+```
+
+### Available Fixtures
+
+| Fixture               | Scope    | Description                                       |
+|-----------------------|----------|---------------------------------------------------|
+| `pg_test_schema`      | session  | Schema name for current worker (e.g., `test_gw0`) |
+| `pg_isolated`         | session  | PG instance with schema isolation                 |
+| `pg_session_isolated` | function | Per-test session with auto commit/rollback        |
+| `pg_clean_schema`     | function | Fresh schema (drop + create) for each test        |
+| `pg_schema_info`      | session  | Dict with schema configuration details            |
+| `pg_migrate_factory`  | session  | Factory for creating PG instances with migrations |
+
+### Migration Fixtures
+
+For tests that need tables, use the `pg_migrate_factory` fixture (recommended):
+
+```python
+# conftest.py - no import from testing module needed
+from myapp.models import Base
+
+pytest_plugins = ["appinfra.db.pg.testing"]
+
+@pytest.fixture(scope="session")
+def pg_with_tables(pg_migrate_factory):
+    with pg_migrate_factory(Base, extensions=["vector"]) as pg:
+        yield pg
+
+# In tests
+def test_with_tables(pg_with_tables):
+    # Tables from Base are available in isolated schema
+    with pg_with_tables.session() as session:
+        session.execute(text("SELECT * FROM my_table"))
+```
+
+The `pg_migrate_factory` fixture returns a context manager factory that:
+1. Creates a fresh schema
+2. Runs migrations to create all tables
+3. Cleans up the schema when the context exits
+
+**Legacy approach** (causes `PytestAssertRewriteWarning`):
+
+```python
+# This pattern causes a warning because importing from the module
+# while also using it as a pytest plugin triggers assertion rewrite issues
+from appinfra.db.pg.testing import make_migrate_fixture
+
+pg_with_tables = make_migrate_fixture(Base, extensions=["vector"])
+```
+
+### How It Works
+
+1. **Schema creation**: `pg.create_schema()` runs `CREATE SCHEMA IF NOT EXISTS`
+2. **Table creation**: `pg.migrate()` creates tables in the configured schema
+3. **Query routing**: SQLAlchemy event listeners set `search_path` on every connection
+4. **Extension visibility**: `search_path` includes `public` so extensions (pgvector, etc.) work
 
 ### PostgreSQL Extensions (`extensions` field)
 

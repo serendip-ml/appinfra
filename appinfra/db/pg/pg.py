@@ -54,6 +54,11 @@ class PG(Interface):
         >>> pg = PG(logger, db_config)
         >>> with pg.session() as session:
         ...     result = session.execute("SELECT 1")
+
+        >>> # With schema isolation (for parallel testing or multi-tenant)
+        >>> pg = PG(logger, db_config, schema="test_gw0")
+        >>> pg.create_schema()  # Create schema if needed
+        >>> pg.migrate(Base)    # Tables created in test_gw0 schema
     """
 
     # Type annotations for instance attributes
@@ -72,11 +77,19 @@ class PG(Interface):
     # Lifecycle hooks
     _before_migrate_hooks: list[Callable[[Any], None]]
     _after_migrate_hooks: list[Callable[[Any], None]]
+    # Schema isolation (optional)
+    _schema_mgr: Any  # SchemaManager | None
 
     # Extension name validation pattern (defense-in-depth)
     _EXTENSION_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 
-    def __init__(self, lg: Any, cfg: Any, query_lg_level: Any | None = None) -> None:
+    def __init__(
+        self,
+        lg: Any,
+        cfg: Any,
+        query_lg_level: Any | None = None,
+        schema: str | None = None,
+    ) -> None:
         """
         Initialize the PostgreSQL database interface.
 
@@ -84,6 +97,9 @@ class PG(Interface):
             lg: Logger instance for database operations
             cfg: Database configuration object
             query_lg_level: Log level for query logging (optional)
+            schema: PostgreSQL schema for isolation (optional). When set, all
+                queries are routed to this schema via search_path. Useful for
+                parallel test execution or multi-tenant applications.
         """
         validate_init_params(lg, cfg)
 
@@ -108,6 +124,9 @@ class PG(Interface):
         # Create and connect managers
         self._create_managers()
         self._setup_query_logging(query_lg_level)
+
+        # Schema isolation (after engine creation)
+        self._initialize_schema_isolation(schema, cfg)
 
     def _create_engine_and_session(self, cfg: Any) -> None:
         """Create SQLAlchemy engine and session maker."""
@@ -144,6 +163,23 @@ class PG(Interface):
         if query_lg_level is not None:
             self._query_logger.setup_callbacks(self._lg_extra)
 
+    def _initialize_schema_isolation(self, schema: str | None, cfg: Any) -> None:
+        """Initialize schema isolation if configured."""
+        self._schema_mgr = None
+        # Check parameter first, then config (supports both 'schema' and 'isolation_schema')
+        # Use None checks (not truthiness) so empty strings propagate to SchemaManager for validation
+        effective_schema = schema
+        if effective_schema is None:
+            effective_schema = getattr(cfg, "isolation_schema", None)
+        if effective_schema is None:
+            effective_schema = getattr(cfg, "schema", None)
+        # Only use schema if it's a string (handles Mock objects in tests)
+        if isinstance(effective_schema, str):
+            from .schema import SchemaManager
+
+            self._schema_mgr = SchemaManager(self._engine, effective_schema, self._lg)
+            self._schema_mgr.setup_listeners()
+
     def _update_logging_context(self) -> None:
         """Update logging context on all managers."""
         self._connection_mgr.set_logging_context(self._lg_extra)
@@ -169,6 +205,24 @@ class PG(Interface):
     def engine(self) -> sqlalchemy.engine.Engine:
         """Get the SQLAlchemy engine."""
         return self._engine
+
+    @property
+    def schema(self) -> str | None:
+        """Get the configured schema name, if any."""
+        return self._schema_mgr.schema if self._schema_mgr else None
+
+    def create_schema(self) -> None:
+        """
+        Create the configured schema if it doesn't exist.
+
+        Only has effect if a schema was configured during initialization.
+
+        Example:
+            >>> pg = PG(logger, config, schema="test_gw0")
+            >>> pg.create_schema()  # Creates schema if not exists
+        """
+        if self._schema_mgr:
+            self._schema_mgr.create_schema()
 
     def connect(self) -> Any:
         """
@@ -226,8 +280,15 @@ class PG(Interface):
         # Run before-migrate hooks
         self._run_hooks(self._before_migrate_hooks, "before_migrate")
 
-        # Create tables
-        base.metadata.create_all(self._engine)
+        # Create tables (schema-aware if configured)
+        if self._schema_mgr:
+            from .schema import create_all_in_schema
+
+            # Auto-create schema if it doesn't exist (idempotent, prevents common footgun)
+            self._schema_mgr.create_schema()
+            create_all_in_schema(base, self._engine, self._schema_mgr.schema)
+        else:
+            base.metadata.create_all(self._engine)
 
         # Run after-migrate hooks
         self._run_hooks(self._after_migrate_hooks, "after_migrate")

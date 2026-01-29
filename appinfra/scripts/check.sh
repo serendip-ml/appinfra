@@ -323,12 +323,20 @@ run_check() {
 monitor_jobs() {
     local pids=("$@")
     local any_failed=false
+    local remaining=${#pids[@]}
 
-    for pid in "${pids[@]}"; do
-        if ! wait "$pid" 2>/dev/null; then
+    # Use wait -n to wait for jobs by completion order, not launch order
+    # This ensures fail-fast triggers immediately when ANY job fails
+    while [ $remaining -gt 0 ]; do
+        if ! wait -n 2>/dev/null; then
             any_failed=true
-            [ "$FAIL_FAST" = true ] && break
+            if [ "$FAIL_FAST" = true ]; then
+                # Kill remaining background jobs immediately
+                jobs -p | xargs -r kill -TERM 2>/dev/null || true
+                break
+            fi
         fi
+        remaining=$((remaining - 1))
     done
 
     [ "$any_failed" = false ]
