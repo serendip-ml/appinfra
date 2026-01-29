@@ -327,7 +327,11 @@ monitor_jobs() {
     for pid in "${pids[@]}"; do
         if ! wait "$pid" 2>/dev/null; then
             any_failed=true
-            [ "$FAIL_FAST" = true ] && break
+            if [ "$FAIL_FAST" = true ]; then
+                # Kill remaining background jobs immediately
+                jobs -p | xargs -r kill -TERM 2>/dev/null || true
+                break
+            fi
         fi
     done
 

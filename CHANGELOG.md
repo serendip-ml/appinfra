@@ -10,6 +10,11 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Fixed
+- `make check` fail-fast now immediately kills remaining background jobs when a check fails.
+  Previously, fail-fast only stopped waiting for results while other checks (especially tests)
+  continued running in the background until script exit.
+
 ## [0.3.2] - 2026-01-25
 
 ### Added
