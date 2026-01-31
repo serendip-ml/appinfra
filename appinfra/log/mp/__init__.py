@@ -40,12 +40,13 @@ Queue Mode Usage:
 
 Independent Mode Usage:
     # Parent process
-    config = parent_logger.to_dict()
+    from appinfra.log import LoggingBuilder
+    config = builder.to_dict()  # LoggingBuilder instance
     Process(target=worker, args=(config, "worker-1"))
 
     # Subprocess
     def worker(log_config, name):
-        logger = Logger.from_dict(log_config, name=name)
+        logger = LoggingBuilder.from_dict(log_config, name=name).build()
         logger.info("Independent logging")
 """
 

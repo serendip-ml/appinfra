@@ -54,7 +54,13 @@ from .config import ChildLogConfig, LogConfig
 
 # Import new architecture components
 from .constants import LogConstants
-from .exceptions import InvalidLogLevelError, LogError
+from .exceptions import (
+    CallbackError,
+    FormatterError,
+    InvalidLogLevelError,
+    LogConfigurationError,
+    LogError,
+)
 from .factory import LoggerFactory
 from .level_manager import LevelRule, LogLevelManager
 from .logger import Logger
