@@ -338,3 +338,53 @@ class Logger(logging.Logger):
             files.append(f.f_code.co_filename)
 
         return files, linenos
+
+    # -------------------------------------------------------------------------
+    # Multiprocessing support
+    # -------------------------------------------------------------------------
+
+    @classmethod
+    def with_queue(
+        cls,
+        queue: Any,
+        name: str,
+        level: int | str = logging.INFO,
+    ) -> "Logger":
+        """
+        Create a logger that sends records to a queue for cross-process logging.
+
+        Use this in subprocesses to send log records to a parent process
+        that runs a LogQueueListener.
+
+        Args:
+            queue: multiprocessing.Queue to send records to
+            name: Logger name
+            level: Log level (default INFO)
+
+        Returns:
+            Logger configured with MPQueueHandler
+
+        Example:
+            # In subprocess
+            def worker(log_queue, worker_name):
+                lg = Logger.with_queue(log_queue, name=worker_name)
+                lg.info("Worker started")
+        """
+        from .mp import MPQueueHandler
+
+        config = LogConfig.from_params(level=level)
+        callback_registry = CallbackRegistry()
+        logger = cls(name, config, callback_registry)
+
+        # Set level
+        if isinstance(level, str):
+            level = getattr(logging, level.upper(), logging.INFO)
+        logger.setLevel(level)
+
+        # Add queue handler
+        handler = MPQueueHandler(queue)
+        handler.setLevel(level)
+        logger.addHandler(handler)
+
+        logger.propagate = False
+        return logger

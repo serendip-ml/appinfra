@@ -650,8 +650,8 @@ class TestMissingCoverage:
 
         result = _format_without_colors(formatter, record, 50)
 
-        # Exception should show class name only
-        assert "[exception:ValueError]" in result
+        # Exception should be formatted on a new line
+        assert "ValueError: test error" in result
         assert "[context:info]" in result
 
     def test_format_without_colors_with_ordered_dict(self):

@@ -12,6 +12,12 @@ For API stability guarantees and deprecation policy, see
 
 ### Added
 - Documentation for merge policy and release process in contributing guide
+- Multiprocess logging support (`appinfra.log.mp`) for child processes:
+  - **Queue mode**: `MPQueueHandler` in subprocesses sends records to parent via `LogQueueListener`
+  - **Independent mode**: `LoggingBuilder.to_dict()`/`from_dict()` for self-sufficient subprocess logging
+  - `Logger.with_queue(queue, name)` convenience method for subprocess queue handlers
+  - Automatic exception formatting before pickling (traceback preserved across processes)
+  - Database handlers are excluded from serialization (not supported in multiprocess mode)
 
 ## [0.3.3] - 2026-01-29
 

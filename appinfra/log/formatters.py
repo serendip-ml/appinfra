@@ -101,17 +101,27 @@ def _format_extra_without_colors(record: logging.LogRecord) -> str:
     if not isinstance(extra, collections.OrderedDict):
         keys = sorted(keys)
 
+    # Keys that get special handling
+    special_keys = {"after", "exception", "exception_formatted"}
+
     extra_parts = []
     for key in keys:
-        if key == "after":
+        if key in special_keys:
             continue
         value = extra[key]
-        if key == "exception" and isinstance(value, Exception):
-            extra_parts.append(f"[{key}:{value.__class__.__name__}]")
-        else:
-            extra_parts.append(f"[{key}:{value}]")
+        extra_parts.append(f"[{key}:{value}]")
 
-    return " " + " ".join(extra_parts) if extra_parts else ""
+    result = " " + " ".join(extra_parts) if extra_parts else ""
+
+    # Append exception info (prefer pre-formatted from queue mode)
+    if "exception_formatted" in extra:
+        result += "\n" + extra["exception_formatted"]
+    elif "exception" in extra:
+        exc = extra["exception"]
+        if isinstance(exc, Exception):
+            result += f"\n{exc.__class__.__name__}: {exc}"
+
+    return result
 
 
 def _format_without_colors(
@@ -311,6 +321,9 @@ class FieldFormatter:
 
     def _format_fields_dict(self, fields: dict[str, Any], col: str, bold: str) -> str:
         """Format a dictionary of fields."""
+        # Keys to exclude from normal field formatting
+        special_keys = {"after", "exception", "exception_formatted"}
+
         seq = []
         if "after" in fields:
             seq.append(
@@ -322,11 +335,16 @@ class FieldFormatter:
             + [
                 self.format_field(v, col, bold, k, quote=True)
                 for k, v in fields.items()
-                if k != "after" and k != "exception"
+                if k not in special_keys
             ]
         )
 
-        if "exception" in fields:
+        # Handle exception - prefer pre-formatted (from queue mode), fall back to live
+        if "exception_formatted" in fields:
+            # Pre-formatted exception from MPQueueHandler (cross-process)
+            s += "\n" + fields["exception_formatted"]
+        elif "exception" in fields:
+            # Live exception in same process
             s += "\n" + self._render_exception(fields["exception"])
 
         return s

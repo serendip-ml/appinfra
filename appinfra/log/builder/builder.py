@@ -16,6 +16,46 @@ from ..logger import Logger
 from .interface import HandlerConfig, LoggingBuilderInterface
 
 
+def _get_handler_classes() -> dict[str, type[HandlerConfig]]:
+    """Return mapping of handler type names to config classes."""
+    from .console import ConsoleHandlerConfig
+    from .file import (
+        FileHandlerConfig,
+        RotatingFileHandlerConfig,
+        TimedRotatingFileHandlerConfig,
+    )
+
+    return {
+        "console": ConsoleHandlerConfig,
+        "file": FileHandlerConfig,
+        "rotating_file": RotatingFileHandlerConfig,
+        "timed_rotating_file": TimedRotatingFileHandlerConfig,
+    }
+
+
+def _deserialize_handler(handler_dict: dict[str, Any]) -> HandlerConfig | None:
+    """Deserialize a handler config dict to a HandlerConfig instance."""
+    import sys
+
+    handler_classes = _get_handler_classes()
+    handler_type = handler_dict.get("type")
+    if handler_type not in handler_classes:
+        return None
+
+    handler_class = handler_classes[handler_type]
+    kwargs = {k: v for k, v in handler_dict.items() if k != "type"}
+
+    if handler_type == "console":
+        stream_name = kwargs.pop("stream", "stdout")
+        kwargs["stream"] = sys.stderr if stream_name == "stderr" else sys.stdout
+        return handler_class(**kwargs)
+
+    if handler_type in ("file", "rotating_file", "timed_rotating_file"):
+        return handler_class(kwargs.pop("filename"), **kwargs)
+
+    return None
+
+
 class LoggingBuilder(LoggingBuilderInterface):
     """
     Base fluent builder for configuring loggers.
@@ -292,6 +332,82 @@ class LoggingBuilder(LoggingBuilderInterface):
             utc=kwargs.get("utc", False),
         )
         return self.with_handler(handler_config)
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Serialize builder configuration to a picklable dictionary.
+
+        Used for passing logging configuration to subprocesses.
+        Database handlers are excluded (they cannot be serialized).
+
+        Returns:
+            Dictionary with all configuration parameters
+
+        Example:
+            # Parent process
+            builder = LoggingBuilder("app").with_level("debug").with_console_handler()
+            config = builder.to_dict()
+
+            # Subprocess
+            builder = LoggingBuilder.from_dict(config)
+            logger = builder.build()
+        """
+        # Serialize handler configs, skipping non-serializable ones
+        handlers = []
+        for handler_config in self._handlers:
+            try:
+                handlers.append(handler_config.to_dict())
+            except NotImplementedError:
+                # Skip handlers that can't be serialized (e.g., DatabaseHandler)
+                pass
+
+        return {
+            "name": self._name,
+            "level": self._level,
+            "location": self._location,
+            "micros": self._micros,
+            "colors": self._colors,
+            "location_color": self._location_color,
+            "handlers": handlers,
+            "extra": dict(self._extra) if self._extra else {},
+        }
+
+    @classmethod
+    def from_dict(
+        cls, config: dict[str, Any], name: str | None = None
+    ) -> "LoggingBuilder":
+        """
+        Create a builder from a serialized configuration dictionary.
+
+        Used for reconstructing logging configuration in subprocesses.
+
+        Args:
+            config: Configuration dictionary (from to_dict())
+            name: Override logger name (optional, uses config name if not provided)
+
+        Returns:
+            LoggingBuilder instance with restored configuration
+
+        Example:
+            # Subprocess
+            builder = LoggingBuilder.from_dict(config, name="worker-1")
+            logger = builder.build()
+        """
+        builder = cls(name or config["name"])
+        builder._level = config.get("level", "info")
+        builder._location = config.get("location", 0)
+        builder._micros = config.get("micros", False)
+        builder._colors = config.get("colors", True)
+        builder._location_color = config.get("location_color")
+        builder._extra = config.get("extra", {})
+
+        # Reconstruct handlers from serialized config
+        for handler_dict in config.get("handlers", []):
+            handler = _deserialize_handler(handler_dict)
+            if handler is not None:
+                builder.with_handler(handler)
+
+        return builder
 
     def build(self) -> Logger:
         """

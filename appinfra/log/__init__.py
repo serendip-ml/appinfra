@@ -58,6 +58,9 @@ from .exceptions import InvalidLogLevelError, LogError
 from .factory import LoggerFactory
 from .level_manager import LevelRule, LogLevelManager
 from .logger import Logger
+
+# Multiprocessing support
+from .mp import LogQueueListener, MPQueueHandler
 from .reloader import LogConfigReloader
 
 # Define custom log levels for more granular debugging
@@ -305,6 +308,9 @@ __all__ = [
     "LogLevelManager",
     "LevelRule",
     "LogConfigReloader",
+    # Multiprocessing support
+    "MPQueueHandler",
+    "LogQueueListener",
     # Exception classes
     "LogError",
     "InvalidLogLevelError",

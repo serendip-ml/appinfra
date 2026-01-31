@@ -30,6 +30,18 @@ class HandlerConfig(ABC):
         """
         pass  # pragma: no cover
 
+    @abstractmethod
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Serialize handler config to a picklable dictionary.
+
+        Used for passing handler configuration to subprocesses.
+
+        Returns:
+            Dictionary with handler type and all parameters
+        """
+        pass  # pragma: no cover
+
 
 class LoggingBuilderInterface(ABC):
     """

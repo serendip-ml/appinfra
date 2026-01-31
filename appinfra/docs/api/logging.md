@@ -9,6 +9,9 @@ keywords:
   - handlers
   - formatters
   - colors
+  - multiprocess
+  - subprocess
+  - queue handler
 aliases:
   - log-api
   - logging-api
@@ -303,6 +306,109 @@ pip install appinfra[hotreload]  # Installs watchdog
 ```
 
 See [Hot-Reload Logging Guide](../guides/hot-reload-logging.md) for full documentation.
+
+## Multiprocess Logging
+
+Python's `multiprocessing` creates separate processes that cannot share logging handlers. appinfra
+provides two paradigms for multiprocess logging.
+
+### Queue Mode (Centralized)
+
+Best when: Parent process orchestrates subprocesses and needs centralized log aggregation.
+
+```python
+from multiprocessing import Process, Queue
+from appinfra.log import Logger, LoggingBuilder
+from appinfra.log.mp import MPQueueHandler, LogQueueListener
+
+# Parent process: create logger and queue
+queue = Queue()
+logger = LoggingBuilder("app").with_level("info").with_console_handler().build()
+
+# Start listener (receives records from subprocesses)
+listener = LogQueueListener(queue, logger)
+listener.start()
+
+def worker(q):
+    # Subprocess: create logger that sends to parent's queue
+    lg = Logger.with_queue(q, name="worker", level="debug")
+    lg.info("Worker started")
+    try:
+        raise ValueError("Something failed")
+    except Exception as e:
+        lg.warning("Operation failed", extra={"exception": e})
+
+# Spawn subprocess
+p = Process(target=worker, args=(queue,))
+p.start()
+p.join()
+
+# Stop listener when done
+listener.stop()
+```
+
+**Key points:**
+- `MPQueueHandler` automatically formats exceptions before pickling (traceback preserved)
+- `LogQueueListener` runs in a background daemon thread
+- Records are dispatched to the parent logger's handlers
+
+### Independent Mode (Self-Sufficient)
+
+Best when: Subprocesses are long-lived or may outlive the parent.
+
+```python
+from multiprocessing import Process
+from appinfra.log import LoggingBuilder
+
+# Parent: serialize logging configuration
+builder = (
+    LoggingBuilder("app")
+    .with_level("debug")
+    .with_console_handler()
+    .with_file_handler("/var/log/app.log")
+)
+config_dict = builder.to_dict()  # Picklable dict
+
+def worker(log_config, worker_id):
+    # Subprocess: reconstruct logger from config
+    logger = LoggingBuilder.from_dict(log_config, name=f"worker-{worker_id}").build()
+    logger.info("Worker started independently")
+
+# Spawn subprocess with config
+p = Process(target=worker, args=(config_dict, 1))
+p.start()
+```
+
+**Key points:**
+- Subprocess creates its own handlers (file handles, etc.)
+- No dependency on parent process after startup
+- Database handlers cannot be serialized (excluded automatically)
+
+### Important Caveats
+
+**Process Integrity Requirements:**
+
+- **Queue mode requires parent alive**: If the parent process crashes, queued log records are lost
+  and subprocesses may block on a full queue. Design for graceful shutdown.
+- **Queue size limits**: Default `multiprocessing.Queue` is unbounded but system memory is not.
+  Consider queue size for high-throughput logging.
+- **File handler contention**: In independent mode, multiple processes writing to the same file
+  can cause interleaved/corrupted output. Use separate files or a centralized logging service.
+
+**What Cannot Be Serialized:**
+
+- Database handlers (`DatabaseHandlerConfig`) - require live database connections
+- Custom handlers with unpicklable state
+
+**When to Use Which:**
+
+| Scenario | Recommended Mode |
+|----------|-----------------|
+| Short-lived workers | Queue mode |
+| Long-running daemons | Independent mode |
+| Need centralized log aggregation | Queue mode |
+| Subprocesses may outlive parent | Independent mode |
+| High-throughput logging | Independent mode (avoid queue bottleneck) |
 
 ## See Also
 
