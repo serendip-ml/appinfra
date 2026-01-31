@@ -10,6 +10,9 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Added
+- Documentation for merge policy and release process in contributing guide
+
 ## [0.3.3] - 2026-01-29
 
 ### Added

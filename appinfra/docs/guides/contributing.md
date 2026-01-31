@@ -308,6 +308,33 @@ See [SECURITY.md](../../SECURITY.md) for the full security policy and threat mod
 4. Add tests for new functionality
 5. Update documentation as needed
 
+**Merge Policy:** All PRs are squash-merged to keep the git history clean (one commit per feature).
+
+## Release Process
+
+Release prep goes through a normal PR to develop. Only the merge to main and tagging are done via
+CLI to preserve full commit history.
+
+```bash
+# 1. Create release PR to develop (version bump, changelog)
+#    - Branch: release/vX.Y.Z
+#    - Commit: "chore(release): prepare vX.Y.Z"
+#    - Squash-merge to develop like any other PR
+
+# 2. Merge to main (preserves commit history)
+git checkout main && git pull origin main
+git merge origin/develop --no-ff -m "Release vX.Y.Z"
+make check  # verify before pushing
+git push origin main
+
+# 3. Tag (triggers GitHub Actions release workflow)
+git tag vX.Y.Z && git push origin vX.Y.Z
+
+# 4. Sync develop with main (gets merge commit on develop)
+git checkout develop && git pull origin develop
+git merge main && git push origin develop
+```
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the Apache License 2.0.
