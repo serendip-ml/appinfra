@@ -168,3 +168,41 @@ class LogConfig:
             colors=colors,
             location_color=location_color,
         )
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Serialize config to a picklable dictionary.
+
+        Used for passing logging configuration to subprocesses.
+
+        Returns:
+            Dictionary with all config parameters
+        """
+        return {
+            "level": self.level,
+            "location": self.location,
+            "micros": self.micros,
+            "colors": self.colors,
+            "location_color": self.location_color,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> LogConfig:
+        """
+        Create LogConfig from a dictionary.
+
+        Used for reconstructing logging configuration in subprocesses.
+
+        Args:
+            d: Dictionary with config parameters (from to_dict())
+
+        Returns:
+            LogConfig instance
+        """
+        return cls(
+            level=d.get("level", logging.INFO),
+            location=d.get("location", 0),
+            micros=d.get("micros", False),
+            colors=d.get("colors", True),
+            location_color=d.get("location_color"),
+        )

@@ -46,6 +46,20 @@ class FileHandlerConfig(HandlerConfig):
         self.encoding = encoding
         self.delay = delay
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to picklable dictionary."""
+        d: dict[str, Any] = {
+            "type": "file",
+            "filename": str(self.filename),
+            "mode": self.mode,
+            "delay": self.delay,
+        }
+        if self.level is not None:
+            d["level"] = self.level
+        if self.encoding is not None:
+            d["encoding"] = self.encoding
+        return d
+
     def create_handler(self, config: LogConfig, logger: Any = None) -> logging.Handler:
         """Create a file handler."""
         # Ensure directory exists
@@ -85,6 +99,21 @@ class RotatingFileHandlerConfig(HandlerConfig):
         self.backup_count = backup_count
         self.encoding = encoding
         self.delay = delay
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to picklable dictionary."""
+        d: dict[str, Any] = {
+            "type": "rotating_file",
+            "filename": str(self.filename),
+            "max_bytes": self.max_bytes,
+            "backup_count": self.backup_count,
+            "delay": self.delay,
+        }
+        if self.level is not None:
+            d["level"] = self.level
+        if self.encoding is not None:
+            d["encoding"] = self.encoding
+        return d
 
     def create_handler(self, config: LogConfig, logger: Any = None) -> logging.Handler:
         """Create a rotating file handler."""
@@ -133,6 +162,23 @@ class TimedRotatingFileHandlerConfig(HandlerConfig):
         self.encoding = encoding
         self.delay = delay
         self.utc = utc
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to picklable dictionary."""
+        d: dict[str, Any] = {
+            "type": "timed_rotating_file",
+            "filename": str(self.filename),
+            "when": self.when,
+            "interval": self.interval,
+            "backup_count": self.backup_count,
+            "delay": self.delay,
+            "utc": self.utc,
+        }
+        if self.level is not None:
+            d["level"] = self.level
+        if self.encoding is not None:
+            d["encoding"] = self.encoding
+        return d
 
     def create_handler(self, config: LogConfig, logger: Any = None) -> logging.Handler:
         """Create a timed rotating file handler."""

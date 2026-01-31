@@ -134,6 +134,20 @@ class DatabaseHandlerConfig(HandlerConfig):
 
         return data
 
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Serialize to picklable dictionary.
+
+        Raises:
+            NotImplementedError: Database handlers cannot be serialized because
+                                 db_interface and data_mapper are not picklable.
+        """
+        raise NotImplementedError(
+            "DatabaseHandlerConfig cannot be serialized for subprocess logging. "
+            "Database handlers must be configured independently in each subprocess "
+            "with their own database connection."
+        )
+
     def create_handler(
         self, config: LogConfig, logger: Any = None, lifecycle_manager: Any = None
     ) -> "DatabaseHandler":
