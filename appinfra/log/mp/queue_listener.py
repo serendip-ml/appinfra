@@ -122,8 +122,10 @@ class LogQueueListener:
             except Exception:
                 # Don't let listener thread die from unexpected errors
                 import sys
+                import traceback
 
-                sys.stderr.write("LogQueueListener: error handling record\n")
+                sys.stderr.write("LogQueueListener: error handling record:\n")
+                traceback.print_exc(file=sys.stderr)
 
     def _handle_record(self, record: logging.LogRecord) -> None:
         """
