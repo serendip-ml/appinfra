@@ -322,6 +322,7 @@ CLI to preserve full commit history.
 #    - Squash-merge to develop like any other PR
 
 # 2. Merge to main (preserves commit history)
+git fetch origin
 git checkout main && git pull origin main
 git merge origin/develop --no-ff -m "Release vX.Y.Z"
 make check  # verify before pushing
