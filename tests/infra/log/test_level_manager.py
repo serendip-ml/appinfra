@@ -476,3 +476,118 @@ class TestIntegrationScenarios:
             manager.get_effective_level("/myapp/critical/security/auth") == "critical"
         )
         assert manager.get_effective_level("/myapp/debug/verbose/trace") == "debug"
+
+
+# =============================================================================
+# Test Serialization (for multiprocessing)
+# =============================================================================
+
+
+class TestSerialization:
+    """Test to_dict() and from_dict() for multiprocessing support."""
+
+    def test_to_dict_empty_manager(self, manager):
+        """Test to_dict with no rules."""
+        result = manager.to_dict()
+
+        assert "rules" in result
+        assert "default_level" in result
+        assert result["rules"] == []
+        assert result["default_level"] == logging.INFO
+
+    def test_to_dict_with_rules(self, manager):
+        """Test to_dict serializes rules correctly."""
+        manager.add_rule("/worker/*", "warning", source="yaml", priority=1)
+        manager.add_rule("/worker/verbose/*", "debug", source="api", priority=10)
+
+        result = manager.to_dict()
+
+        assert len(result["rules"]) == 2
+        # Rules should be sorted by priority desc
+        assert result["rules"][0]["pattern"] == "/worker/verbose/*"
+        assert result["rules"][0]["level"] == "debug"
+        assert result["rules"][0]["source"] == "api"
+        assert result["rules"][0]["priority"] == 10
+        assert result["rules"][1]["pattern"] == "/worker/*"
+
+    def test_to_dict_includes_default_level(self, manager):
+        """Test to_dict includes custom default level."""
+        manager.set_default_level("error")
+        result = manager.to_dict()
+
+        assert result["default_level"] == "error"
+
+    def test_from_dict_restores_rules(self, manager):
+        """Test from_dict restores rules correctly."""
+        config = {
+            "rules": [
+                {
+                    "pattern": "/worker/*",
+                    "level": "warning",
+                    "source": "yaml",
+                    "priority": 1,
+                    "specificity": 11,
+                },
+            ],
+            "default_level": "debug",
+        }
+
+        manager.from_dict(config)
+
+        assert manager.get_effective_level("/worker/task1") == "warning"
+        assert manager.get_default_level() == "debug"
+
+    def test_from_dict_clears_existing_rules(self, manager):
+        """Test from_dict replaces existing rules."""
+        manager.add_rule("/old/*", "error", source="yaml", priority=1)
+
+        config = {
+            "rules": [
+                {
+                    "pattern": "/new/*",
+                    "level": "info",
+                    "source": "yaml",
+                    "priority": 1,
+                    "specificity": 11,
+                },
+            ],
+            "default_level": logging.INFO,
+        }
+
+        manager.from_dict(config)
+
+        # Old rule should be gone
+        assert manager.get_effective_level("/old/logger") is None
+        # New rule should be active
+        assert manager.get_effective_level("/new/logger") == "info"
+
+    def test_roundtrip_serialization(self, manager):
+        """Test to_dict -> from_dict roundtrip preserves state."""
+        manager.add_rule("/api/*", "info", source="yaml", priority=1)
+        manager.add_rule("/api/auth/*", "debug", source="cli", priority=5)
+        manager.set_default_level("warning")
+
+        config = manager.to_dict()
+
+        # Reset and restore
+        LogLevelManager.reset_instance()
+        new_manager = LogLevelManager.get_instance()
+        new_manager.from_dict(config)
+
+        # Verify state is preserved
+        assert new_manager.get_effective_level("/api/handler") == "info"
+        assert new_manager.get_effective_level("/api/auth/login") == "debug"
+        assert new_manager.get_default_level() == "warning"
+
+    def test_to_dict_is_picklable(self, manager):
+        """Test to_dict output can be pickled (required for multiprocessing)."""
+        import pickle
+
+        manager.add_rule("/worker/*", "warning", source="yaml", priority=1)
+        manager.set_default_level("error")
+
+        config = manager.to_dict()
+        pickled = pickle.dumps(config)
+        restored = pickle.loads(pickled)
+
+        assert restored == config

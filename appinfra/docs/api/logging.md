@@ -318,39 +318,72 @@ Best when: Parent process orchestrates subprocesses and needs centralized log ag
 
 ```python
 from multiprocessing import Process, Queue
-from appinfra.log import Logger, LoggingBuilder
-from appinfra.log.mp import MPQueueHandler, LogQueueListener
+from appinfra.log import Logger, LoggingBuilder, LogQueueListener
 
 # Parent process: create logger and queue
 queue = Queue()
-logger = LoggingBuilder("app").with_level("info").with_console_handler().build()
+logger = LoggingBuilder("app").with_level("info").with_console().build()
 
 # Start listener (receives records from subprocesses)
 listener = LogQueueListener(queue, logger)
 listener.start()
 
-def worker(q):
-    # Subprocess: create logger that sends to parent's queue
-    lg = Logger.with_queue(q, name="worker", level="debug")
+# Create config for workers (captures queue, level, and LogLevelManager rules)
+worker_config = logger.queue_config(queue)
+
+def worker(config, worker_id):
+    # Subprocess: create logger from config
+    lg = Logger.from_queue_config(config, name=f"worker-{worker_id}")
     lg.info("Worker started")
     try:
         raise ValueError("Something failed")
     except Exception as e:
         lg.warning("Operation failed", extra={"exception": e})
 
-# Spawn subprocess
-p = Process(target=worker, args=(queue,))
-p.start()
-p.join()
+# Spawn subprocesses
+processes = [Process(target=worker, args=(worker_config, i)) for i in range(4)]
+for p in processes:
+    p.start()
+for p in processes:
+    p.join()
 
 # Stop listener when done
 listener.stop()
 ```
 
 **Key points:**
+- `logger.queue_config(queue)` captures everything workers need: queue, log level, and
+  `LogLevelManager` pattern rules
+- `Logger.from_queue_config(config, name)` restores the configuration and applies pattern-based
+  level rules to the logger name
 - `MPQueueHandler` automatically formats exceptions before pickling (traceback preserved)
 - `LogQueueListener` runs in a background daemon thread
 - Records are dispatched to the parent logger's handlers
+
+**With pattern-based level rules:**
+
+```python
+from appinfra.log import LogLevelManager
+
+# Parent: set up pattern rules
+level_manager = LogLevelManager.get_instance()
+level_manager.add_rule("/worker/*", "warning", source="config", priority=1)
+level_manager.add_rule("/worker/verbose/*", "debug", source="config", priority=2)
+
+# Create config (includes the rules)
+worker_config = logger.queue_config(queue)
+
+def worker(config):
+    # Gets WARNING level from /worker/* pattern
+    lg = Logger.from_queue_config(config, name="/worker/task")
+    lg.debug("Won't be logged")
+    lg.warning("Will be logged")
+
+def verbose_worker(config):
+    # Gets DEBUG level from /worker/verbose/* pattern (higher priority)
+    lg = Logger.from_queue_config(config, name="/worker/verbose/task")
+    lg.debug("Will be logged")
+```
 
 ### Independent Mode (Self-Sufficient)
 
