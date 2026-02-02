@@ -10,6 +10,16 @@ import pytest
 from appinfra.log.mp import MPQueueHandler
 
 
+@pytest.fixture(autouse=True)
+def reset_level_manager():
+    """Reset LogLevelManager singleton before and after each test."""
+    from appinfra.log import LogLevelManager
+
+    LogLevelManager.reset_instance()
+    yield
+    LogLevelManager.reset_instance()
+
+
 @pytest.fixture
 def queue():
     """Create a multiprocessing queue for testing."""
@@ -283,3 +293,193 @@ class TestMPQueueHandlerIntegration:
         assert record.exc_text is not None  # Formatted
         assert "KeyError" in record.exc_text
         assert "missing key" in record.exc_text
+
+
+@pytest.mark.unit
+class TestLoggerQueueConfig:
+    """Test Logger.queue_config() and Logger.from_queue_config() methods."""
+
+    def test_queue_config_returns_dict_with_queue_and_level(self, queue):
+        """Test queue_config returns a dict with queue and level."""
+        from appinfra.log import Logger
+
+        lg = Logger.with_queue(queue, name="parent", level="debug")
+        config = lg.queue_config(queue)
+
+        assert isinstance(config, dict)
+        assert config["queue"] is queue
+        assert config["level"] == logging.DEBUG
+
+    def test_queue_config_captures_effective_level(self, queue):
+        """Test queue_config captures the logger's effective level."""
+        from appinfra.log import Logger
+
+        lg = Logger.with_queue(queue, name="parent", level="warning")
+        config = lg.queue_config(queue)
+
+        assert config["level"] == logging.WARNING
+
+    def test_from_queue_config_creates_logger(self, queue):
+        """Test from_queue_config creates a logger with queue handler."""
+        from appinfra.log import Logger
+
+        config = {"queue": queue, "level": logging.DEBUG}
+        lg = Logger.from_queue_config(config, name="worker")
+
+        assert lg.name == "worker"
+        assert len(lg.handlers) == 1
+        assert isinstance(lg.handlers[0], MPQueueHandler)
+        assert lg.level == logging.DEBUG
+
+    def test_from_queue_config_respects_level(self, queue):
+        """Test from_queue_config sets the correct level."""
+        from appinfra.log import Logger
+
+        config = {"queue": queue, "level": logging.ERROR}
+        lg = Logger.from_queue_config(config, name="worker")
+
+        assert lg.level == logging.ERROR
+
+    def test_queue_config_roundtrip(self, queue):
+        """Test queue_config -> from_queue_config roundtrip."""
+        from appinfra.log import Logger
+
+        parent_lg = Logger.with_queue(queue, name="parent", level="info")
+        config = parent_lg.queue_config(queue)
+        worker_lg = Logger.from_queue_config(config, name="worker")
+
+        assert worker_lg.level == parent_lg.level
+        assert worker_lg.handlers[0].queue is queue
+
+    def test_from_queue_config_logs_to_queue(self, queue):
+        """Test logger from from_queue_config sends records to queue."""
+        from appinfra.log import Logger
+
+        config = {"queue": queue, "level": logging.INFO}
+        lg = Logger.from_queue_config(config, name="worker")
+        lg.info("test message from worker")
+
+        record = queue.get(timeout=1)
+        assert record.msg == "test message from worker"
+        assert record.name == "worker"
+
+    def test_queue_config_with_logging_builder(self, queue):
+        """Test queue_config works with LoggingBuilder-created loggers."""
+        from appinfra.log import LoggingBuilder
+
+        parent_lg = LoggingBuilder("parent").with_level("debug").build()
+        config = parent_lg.queue_config(queue)
+
+        assert config["queue"] is queue
+        assert config["level"] == logging.DEBUG
+
+    def test_queue_config_includes_level_rules(self, queue):
+        """Test queue_config includes LogLevelManager rules."""
+        from appinfra.log import Logger, LogLevelManager
+
+        # Setup rules in parent
+        level_manager = LogLevelManager.get_instance()
+        level_manager.clear_rules()
+        level_manager.add_rule("/worker/*", "warning", source="test", priority=1)
+
+        lg = Logger.with_queue(queue, name="parent", level="debug")
+        config = lg.queue_config(queue)
+
+        assert "level_rules" in config
+        assert len(config["level_rules"]["rules"]) == 1
+        assert config["level_rules"]["rules"][0]["pattern"] == "/worker/*"
+        assert config["level_rules"]["rules"][0]["level"] == "warning"
+
+        # Cleanup
+        level_manager.clear_rules()
+
+    def test_from_queue_config_applies_level_rules(self, queue):
+        """Test from_queue_config applies pattern-based level rules."""
+        from appinfra.log import Logger, LogLevelManager
+
+        # Setup: create config with rules
+        level_manager = LogLevelManager.get_instance()
+        level_manager.clear_rules()
+        level_manager.add_rule("/worker/*", "warning", source="test", priority=1)
+
+        parent_lg = Logger.with_queue(queue, name="parent", level="debug")
+        config = parent_lg.queue_config(queue)
+
+        # Clear rules to simulate fresh subprocess
+        level_manager.clear_rules()
+
+        # Create worker logger - should get WARNING level from pattern match
+        worker_lg = Logger.from_queue_config(config, name="/worker/task1")
+
+        assert worker_lg.level == logging.WARNING
+
+        # Cleanup
+        level_manager.clear_rules()
+
+    def test_from_queue_config_falls_back_to_base_level(self, queue):
+        """Test from_queue_config uses base level when no pattern matches."""
+        from appinfra.log import Logger, LogLevelManager
+
+        # Setup: create config with rules that won't match
+        level_manager = LogLevelManager.get_instance()
+        level_manager.clear_rules()
+        level_manager.add_rule("/other/*", "warning", source="test", priority=1)
+
+        parent_lg = Logger.with_queue(queue, name="parent", level="debug")
+        config = parent_lg.queue_config(queue)
+
+        # Clear rules to simulate fresh subprocess
+        level_manager.clear_rules()
+
+        # Create worker logger - should fall back to DEBUG (base level)
+        worker_lg = Logger.from_queue_config(config, name="/worker/task1")
+
+        assert worker_lg.level == logging.DEBUG
+
+        # Cleanup
+        level_manager.clear_rules()
+
+    def test_from_queue_config_restores_multiple_rules(self, queue):
+        """Test from_queue_config correctly restores multiple rules."""
+        from appinfra.log import Logger, LogLevelManager
+
+        # Setup: create config with multiple rules
+        level_manager = LogLevelManager.get_instance()
+        level_manager.clear_rules()
+        level_manager.add_rule("/worker/*", "warning", source="test", priority=1)
+        level_manager.add_rule("/worker/verbose/*", "debug", source="test", priority=2)
+
+        parent_lg = Logger.with_queue(queue, name="parent", level="info")
+        config = parent_lg.queue_config(queue)
+
+        # Clear rules to simulate fresh subprocess
+        level_manager.clear_rules()
+
+        # Create workers - more specific pattern should win
+        worker1 = Logger.from_queue_config(config, name="/worker/task1")
+        worker2 = Logger.from_queue_config(config, name="/worker/verbose/task2")
+
+        assert worker1.level == logging.WARNING  # Matches /worker/*
+        assert (
+            worker2.level == logging.DEBUG
+        )  # Matches /worker/verbose/* (higher priority)
+
+        # Cleanup
+        level_manager.clear_rules()
+
+    def test_queue_config_includes_default_level(self, queue):
+        """Test queue_config includes LogLevelManager default level."""
+        from appinfra.log import Logger, LogLevelManager
+
+        level_manager = LogLevelManager.get_instance()
+        level_manager.clear_rules()
+        level_manager.set_default_level("error")
+
+        lg = Logger.with_queue(queue, name="parent", level="debug")
+        config = lg.queue_config(queue)
+
+        assert config["level_rules"]["default_level"] == "error"
+
+        # Cleanup
+        level_manager.set_default_level(logging.INFO)
+        level_manager.clear_rules()

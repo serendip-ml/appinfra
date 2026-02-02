@@ -18,6 +18,13 @@ For API stability guarantees and deprecation policy, see
   - `Logger.with_queue(queue, name)` convenience method for subprocess queue handlers
   - Automatic exception formatting before pickling (traceback preserved across processes)
   - Database handlers are excluded from serialization (not supported in multiprocess mode)
+- Simplified queue config API for multiprocess logging:
+  - `Logger.queue_config(queue)` - Creates a picklable config dict containing queue, level, and
+    `LogLevelManager` rules. One call captures everything workers need.
+  - `Logger.from_queue_config(config, name)` - Creates a subprocess logger from the config. Pattern-based
+    level rules are restored and applied based on the logger name.
+  - `LogLevelManager.to_dict()` / `from_dict()` - Serialize and restore topic-based level rules for
+    multiprocess scenarios
 
 ## [0.3.3] - 2026-01-29
 
