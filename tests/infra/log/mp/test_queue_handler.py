@@ -10,6 +10,16 @@ import pytest
 from appinfra.log.mp import MPQueueHandler
 
 
+@pytest.fixture(autouse=True)
+def reset_level_manager():
+    """Reset LogLevelManager singleton before and after each test."""
+    from appinfra.log import LogLevelManager
+
+    LogLevelManager.reset_instance()
+    yield
+    LogLevelManager.reset_instance()
+
+
 @pytest.fixture
 def queue():
     """Create a multiprocessing queue for testing."""

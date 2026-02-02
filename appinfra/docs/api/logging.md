@@ -356,6 +356,7 @@ listener.stop()
   `LogLevelManager` pattern rules
 - `Logger.from_queue_config(config, name)` restores the configuration and applies pattern-based
   level rules to the logger name
+- Call `from_queue_config()` once per process, then use `derive_lg()` for additional loggers
 - `MPQueueHandler` automatically formats exceptions before pickling (traceback preserved)
 - `LogQueueListener` runs in a background daemon thread
 - Records are dispatched to the parent logger's handlers
