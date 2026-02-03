@@ -15,7 +15,7 @@ Usage:
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from appinfra.ui import INQUIRER_AVAILABLE, select_scrollable, select_table
 

@@ -54,10 +54,19 @@ from .config import ChildLogConfig, LogConfig
 
 # Import new architecture components
 from .constants import LogConstants
-from .exceptions import InvalidLogLevelError, LogError
+from .exceptions import (
+    CallbackError,
+    FormatterError,
+    InvalidLogLevelError,
+    LogConfigurationError,
+    LogError,
+)
 from .factory import LoggerFactory
 from .level_manager import LevelRule, LogLevelManager
 from .logger import Logger
+
+# Multiprocessing support
+from .mp import LogQueueListener, MPQueueHandler
 from .reloader import LogConfigReloader
 
 # Define custom log levels for more granular debugging
@@ -305,6 +314,9 @@ __all__ = [
     "LogLevelManager",
     "LevelRule",
     "LogConfigReloader",
+    # Multiprocessing support
+    "MPQueueHandler",
+    "LogQueueListener",
     # Exception classes
     "LogError",
     "InvalidLogLevelError",

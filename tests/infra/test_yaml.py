@@ -11,7 +11,69 @@ from pathlib import Path
 import pytest
 import yaml
 
-from appinfra.yaml import SecretLiteralWarning, deep_merge, load
+from appinfra.yaml import ErrorContext, SecretLiteralWarning, deep_merge, load
+
+# =============================================================================
+# Unit Tests for ErrorContext
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestErrorContext:
+    """Unit tests for ErrorContext.format_location()."""
+
+    def test_format_location_with_all_fields(self):
+        """Test format_location with file, line, and column."""
+        ctx = ErrorContext(
+            current_file=Path("/path/to/config.yaml"),
+            line=4,  # 0-indexed
+            column=6,  # 0-indexed
+        )
+        result = ctx.format_location()
+        assert result == "in '/path/to/config.yaml', line 5, column 7"
+
+    def test_format_location_with_file_and_line_only(self):
+        """Test format_location with file and line, no column."""
+        ctx = ErrorContext(
+            current_file=Path("/path/to/config.yaml"),
+            line=9,
+            column=None,
+        )
+        result = ctx.format_location()
+        assert result == "in '/path/to/config.yaml', line 10"
+
+    def test_format_location_with_file_only(self):
+        """Test format_location with only file."""
+        ctx = ErrorContext(
+            current_file=Path("/path/to/config.yaml"),
+            line=None,
+            column=None,
+        )
+        result = ctx.format_location()
+        assert result == "in '/path/to/config.yaml'"
+
+    def test_format_location_with_no_fields(self):
+        """Test format_location with no fields set."""
+        ctx = ErrorContext()
+        result = ctx.format_location()
+        assert result == "unknown location"
+
+    def test_format_location_with_line_zero(self):
+        """Test format_location with line 0 (first line)."""
+        ctx = ErrorContext(
+            current_file=Path("test.yaml"),
+            line=0,
+            column=0,
+        )
+        result = ctx.format_location()
+        assert result == "in 'test.yaml', line 1, column 1"
+
+    def test_error_context_is_immutable(self):
+        """Test that ErrorContext is frozen (immutable)."""
+        ctx = ErrorContext(current_file=Path("test.yaml"), line=1, column=1)
+        with pytest.raises(AttributeError):
+            ctx.line = 5  # type: ignore[misc]
+
 
 # =============================================================================
 # Fixtures
@@ -296,6 +358,21 @@ data: !include "./nonexistent.yaml"
 """
         with pytest.raises(yaml.YAMLError, match="Include file not found"):
             load(StringIO(yaml_content), current_file=yaml_files_dir / "test.yaml")
+
+    def test_include_error_includes_location_info(self, yaml_files_dir):
+        """Test that include errors include file and line/column info."""
+        yaml_content = """name: test
+data: !include "./nonexistent.yaml"
+other: value
+"""
+        with pytest.raises(yaml.YAMLError) as exc_info:
+            load(StringIO(yaml_content), current_file=yaml_files_dir / "test.yaml")
+
+        error_msg = str(exc_info.value)
+        # Should include file path
+        assert "test.yaml" in error_msg
+        # Should include line number (line 2, 0-indexed = 1, displayed as 2)
+        assert "line 2" in error_msg
 
 
 # =============================================================================
@@ -2003,3 +2080,342 @@ level1:
         assert result["level1"]["service"]["level2"]["handler"]["retries"] == 3
         assert result["level1"]["service"]["level2"]["handler"]["endpoint"] == "/api"
         assert source_map is not None
+
+
+# =============================================================================
+# Section Include Variable Resolution Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestSectionIncludeVariableResolution:
+    """Test variable interpolation in section includes.
+
+    When using `!include './file.yaml#section'`, variables like `${sibling.key}`
+    that reference other sections in the same source file should resolve before
+    section extraction.
+    """
+
+    def test_core_case_sibling_variable_resolves(self, tmp_path):
+        """Test ${sibling.key} resolves before section extraction."""
+        # This is the main use case from the ticket
+        pg_file = tmp_path / "pg.yaml"
+        pg_file.write_text(
+            """
+pgserver:
+  port: 7632
+  user: postgres
+dbs:
+  main:
+    url: "postgresql://${pgserver.user}:@127.0.0.1:${pgserver.port}/learn"
+"""
+        )
+
+        app_file = tmp_path / "app.yaml"
+        app_file.write_text(
+            """
+learn:
+  db: !include './pg.yaml#dbs.main'
+"""
+        )
+
+        with open(app_file) as f:
+            data = load(f, current_file=app_file)
+
+        # The URL should have the variables resolved
+        assert (
+            data["learn"]["db"]["url"] == "postgresql://postgres:@127.0.0.1:7632/learn"
+        )
+
+    def test_undefined_vars_pass_through(self, tmp_path):
+        """Test undefined variables are passed through for Config._resolve() to handle."""
+        include_file = tmp_path / "config.yaml"
+        include_file.write_text(
+            """
+shared:
+  base_url: "http://localhost"
+section:
+  url: "${shared.base_url}/api"
+  token: "${ENV_TOKEN}"
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """
+data: !include './config.yaml#section'
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # Sibling reference should be resolved
+        assert data["data"]["url"] == "http://localhost/api"
+        # Undefined variable should be passed through
+        assert data["data"]["token"] == "${ENV_TOKEN}"
+
+    def test_nested_dict_variables_resolve(self, tmp_path):
+        """Test variables in deeply nested structures resolve."""
+        include_file = tmp_path / "config.yaml"
+        include_file.write_text(
+            """
+defaults:
+  timeout: 30
+  retries: 3
+services:
+  api:
+    connection:
+      timeout: ${defaults.timeout}
+      retries: ${defaults.retries}
+      host: localhost
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """
+api: !include './config.yaml#services.api'
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        assert data["api"]["connection"]["timeout"] == "30"
+        assert data["api"]["connection"]["retries"] == "3"
+        assert data["api"]["connection"]["host"] == "localhost"
+
+    def test_list_variables_resolve(self, tmp_path):
+        """Test variables in lists within sections resolve."""
+        include_file = tmp_path / "config.yaml"
+        include_file.write_text(
+            """
+hosts:
+  primary: db-primary.local
+  replica: db-replica.local
+databases:
+  cluster:
+    nodes:
+      - host: ${hosts.primary}
+        role: primary
+      - host: ${hosts.replica}
+        role: replica
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """
+cluster: !include './config.yaml#databases.cluster'
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        assert data["cluster"]["nodes"][0]["host"] == "db-primary.local"
+        assert data["cluster"]["nodes"][0]["role"] == "primary"
+        assert data["cluster"]["nodes"][1]["host"] == "db-replica.local"
+        assert data["cluster"]["nodes"][1]["role"] == "replica"
+
+    def test_document_level_section_include_resolves_vars(self, tmp_path):
+        """Test document-level `!include './file.yaml#section'` resolves variables."""
+        include_file = tmp_path / "base.yaml"
+        include_file.write_text(
+            """
+common:
+  version: "2.0"
+production:
+  app_version: "${common.version}"
+  debug: false
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """!include './base.yaml#production'
+
+name: myapp
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        assert data["app_version"] == "2.0"
+        assert data["debug"] is False
+        assert data["name"] == "myapp"
+
+    def test_full_file_include_no_pre_resolution(self, tmp_path):
+        """Test full file includes (no #section) don't pre-resolve variables.
+
+        Full file includes should preserve ${} patterns for Config._resolve() to handle
+        since the full context is available at that stage.
+        """
+        include_file = tmp_path / "config.yaml"
+        include_file.write_text(
+            """
+shared:
+  base_url: "http://localhost"
+api:
+  url: "${shared.base_url}/api"
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """
+config: !include './config.yaml'
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # For full file includes, the variable should remain unresolved
+        # (Config._resolve() handles it later with full context)
+        assert data["config"]["api"]["url"] == "${shared.base_url}/api"
+
+    def test_circular_ref_single_pass_prevents_loop(self, tmp_path):
+        """Test circular references don't cause infinite loops (single-pass resolution)."""
+        include_file = tmp_path / "config.yaml"
+        include_file.write_text(
+            """
+a:
+  value: "${b.value}"
+b:
+  value: "${a.value}"
+section:
+  result: "${a.value}"
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """
+data: !include './config.yaml#section'
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # Single-pass resolution means ${a.value} resolves to "${b.value}" (a string)
+        # This is expected behavior - no infinite loop
+        assert data["data"]["result"] == "${b.value}"
+
+    def test_self_ref_stays_unresolved(self, tmp_path):
+        """Test self-referencing variable stays unresolved."""
+        include_file = tmp_path / "config.yaml"
+        include_file.write_text(
+            """
+section:
+  host: "${section.host}"
+  port: 8080
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """
+data: !include './config.yaml#section'
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # Self-reference can't be resolved (would need the value to compute itself)
+        # Single-pass resolution means it stays as-is
+        assert data["data"]["host"] == "${section.host}"
+        assert data["data"]["port"] == 8080
+
+    def test_multiple_vars_in_string(self, tmp_path):
+        """Test multiple variables in a single string all resolve."""
+        include_file = tmp_path / "config.yaml"
+        include_file.write_text(
+            """
+server:
+  protocol: https
+  host: api.example.com
+  port: 443
+urls:
+  main:
+    base: "${server.protocol}://${server.host}:${server.port}"
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """
+urls: !include './config.yaml#urls.main'
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        assert data["urls"]["base"] == "https://api.example.com:443"
+
+    def test_non_string_values_preserved(self, tmp_path):
+        """Test non-string values (int, bool, None) are preserved as-is."""
+        include_file = tmp_path / "config.yaml"
+        include_file.write_text(
+            """
+defaults:
+  enabled: true
+  count: 42
+  nullable: null
+section:
+  enabled: ${defaults.enabled}
+  count: ${defaults.count}
+  nullable: ${defaults.nullable}
+  raw_bool: true
+  raw_int: 100
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """
+data: !include './config.yaml#section'
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        # Variables are resolved to string representations
+        assert data["data"]["enabled"] == "True"
+        assert data["data"]["count"] == "42"
+        assert data["data"]["nullable"] == "None"
+        # Direct values remain their original types
+        assert data["data"]["raw_bool"] is True
+        assert data["data"]["raw_int"] == 100
+
+    def test_deeply_nested_section_path(self, tmp_path):
+        """Test variables resolve when extracting deeply nested sections."""
+        include_file = tmp_path / "config.yaml"
+        include_file.write_text(
+            """
+root:
+  value: "root_value"
+level1:
+  level2:
+    level3:
+      data: "${root.value}"
+"""
+        )
+
+        main_file = tmp_path / "main.yaml"
+        main_file.write_text(
+            """
+extracted: !include './config.yaml#level1.level2.level3'
+"""
+        )
+
+        with open(main_file) as f:
+            data = load(f, current_file=main_file)
+
+        assert data["extracted"]["data"] == "root_value"

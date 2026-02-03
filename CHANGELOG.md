@@ -10,6 +10,44 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-02-03
+
+### Added
+- Documentation for merge policy and release process in contributing guide
+- Multiprocess logging support (`appinfra.log.mp`) for child processes:
+  - **Queue mode**: `MPQueueHandler` in subprocesses sends records to parent via `LogQueueListener`
+  - **Independent mode**: `LoggingBuilder.to_dict()`/`from_dict()` for self-sufficient subprocess logging
+  - `Logger.with_queue(queue, name)` convenience method for subprocess queue handlers
+  - Automatic exception formatting before pickling (traceback preserved across processes)
+  - Database handlers are excluded from serialization (not supported in multiprocess mode)
+- Simplified queue config API for multiprocess logging:
+  - `Logger.queue_config(queue)` - Creates a picklable config dict containing queue, level, and
+    `LogLevelManager` rules. One call captures everything workers need.
+  - `Logger.from_queue_config(config, name)` - Creates a subprocess logger from the config. Pattern-based
+    level rules are restored and applied based on the logger name.
+  - `LogLevelManager.to_dict()` / `from_dict()` - Serialize and restore topic-based level rules for
+    multiprocess scenarios
+- `ErrorContext` and `IncludeContext` dataclasses in `appinfra.yaml` for error location tracking
+
+### Changed
+- Refactored `appinfra.yaml` from single module to package for better maintainability.
+  Public API unchanged - all existing imports (`load`, `Loader`, `deep_merge`, `ErrorContext`,
+  `IncludeContext`, `SecretLiteralWarning`) continue to work.
+
+### Fixed
+- Examples now work when run from the repository. Path setup was incorrect (`parents[2]` instead
+  of `parents[3]`), causing the local `yaml/` module to shadow PyYAML. Also added missing path
+  setup to 3 examples and removed stale `02a_app_using_framework` directory.
+- YAML `!include` directive errors now logged with file location instead of failing silently.
+  Previously, when `AppBuilder.with_config_file()` loaded a config with a bad `!include`
+  (missing file, circular include, etc.), the error was silently swallowed, resulting in empty
+  config sections with no indication of what went wrong. Now errors are stored during config
+  loading and logged with file path, line number, and column once the logger is initialized.
+- Variable interpolation in section includes (`!include './file.yaml#section'`) now works
+  correctly. Previously, `${sibling.key}` references to other sections in the same source file
+  would fail because section extraction happened before variable resolution. Now variables are
+  resolved within the full file context before extracting the section.
+
 ## [0.3.3] - 2026-01-29
 
 ### Added

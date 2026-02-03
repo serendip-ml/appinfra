@@ -434,3 +434,72 @@ class LogLevelManager:
                     # Also update handlers
                     for handler in logger.handlers:
                         handler.setLevel(numeric_level)
+
+    # -------------------------------------------------------------------------
+    # Serialization for multiprocessing
+    # -------------------------------------------------------------------------
+
+    def to_dict(self) -> dict:
+        """
+        Serialize the LogLevelManager state to a picklable dictionary.
+
+        Used for passing logging configuration to subprocesses.
+
+        Returns:
+            Dict containing rules and default level, suitable for from_dict()
+
+        Example:
+            config = level_manager.to_dict()
+            # Pass config to subprocess...
+            # In subprocess:
+            LogLevelManager.get_instance().from_dict(config)
+        """
+        with self._lock:
+            return {
+                "rules": [
+                    {
+                        "pattern": rule.pattern,
+                        "level": rule.level,
+                        "source": rule.source,
+                        "priority": rule.priority,
+                        "specificity": rule.specificity,
+                    }
+                    for rule in self._rules
+                ],
+                "default_level": self._default_level,
+            }
+
+    def from_dict(self, config: dict) -> None:
+        """
+        Restore LogLevelManager state from a serialized dictionary.
+
+        Used in subprocesses to restore the parent's logging configuration.
+        This replaces any existing rules with the ones from the config.
+
+        Args:
+            config: Dict from to_dict()
+
+        Example:
+            # In subprocess:
+            level_manager = LogLevelManager.get_instance()
+            level_manager.from_dict(config)
+        """
+        with self._lock:
+            # Clear existing rules and restore from config
+            self._rules.clear()
+            for rule_dict in config.get("rules", []):
+                rule = LevelRule(
+                    pattern=rule_dict["pattern"],
+                    level=rule_dict["level"],
+                    source=rule_dict["source"],
+                    priority=rule_dict["priority"],
+                    specificity=rule_dict["specificity"],
+                )
+                self._rules.append(rule)
+
+            # Rules are already sorted in the serialized form, but re-sort to be safe
+            self._rules.sort(key=lambda r: (r.priority, r.specificity), reverse=True)
+
+            # Restore default level
+            if "default_level" in config:
+                self._default_level = config["default_level"]

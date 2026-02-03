@@ -338,3 +338,135 @@ class Logger(logging.Logger):
             files.append(f.f_code.co_filename)
 
         return files, linenos
+
+    # -------------------------------------------------------------------------
+    # Multiprocessing support
+    # -------------------------------------------------------------------------
+
+    @classmethod
+    def with_queue(
+        cls,
+        queue: Any,
+        name: str,
+        level: int | str = logging.INFO,
+    ) -> "Logger":
+        """
+        Create a logger that sends records to a queue for cross-process logging.
+
+        Use this in subprocesses to send log records to a parent process
+        that runs a LogQueueListener.
+
+        Args:
+            queue: multiprocessing.Queue to send records to
+            name: Logger name
+            level: Log level (default INFO)
+
+        Returns:
+            Logger configured with MPQueueHandler
+
+        Example:
+            # In subprocess
+            def worker(log_queue, worker_name):
+                lg = Logger.with_queue(log_queue, name=worker_name)
+                lg.info("Worker started")
+        """
+        from .mp import MPQueueHandler
+
+        config = LogConfig.from_params(level=level)
+        callback_registry = CallbackRegistry()
+        logger = cls(name, config, callback_registry)
+
+        # Set level
+        if isinstance(level, str):
+            level = getattr(logging, level.upper(), logging.INFO)
+        logger.setLevel(level)
+
+        # Add queue handler
+        handler = MPQueueHandler(queue)
+        handler.setLevel(level)
+        logger.addHandler(handler)
+
+        logger.propagate = False
+        return logger
+
+    def queue_config(self, queue: Any) -> dict[str, Any]:
+        """
+        Create configuration dict for subprocess loggers.
+
+        Returns a picklable dict containing everything a worker process needs
+        to send log records back to this logger's queue, including:
+        - The queue for sending records
+        - The base log level
+        - LogLevelManager rules for pattern-based level filtering
+
+        Args:
+            queue: multiprocessing.Queue for sending records to parent
+
+        Returns:
+            Dict suitable for Logger.from_queue_config()
+
+        Example:
+            # Parent process
+            queue = Queue()
+            parent_lg = LoggingBuilder("main").with_level("debug").with_console().build()
+            listener = LogQueueListener(queue, parent_lg)
+            listener.start()
+
+            worker_config = parent_lg.queue_config(queue)
+            Process(target=worker_main, args=(worker_config,)).start()
+
+            # Worker process
+            def worker_main(config):
+                lg = Logger.from_queue_config(config, name="worker")
+                lg.info("Hello from worker")
+        """
+        from .level_manager import LogLevelManager
+
+        level_manager = LogLevelManager.get_instance()
+        return {
+            "queue": queue,
+            "level": self.level,
+            "level_rules": level_manager.to_dict(),
+        }
+
+    @classmethod
+    def from_queue_config(cls, config: dict[str, Any], name: str) -> "Logger":
+        """
+        Create a logger from queue configuration.
+
+        This creates a logger that sends records to a queue, where a parent
+        process listener will format and emit them. The logger's level is
+        determined by:
+        1. LogLevelManager pattern rules (if the name matches a pattern)
+        2. The base level from config (fallback)
+
+        Args:
+            config: Configuration dict from parent's Logger.queue_config()
+            name: Name for this logger (should be unique per worker)
+
+        Returns:
+            Logger configured to send records to the parent's queue
+
+        Example:
+            # Worker process receives config from parent
+            def worker_main(config, worker_id):
+                lg = Logger.from_queue_config(config, name=f"worker-{worker_id}")
+                lg.info("Worker started")
+        """
+        from .level_manager import LogLevelManager
+
+        # Restore LogLevelManager rules in this process
+        level_manager = LogLevelManager.get_instance()
+        if "level_rules" in config:
+            level_manager.from_dict(config["level_rules"])
+
+        # Determine effective level: pattern match or fallback to base level
+        effective_level = level_manager.get_effective_level(name)
+        if effective_level is None:
+            effective_level = config["level"]
+
+        return cls.with_queue(
+            queue=config["queue"],
+            name=name,
+            level=effective_level,
+        )

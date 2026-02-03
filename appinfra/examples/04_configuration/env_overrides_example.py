@@ -39,7 +39,7 @@ import sys
 import tempfile
 from unittest.mock import patch
 
-project_root = str(pathlib.Path(__file__).resolve().parents[2])
+project_root = str(pathlib.Path(__file__).resolve().parents[3])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 

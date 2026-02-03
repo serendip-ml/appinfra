@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 # Add the infra package to the path
-root = str(Path(__file__).resolve().parents[2])
+root = str(Path(__file__).resolve().parents[3])
 sys.path.append(root)
 
 from appinfra import Config

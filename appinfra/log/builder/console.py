@@ -43,6 +43,25 @@ class ConsoleHandlerConfig(HandlerConfig):
         for key in format_keys:
             self.format_options[key[7:]] = kwargs[key]  # Remove "format_" prefix
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to picklable dictionary."""
+        # Convert stream object to string identifier
+        stream_name = "stderr" if self.stream is sys.stderr else "stdout"
+
+        d: dict[str, Any] = {
+            "type": "console",
+            "stream": stream_name,
+            "format": self.format,
+        }
+        if self.level is not None:
+            d["level"] = self.level
+
+        # Add format options with prefix
+        for key, value in self.format_options.items():
+            d[f"format_{key}"] = value
+
+        return d
+
     def create_handler(self, config: LogConfig, logger: Any = None) -> logging.Handler:
         """Create a console handler."""
         handler = logging.StreamHandler(self.stream)

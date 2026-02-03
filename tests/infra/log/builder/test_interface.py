@@ -31,6 +31,9 @@ class ConcreteHandlerConfigFixture(HandlerConfig):
     def create_handler(self, config: LogConfig) -> logging.Handler:
         return logging.StreamHandler()
 
+    def to_dict(self) -> dict:
+        return {"type": "test", "level": self.level}
+
 
 class ConcreteBuilderFixture(LoggingBuilderInterface):
     """Complete concrete implementation of LoggingBuilderInterface for testing."""

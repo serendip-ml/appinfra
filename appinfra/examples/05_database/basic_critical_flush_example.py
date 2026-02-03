@@ -11,13 +11,14 @@ Usage:
 """
 
 import logging
-import os
+import pathlib
 import sys
 import time
 from unittest.mock import Mock, patch
 
 # Add the project root to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+project_root = str(pathlib.Path(__file__).resolve().parents[3])
+sys.path.insert(0, project_root)
 
 from appinfra.log.builder.database import DatabaseHandler, DatabaseHandlerConfig
 from appinfra.log.config import LogConfig
