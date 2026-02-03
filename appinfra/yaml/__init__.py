@@ -181,9 +181,14 @@ def _merge_document_includes(
         )
 
         if include_data is not None:
+            if not isinstance(include_data, dict):
+                raise ValueError(
+                    f"Document-level include '{include_spec}' (line {line_num}) must resolve "
+                    f"to a mapping, got {type(include_data).__name__}"
+                )
             if merged_data is None:
-                merged_data = include_data if isinstance(include_data, dict) else {}
-            elif isinstance(include_data, dict):
+                merged_data = include_data
+            else:
                 merged_data = deep_merge(merged_data, include_data)
 
             if track_sources:

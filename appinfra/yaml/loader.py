@@ -307,6 +307,14 @@ class Loader(yaml.SafeLoader):
                     f"'{ctx.project_root}'. This could be a path traversal attack. ({location})"
                 )
 
+    def _store_include_source_map(self, data: Any, loader: "Loader") -> None:
+        """Store source map from included file for later merging (complex types only)."""
+        if not self.track_sources or not hasattr(loader, "source_map"):
+            return
+        # Only store for complex types to avoid id() collisions on interned scalars
+        if isinstance(data, (dict, list)):
+            self._pending_include_maps[id(data)] = loader.source_map
+
     def _load_included_file(self, include_path: Path, ctx: IncludeContext) -> Any:
         """
         Load and parse included YAML file.
@@ -323,32 +331,26 @@ class Loader(yaml.SafeLoader):
         """
         new_chain = ctx.include_chain | {include_path}
 
-        # Security: Check include depth to prevent stack overflow
         if len(new_chain) > ctx.max_include_depth:
+            chain_str = " -> ".join(str(p) for p in new_chain)
             raise yaml.YAMLError(
                 f"Include depth exceeds maximum of {ctx.max_include_depth}. "
-                f"This could indicate a deeply nested include or recursive include pattern. "
-                f"Include chain: {' -> '.join(str(p) for p in new_chain)} "
-                f"({ctx.format_location()})"
+                f"This could indicate deeply nested or recursive includes. "
+                f"Include chain: {chain_str} ({ctx.format_location()})"
             )
 
         with open(include_path) as f:
             included_loader = Loader(
                 f,
                 current_file=include_path,
-                include_chain=set(new_chain),  # Convert frozenset back to set
+                include_chain=set(new_chain),
                 merge_strategy=self.merge_strategy,
                 track_sources=self.track_sources,
                 project_root=ctx.project_root,
                 max_include_depth=ctx.max_include_depth,
             )
             included_data = included_loader.get_single_data()
-
-            # Store source map for later merging
-            if self.track_sources and hasattr(included_loader, "source_map"):
-                self._pending_include_maps[id(included_data)] = (
-                    included_loader.source_map
-                )
+            self._store_include_source_map(included_data, included_loader)
 
         return included_data
 

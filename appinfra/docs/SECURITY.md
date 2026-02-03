@@ -286,7 +286,7 @@ from appinfra.yaml import load
 with open('/app/config/config.yaml') as f:
     config = load(f, current_file=Path('/app/config/config.yaml'), project_root=Path('/app/config'))
 
-# ❌ RISKY - No path restrictions
+# ❌ RISKY - No path restrictions (and relative !include/!path won't resolve)
 with open('config.yaml') as f:
     config = load(f)  # Allows any file system access
 ```
@@ -520,7 +520,7 @@ from appinfra.yaml import load
 with open('/app/config/config.yaml') as f:
     config = load(f, current_file=Path('/app/config/config.yaml'), project_root=Path('/app/config'))
 
-# ❌ RISKY - No restrictions
+# ❌ RISKY - No restrictions (and relative !include/!path won't resolve)
 with open('config.yaml') as f:
     config = load(f)
 ```
