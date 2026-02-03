@@ -44,7 +44,7 @@ import time
 LOG_DIR = ".logs"
 
 # Add the project root to the path (examples/03_logging/file.py -> project root is 2 levels up)
-project_root = str(pathlib.Path(__file__).resolve().parents[2])
+project_root = str(pathlib.Path(__file__).resolve().parents[3])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 

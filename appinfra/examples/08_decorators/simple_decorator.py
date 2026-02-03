@@ -10,7 +10,7 @@ import pathlib
 import sys
 
 # Add project root to path
-project_root = str(pathlib.Path(__file__).resolve().parents[2])
+project_root = str(pathlib.Path(__file__).resolve().parents[3])
 sys.path.insert(0, project_root) if project_root not in sys.path else None
 
 from appinfra.app import App

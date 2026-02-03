@@ -20,6 +20,12 @@ Priority: API (10) > CLI (5) > YAML (1)
 """
 
 import logging
+import pathlib
+import sys
+
+# Add the project root to the path
+project_root = str(pathlib.Path(__file__).resolve().parents[3])
+sys.path.insert(0, project_root)
 
 from appinfra.app.builder import AppBuilder
 from appinfra.log import LogConfig, LoggerFactory
