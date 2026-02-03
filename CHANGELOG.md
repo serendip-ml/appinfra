@@ -27,6 +27,11 @@ For API stability guarantees and deprecation policy, see
     multiprocess scenarios
 - `ErrorContext` and `IncludeContext` dataclasses in `appinfra.yaml` for error location tracking
 
+### Changed
+- Refactored `appinfra.yaml` from single module to package for better maintainability. Public API
+unchanged - all existing imports (`load`, `Loader`, `deep_merge`, `ErrorContext`, `IncludeContext`,
+  `SecretLiteralWarning`) continue to work.
+
 ### Fixed
 - YAML `!include` directive errors now logged with file location instead of failing silently.
   Previously, when `AppBuilder.with_config_file()` loaded a config with a bad `!include` (missing

@@ -279,16 +279,16 @@ chmod 600 etc/credentials.json
 #### 3. Validate Includes with project_root
 
 ```python
-from appinfra.yaml import load_yaml
+from pathlib import Path
+from appinfra.yaml import load
 
 # ✅ GOOD - Restricts includes to /app/config and below
-config = load_yaml(
-    'config.yaml',
-    project_root='/app/config'
-)
+with open('/app/config/config.yaml') as f:
+    config = load(f, current_file=Path('/app/config/config.yaml'), project_root=Path('/app/config'))
 
 # ❌ RISKY - No path restrictions
-config = load_yaml('config.yaml')  # Allows any file system access
+with open('config.yaml') as f:
+    config = load(f)  # Allows any file system access
 ```
 
 ### Application Security
@@ -514,11 +514,15 @@ logger.info(f"User login: {user_input}")  # Can inject newlines
 **Mitigation:**
 ```python
 # ✅ GOOD - Restrict to project root
-from appinfra.yaml import load_yaml
-config = load_yaml('config.yaml', project_root='/app/config')
+from pathlib import Path
+from appinfra.yaml import load
+
+with open('/app/config/config.yaml') as f:
+    config = load(f, current_file=Path('/app/config/config.yaml'), project_root=Path('/app/config'))
 
 # ❌ RISKY - No restrictions
-config = load_yaml('config.yaml')
+with open('config.yaml') as f:
+    config = load(f)
 ```
 
 ### 4. SQL Injection
