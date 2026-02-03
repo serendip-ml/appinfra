@@ -383,6 +383,142 @@ class TestConfigFileWorkflow:
 
 
 @pytest.mark.e2e
+class TestConfigSectionIncludeWorkflow:
+    """E2E tests for section includes with variable resolution."""
+
+    def test_section_include_resolves_sibling_variables(self):
+        """Test that !include with section resolves ${sibling.key} variables.
+
+        This is the main use case from the ticket: when including a section from
+        a file, variables referencing other sections in that file should resolve.
+
+        Example:
+            # pg.yaml
+            pgserver:
+              port: 7632
+              user: postgres
+            dbs:
+              main:
+                url: "postgresql://${pgserver.user}:@127.0.0.1:${pgserver.port}/learn"
+
+            # app.yaml
+            learn:
+              db: !include './pg.yaml#dbs.main'
+
+        Expected: db.url = "postgresql://postgres:@127.0.0.1:7632/learn"
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+
+            # Create pg.yaml with sibling sections
+            (etc_dir / "pg.yaml").write_text(
+                "pgserver:\n"
+                "  port: 7632\n"
+                "  user: postgres\n"
+                "dbs:\n"
+                "  main:\n"
+                '    url: "postgresql://${pgserver.user}:@127.0.0.1:${pgserver.port}/learn"\n'
+            )
+
+            # Create main config that includes a section
+            (etc_dir / "app.yaml").write_text(
+                "learn:\n  db: !include './pg.yaml#dbs.main'\nlogging:\n  level: info\n"
+            )
+
+            app = AppBuilder("test-app").with_config_file("app.yaml").build()
+
+            with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
+                app.create_args()
+                app._parsed_args = app.parser.parse_args()
+                app._load_and_merge_config()
+
+            # Verify sibling variables were resolved
+            assert (
+                app.config.learn.db.url == "postgresql://postgres:@127.0.0.1:7632/learn"
+            )
+
+    def test_section_include_with_nested_structure(self):
+        """Test section include with nested configuration structure.
+
+        Verifies that complex nested structures with multiple variable references
+        all resolve correctly when using section includes.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+
+            # Create config with nested structure and multiple var references
+            (etc_dir / "db.yaml").write_text(
+                "defaults:\n"
+                "  host: localhost\n"
+                "  port: 5432\n"
+                "  user: admin\n"
+                "connections:\n"
+                "  primary:\n"
+                "    host: ${defaults.host}\n"
+                "    port: ${defaults.port}\n"
+                "    user: ${defaults.user}\n"
+                "    pool_size: 10\n"
+            )
+
+            (etc_dir / "app.yaml").write_text(
+                "database: !include './db.yaml#connections.primary'\n"
+                "logging:\n"
+                "  level: info\n"
+            )
+
+            app = AppBuilder("test-app").with_config_file("app.yaml").build()
+
+            with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
+                app.create_args()
+                app._parsed_args = app.parser.parse_args()
+                app._load_and_merge_config()
+
+            # All sibling variables should be resolved
+            assert app.config.database.host == "localhost"
+            assert app.config.database.port == "5432"
+            assert app.config.database.user == "admin"
+            assert app.config.database.pool_size == 10
+
+    def test_document_level_section_include_resolves_vars(self):
+        """Test document-level !include with section resolves variables."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+
+            # Create base config with multiple sections
+            (etc_dir / "base.yaml").write_text(
+                "common:\n"
+                "  version: '2.0'\n"
+                "production:\n"
+                "  app_version: '${common.version}'\n"
+                "  debug: false\n"
+            )
+
+            # Document-level include with section selector
+            (etc_dir / "app.yaml").write_text(
+                "!include './base.yaml#production'\n"
+                "\n"
+                "name: myapp\n"
+                "logging:\n"
+                "  level: info\n"
+            )
+
+            app = AppBuilder("test-app").with_config_file("app.yaml").build()
+
+            with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
+                app.create_args()
+                app._parsed_args = app.parser.parse_args()
+                app._load_and_merge_config()
+
+            # Variable should be resolved
+            assert app.config.app_version == "2.0"
+            assert app.config.debug is False
+            assert app.config.name == "myapp"
+
+
+@pytest.mark.e2e
 class TestConfigIncludeErrorWorkflow:
     """E2E tests for config file include error handling workflow."""
 

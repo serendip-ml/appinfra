@@ -597,6 +597,10 @@ class Loader(yaml.SafeLoader):
         if not section_path:
             return data
 
+        # Resolve ${var} references before extraction so sibling sections are accessible
+        if isinstance(data, dict):
+            data = _resolve_variables_in_data(data, data, pass_through_undefined=True)
+
         location = ctx.format_location()
         current = data
         parts = section_path.split(".")
@@ -788,6 +792,11 @@ def _extract_section_data(
     Raises:
         yaml.YAMLError: If section path is invalid or not found
     """
+    # Resolve variables within the full file context BEFORE extraction
+    # This allows ${sibling.key} references to resolve before the section is extracted
+    if isinstance(data, dict):
+        data = _resolve_variables_in_data(data, data, pass_through_undefined=True)
+
     current = data
     parts = section_path.split(".")
 
@@ -835,6 +844,61 @@ def _filter_source_map_for_section(
             filtered_map[""] = source
 
     return filtered_map
+
+
+# Sentinel value to distinguish "key not found" from "value is None"
+_NOT_FOUND = object()
+
+
+def _get_value_by_path(data: dict[str, Any], path: str) -> Any:
+    """Get value from nested dict using dot-separated path.
+
+    Returns _NOT_FOUND sentinel if path doesn't exist.
+    """
+    current: Any = data
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return _NOT_FOUND
+        current = current[part]
+    return current
+
+
+def _resolve_variables_in_data(
+    data: Any,
+    context: dict[str, Any],
+    pass_through_undefined: bool = True,
+) -> Any:
+    """
+    Resolve ${var} patterns in data using context dict.
+
+    Resolution is scoped to the context (typically the full included file).
+    Undefined variables are passed through for Config._resolve() to handle.
+    Single-pass resolution (no recursive expansion) to prevent infinite loops.
+    """
+    if isinstance(data, dict):
+        return {
+            k: _resolve_variables_in_data(v, context, pass_through_undefined)
+            for k, v in data.items()
+        }
+    elif isinstance(data, list):
+        return [
+            _resolve_variables_in_data(item, context, pass_through_undefined)
+            for item in data
+        ]
+    elif isinstance(data, str):
+
+        def substitute(match: re.Match[str]) -> str:
+            var_name = match.group(1)
+            value = _get_value_by_path(context, var_name)
+            if value is _NOT_FOUND:
+                if pass_through_undefined:
+                    return match.group(0)  # Keep original ${var}
+                raise KeyError(f"Variable '{var_name}' not found")
+            return str(value)
+
+        # Same pattern as Config._resolve() for consistency
+        return re.sub(r"\$\{([a-zA-Z0-9_.]+)\}", substitute, data)
+    return data
 
 
 def _create_document_error_context(
