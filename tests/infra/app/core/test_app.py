@@ -941,6 +941,13 @@ class TestDeferredConfigLoading:
             # Should return None, not raise
             assert result is None
 
+            # Error should be stored for later logging
+            assert hasattr(app, "_config_load_errors")
+            assert len(app._config_load_errors) == 1
+            filename, error = app._config_load_errors[0]
+            assert filename == "invalid.yaml"
+            assert isinstance(error, Exception)
+
     def test_load_deferred_config_loads_and_merges_config(self):
         """Test that _load_deferred_config loads and returns config info."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -964,6 +971,38 @@ class TestDeferredConfigLoading:
             # Config should be loaded
             assert hasattr(app.config, "test_key")
             assert app.config.test_key == "test_value"
+
+    def test_log_config_loading_logs_stored_errors(self):
+        """Test that _log_config_loading logs errors stored during deferred loading."""
+        from unittest.mock import MagicMock
+
+        app = App()
+        # Simulate stored errors from failed config loading
+        app._config_load_errors = [
+            ("config.yaml", ValueError("test error")),
+            ("other.yaml", RuntimeError("another error")),
+        ]
+
+        # Mock the logger
+        mock_logger = MagicMock()
+        app.lifecycle._logger = mock_logger
+
+        # Call _log_config_loading
+        app._log_config_loading(None)
+
+        # Verify warnings were logged for each error
+        assert mock_logger.warning.call_count == 2
+        calls = mock_logger.warning.call_args_list
+
+        # First error
+        assert calls[0][0][0] == "failed to load config file"
+        assert calls[0][1]["extra"]["file"] == "config.yaml"
+        assert isinstance(calls[0][1]["extra"]["exception"], ValueError)
+
+        # Second error
+        assert calls[1][0][0] == "failed to load config file"
+        assert calls[1][1]["extra"]["file"] == "other.yaml"
+        assert isinstance(calls[1][1]["extra"]["exception"], RuntimeError)
 
 
 @pytest.mark.unit

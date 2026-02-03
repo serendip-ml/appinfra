@@ -370,6 +370,13 @@ class App(Traceable):
         Args:
             load_result: Result from loading config file
         """
+        # Log any deferred config loading errors
+        for filename, error in getattr(self, "_config_load_errors", []):
+            self.lg.warning(
+                "failed to load config file",
+                extra={"file": filename, "exception": error},
+            )
+
         if load_result:
             self.lg.debug(
                 "loaded config from etc",
@@ -449,17 +456,20 @@ class App(Traceable):
             # No programmatic config, just use loaded
             return loaded_config
 
+    def _add_config_error(self, filename: str, error: Exception) -> None:
+        """Store a config loading error to be logged later."""
+        if not hasattr(self, "_config_load_errors"):
+            self._config_load_errors: list[tuple[str, Exception]] = []
+        self._config_load_errors.append((filename, error))
+
+    def _store_config_paths(self, etc_dir: str, filename: str, full_path: Path) -> None:
+        """Store config paths for hot-reload watcher and backwards compat."""
+        self._etc_dir = etc_dir  # type: ignore[attr-defined]
+        self._config_file = filename  # type: ignore[attr-defined]
+        self._config_path = str(full_path)  # type: ignore[attr-defined]
+
     def _load_deferred_config(self) -> dict | None:
-        """
-        Load deferred configuration file from etc directory.
-
-        Called when with_config_file() was used with from_etc_dir=True (default).
-        Resolves the config file path relative to --etc-dir.
-
-        Returns:
-            Dict with 'etc_dir' and 'file' if loaded, None otherwise
-        """
-
+        """Load deferred config file from etc directory (for from_etc_dir=True)."""
         from .config import create_config, resolve_etc_dir
 
         config_filename = getattr(self, "_config_path", None)
@@ -473,19 +483,13 @@ class App(Traceable):
 
             loaded_config = create_config(file_path=str(config_path), lg=None)
             self.config = self._merge_loaded_and_programmatic_config(loaded_config)
-
-            # Store etc_dir and config_file for hot-reload watcher
-            self._etc_dir = etc_dir  # type: ignore[attr-defined]
-            self._config_file = config_filename  # type: ignore[attr-defined]
-            # Update _config_path to resolved absolute path (for backwards compat)
-            self._config_path = str(config_path)  # type: ignore[attr-defined]
+            self._store_config_paths(etc_dir, config_filename, config_path)
 
             return {"etc_dir": etc_dir, "file": config_filename}
-
         except FileNotFoundError:
-            return None
-        except Exception:
-            # Fail silently - config loading shouldn't break the app
+            return None  # Config file doesn't exist - expected for optional configs
+        except Exception as e:
+            self._add_config_error(config_filename, e)  # Store for later logging
             return None
 
     def run_no_tool(self) -> int:

@@ -380,3 +380,96 @@ class TestConfigFileWorkflow:
                 assert app.config.local_load is True
             finally:
                 os.chdir(old_cwd)
+
+
+@pytest.mark.e2e
+class TestConfigIncludeErrorWorkflow:
+    """E2E tests for config file include error handling workflow."""
+
+    def test_include_error_logged_with_location(self):
+        """Test that !include errors are logged with file and line info.
+
+        This tests the full workflow:
+        1. AppBuilder.with_config_file() with a config containing bad !include
+        2. App loads config, include fails
+        3. Error is stored during loading (before logger available)
+        4. Error is logged with location info once logger is initialized
+        """
+        from unittest.mock import MagicMock
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+
+            # Create config with a !include that references a missing file
+            config_content = """name: test-app
+database: !include "./missing-db.yaml"
+logging:
+  level: info
+"""
+            (etc_dir / "app.yaml").write_text(config_content)
+
+            # Build app with config file
+            app = AppBuilder("test-app").with_config_file("app.yaml").build()
+
+            with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
+                app.create_args()
+                app._parsed_args = app.parser.parse_args()
+
+                # Load config - this should store the error
+                app._load_and_merge_config()
+
+                # Verify error was stored
+                assert hasattr(app, "_config_load_errors")
+                assert len(app._config_load_errors) == 1
+                filename, error = app._config_load_errors[0]
+                assert filename == "app.yaml"
+                assert "missing-db.yaml" in str(error)
+                # Error should include location info
+                assert "line 2" in str(error)
+
+                # Initialize lifecycle to get logger
+                app.lifecycle.initialize(app.config)
+
+                # Mock the logger to capture the warning
+                mock_logger = MagicMock()
+                app.lifecycle._logger = mock_logger
+
+                # Log the config loading results - this should log the stored error
+                app._log_config_loading(None)
+
+                # Verify warning was logged with correct info
+                mock_logger.warning.assert_called_once()
+                call_args = mock_logger.warning.call_args
+                assert call_args[0][0] == "failed to load config file"
+                assert call_args[1]["extra"]["file"] == "app.yaml"
+                assert "missing-db.yaml" in str(call_args[1]["extra"]["exception"])
+
+    def test_document_level_include_error_has_location(self):
+        """Test that document-level !include errors include line info."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+
+            # Document-level include (at column 0)
+            config_content = """!include "./missing-base.yaml"
+
+name: test-app
+"""
+            (etc_dir / "app.yaml").write_text(config_content)
+
+            app = AppBuilder("test-app").with_config_file("app.yaml").build()
+
+            with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
+                app.create_args()
+                app._parsed_args = app.parser.parse_args()
+                app._load_and_merge_config()
+
+                # Verify error was stored with location info
+                assert hasattr(app, "_config_load_errors")
+                assert len(app._config_load_errors) == 1
+                _, error = app._config_load_errors[0]
+                error_str = str(error)
+                assert "missing-base.yaml" in error_str
+                # Document-level include should have line 1
+                assert "line 1" in error_str
