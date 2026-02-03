@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 # Allow running without package installation
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from appinfra.app.builder import AppBuilder
 from appinfra.app.docs import DocsGenerator

@@ -22,13 +22,13 @@ Requirements:
 """
 
 import logging
-import os
+import pathlib
 import sys
 import time
 from datetime import datetime
 
 # Add the project root to the path
-project_root = os.path.join(os.path.dirname(__file__), "..", "..")
+project_root = str(pathlib.Path(__file__).resolve().parents[3])
 sys.path.insert(0, project_root)
 
 from appinfra.config import Config

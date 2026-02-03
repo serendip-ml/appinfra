@@ -33,6 +33,9 @@ For API stability guarantees and deprecation policy, see
   `IncludeContext`, `SecretLiteralWarning`) continue to work.
 
 ### Fixed
+- Examples now work when run from the repository. Path setup was incorrect (`parents[2]` instead
+  of `parents[3]`), causing the local `yaml/` module to shadow PyYAML. Also added missing path
+  setup to 3 examples and removed stale `02a_app_using_framework` directory.
 - YAML `!include` directive errors now logged with file location instead of failing silently.
   Previously, when `AppBuilder.with_config_file()` loaded a config with a bad `!include`
   (missing file, circular include, etc.), the error was silently swallowed, resulting in empty

@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path for running examples directly
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from appinfra.app import AppBuilder
 from appinfra.app.tools.base import Tool, ToolConfig
@@ -94,7 +94,7 @@ def main() -> int:
 
     # Path to appinfra's _build_info.py (relative to repo root)
     build_info_path = (
-        Path(__file__).parent.parent.parent / "appinfra" / "_build_info.py"
+        Path(__file__).parent.parent.parent.parent / "appinfra" / "_build_info.py"
     )
 
     # Build the application with version tracking
