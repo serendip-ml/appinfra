@@ -339,7 +339,7 @@ class Loader(yaml.SafeLoader):
                 f"Include chain: {chain_str} ({ctx.format_location()})"
             )
 
-        with open(include_path) as f:
+        with open(include_path, encoding="utf-8") as f:
             included_loader = Loader(
                 f,
                 current_file=include_path,
@@ -349,8 +349,11 @@ class Loader(yaml.SafeLoader):
                 project_root=ctx.project_root,
                 max_include_depth=ctx.max_include_depth,
             )
-            included_data = included_loader.get_single_data()
-            self._store_include_source_map(included_data, included_loader)
+            try:
+                included_data = included_loader.get_single_data()
+                self._store_include_source_map(included_data, included_loader)
+            finally:
+                included_loader.dispose()
 
         return included_data
 
