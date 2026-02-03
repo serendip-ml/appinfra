@@ -376,6 +376,8 @@ class App(Traceable):
                 "failed to load config file",
                 extra={"file": filename, "exception": error},
             )
+        if hasattr(self, "_config_load_errors"):
+            self._config_load_errors.clear()
 
         if load_result:
             self.lg.debug(

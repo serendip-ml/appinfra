@@ -1004,6 +1004,9 @@ class TestDeferredConfigLoading:
         assert calls[1][1]["extra"]["file"] == "other.yaml"
         assert isinstance(calls[1][1]["extra"]["exception"], RuntimeError)
 
+        # Errors should be cleared after logging
+        assert app._config_load_errors == []
+
 
 @pytest.mark.unit
 class TestConfigWatcherProperty:
