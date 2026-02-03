@@ -10,6 +10,8 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-02-03
+
 ### Added
 - Documentation for merge policy and release process in contributing guide
 - Multiprocess logging support (`appinfra.log.mp`) for child processes:
