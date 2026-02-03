@@ -10,10 +10,42 @@ import datetime
 import re
 import warnings
 from collections.abc import Hashable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml  # type: ignore[import-untyped]
+
+
+@dataclass(frozen=True)
+class ErrorContext:
+    """Context for YAML error reporting with file location information."""
+
+    current_file: Path | None = None
+    line: int | None = None
+    column: int | None = None
+
+    def format_location(self) -> str:
+        """Format file and position for error messages."""
+        parts = []
+        if self.current_file:
+            parts.append(f"in '{self.current_file}'")
+        if self.line is not None:
+            # YAML lines are 0-indexed, display as 1-indexed
+            parts.append(f"line {self.line + 1}")
+        if self.column is not None:
+            parts.append(f"column {self.column + 1}")
+        return ", ".join(parts) if parts else "unknown location"
+
+
+@dataclass(frozen=True)
+class IncludeContext(ErrorContext):
+    """Extended context for !include directive processing."""
+
+    include_chain: frozenset[Path] = frozenset()
+    project_root: Path | None = None
+    max_include_depth: int = 10
+
 
 # Pattern for environment variable references: ${VAR_NAME}
 ENV_VAR_PATTERN = re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$")
@@ -55,7 +87,9 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
     return result
 
 
-def _preprocess_document_includes(content: str) -> tuple[str, list[str]]:
+def _preprocess_document_includes(
+    content: str,
+) -> tuple[str, list[tuple[str, int]]]:
     """
     Extract document-level !include directives from YAML content.
 
@@ -68,7 +102,8 @@ def _preprocess_document_includes(content: str) -> tuple[str, list[str]]:
         content: Raw YAML content
 
     Returns:
-        Tuple of (remaining_content, list_of_include_paths)
+        Tuple of (remaining_content, list_of_(path, line_number) tuples)
+        Line numbers are 1-indexed for display.
 
     Example:
         Input:
@@ -79,13 +114,13 @@ def _preprocess_document_includes(content: str) -> tuple[str, list[str]]:
               port: 8080
 
         Output:
-            ('\\nname: app\\nserver:\\n  port: 8080', ['./base.yaml'])
+            ('\\nname: app\\nserver:\\n  port: 8080', [('./base.yaml', 1)])
     """
     lines = content.splitlines(keepends=True)
-    include_paths: list[str] = []
+    include_paths: list[tuple[str, int]] = []
     remaining_lines: list[str] = []
 
-    for line in lines:
+    for line_num, line in enumerate(lines, start=1):
         # Only check non-indented lines (document level)
         stripped = line.lstrip()
         if line == stripped:  # No leading whitespace = document level
@@ -94,7 +129,7 @@ def _preprocess_document_includes(content: str) -> tuple[str, list[str]]:
                 # Extract path from whichever group matched (double-quoted, single-quoted, or unquoted)
                 path = match.group(1) or match.group(2) or match.group(3)
                 if path:
-                    include_paths.append(path)
+                    include_paths.append((path, line_num))
                 continue  # Don't add this line to remaining content
 
         remaining_lines.append(line)
@@ -105,6 +140,7 @@ def _preprocess_document_includes(content: str) -> tuple[str, list[str]]:
 def _resolve_include_path_standalone(
     include_path_str: str,
     current_file: Path | None,
+    ctx: ErrorContext | None = None,
 ) -> Path:
     """
     Resolve include path to absolute path (standalone version for preprocessing).
@@ -112,6 +148,7 @@ def _resolve_include_path_standalone(
     Args:
         include_path_str: Path string from !include directive
         current_file: Path to current file (for relative path resolution)
+        ctx: Error context for location info (optional)
 
     Returns:
         Resolved absolute path
@@ -123,57 +160,76 @@ def _resolve_include_path_standalone(
 
     if not include_path.is_absolute():
         if current_file is None:
+            location = f" ({ctx.format_location()})" if ctx else ""
             raise yaml.YAMLError(
                 f"Cannot resolve relative include path '{include_path_str}' "
-                "without a current file context"
+                f"without a current file context{location}"
             )
         return (current_file.parent / include_path).resolve()
 
     return include_path.resolve()
 
 
-def _check_circular_include(include_path: Path, include_chain: set[Path]) -> None:
+def _check_circular_include(
+    include_path: Path,
+    include_chain: set[Path],
+    ctx: ErrorContext | None = None,
+) -> None:
     """Raise error if circular include detected."""
     if include_path in include_chain:
         chain_str = " -> ".join(str(f) for f in include_chain)
+        location = f" ({ctx.format_location()})" if ctx else ""
         raise yaml.YAMLError(
-            f"Circular include detected: {chain_str} -> {include_path}"
+            f"Circular include detected: {chain_str} -> {include_path}{location}"
         )
 
 
 def _check_include_depth(
-    include_path: Path, include_chain: set[Path], max_depth: int
+    include_path: Path,
+    include_chain: set[Path],
+    max_depth: int,
+    ctx: ErrorContext | None = None,
 ) -> None:
     """Raise error if include depth exceeds maximum."""
     if len(include_chain) + 1 > max_depth:
         chain_str = " -> ".join(str(f) for f in include_chain)
+        location = f" ({ctx.format_location()})" if ctx else ""
         msg = (
             f"Include depth exceeds maximum of {max_depth}. "
             f"This could indicate a deeply nested include or recursive include pattern. "
-            f"Include chain: {chain_str} -> {include_path}"
+            f"Include chain: {chain_str} -> {include_path}{location}"
         )
         raise yaml.YAMLError(msg)
 
 
-def _check_file_exists(include_path: Path) -> None:
+def _check_file_exists(
+    include_path: Path,
+    ctx: ErrorContext | None = None,
+) -> None:
     """Raise error if include file doesn't exist."""
+    location = f" ({ctx.format_location()})" if ctx else ""
     try:
         if not include_path.exists():
-            raise yaml.YAMLError(f"Include file not found: {include_path}")
+            raise yaml.YAMLError(f"Include file not found: {include_path}{location}")
     except (PermissionError, OSError) as e:
-        raise yaml.YAMLError(f"Include file not found: {include_path}") from e
+        raise yaml.YAMLError(f"Include file not found: {include_path}{location}") from e
 
 
-def _check_project_root(include_path: Path, project_root: Path | None) -> None:
+def _check_project_root(
+    include_path: Path,
+    project_root: Path | None,
+    ctx: ErrorContext | None = None,
+) -> None:
     """Raise error if path is outside project root."""
     if project_root is None:
         return
     try:
         include_path.relative_to(project_root)
     except (ValueError, TypeError) as e:
+        location = f" ({ctx.format_location()})" if ctx else ""
         msg = (
             f"Security: Include path '{include_path}' is outside project root "
-            f"'{project_root}'. This could be a path traversal attack."
+            f"'{project_root}'. This could be a path traversal attack.{location}"
         )
         raise yaml.YAMLError(msg) from e
 
@@ -183,12 +239,13 @@ def _validate_include_standalone(
     include_chain: set[Path],
     project_root: Path | None,
     max_include_depth: int,
+    ctx: ErrorContext | None = None,
 ) -> None:
     """Validate include path for circular dependencies, existence, and security."""
-    _check_circular_include(include_path, include_chain)
-    _check_include_depth(include_path, include_chain, max_include_depth)
-    _check_file_exists(include_path)
-    _check_project_root(include_path, project_root)
+    _check_circular_include(include_path, include_chain, ctx)
+    _check_include_depth(include_path, include_chain, max_include_depth, ctx)
+    _check_file_exists(include_path, ctx)
+    _check_project_root(include_path, project_root, ctx)
 
 
 class Loader(yaml.SafeLoader):
@@ -406,12 +463,13 @@ class Loader(yaml.SafeLoader):
 
         return mapping
 
-    def _resolve_include_path(self, include_path_str: str) -> Path:
+    def _resolve_include_path(self, include_path_str: str, ctx: IncludeContext) -> Path:
         """
         Resolve include path to absolute path.
 
         Args:
             include_path_str: Path string from !include tag
+            ctx: Include context for error reporting
 
         Returns:
             Resolved absolute path
@@ -423,30 +481,33 @@ class Loader(yaml.SafeLoader):
 
         if not include_path.is_absolute():
             # Relative path - resolve from current file's directory
-            if self.current_file is None:
+            if ctx.current_file is None:
                 raise yaml.YAMLError(
                     f"Cannot resolve relative include path '{include_path_str}' "
-                    "without a current file context"
+                    f"without a current file context ({ctx.format_location()})"
                 )
-            return (self.current_file.parent / include_path).resolve()
+            return (ctx.current_file.parent / include_path).resolve()
 
         return include_path.resolve()
 
-    def _validate_include(self, include_path: Path) -> None:
+    def _validate_include(self, include_path: Path, ctx: IncludeContext) -> None:
         """
         Validate include path for circular dependencies, existence, and security.
 
         Args:
             include_path: Path to validate
+            ctx: Include context for error reporting
 
         Raises:
             yaml.YAMLError: If circular include detected, file not found, or path traversal detected
         """
+        location = ctx.format_location()
+
         # Check for circular includes
-        if include_path in self.include_chain:
-            chain_str = " -> ".join(str(f) for f in self.include_chain)
+        if include_path in ctx.include_chain:
+            chain_str = " -> ".join(str(f) for f in ctx.include_chain)
             raise yaml.YAMLError(
-                f"Circular include detected: {chain_str} -> {include_path}"
+                f"Circular include detected: {chain_str} -> {include_path} ({location})"
             )
 
         # Check if file exists
@@ -454,29 +515,30 @@ class Loader(yaml.SafeLoader):
             file_exists = include_path.exists()
         except (PermissionError, OSError):
             # If we can't check existence due to permissions, treat as not found
-            raise yaml.YAMLError(f"Include file not found: {include_path}")
+            raise yaml.YAMLError(f"Include file not found: {include_path} ({location})")
 
         if not file_exists:
-            raise yaml.YAMLError(f"Include file not found: {include_path}")
+            raise yaml.YAMLError(f"Include file not found: {include_path} ({location})")
 
         # Security: Validate path stays within project root if specified
-        if self.project_root is not None:
+        if ctx.project_root is not None:
             try:
                 # is_relative_to() raises ValueError if not relative (Python 3.9+)
                 # Use try/except for compatibility
-                include_path.relative_to(self.project_root)
+                include_path.relative_to(ctx.project_root)
             except (ValueError, TypeError):
                 raise yaml.YAMLError(
-                    f"Security: Include path '{include_path}' is outside project root '{self.project_root}'. "
-                    f"This could be a path traversal attack."
+                    f"Security: Include path '{include_path}' is outside project root "
+                    f"'{ctx.project_root}'. This could be a path traversal attack. ({location})"
                 )
 
-    def _load_included_file(self, include_path: Path) -> Any:
+    def _load_included_file(self, include_path: Path, ctx: IncludeContext) -> Any:
         """
         Load and parse included YAML file.
 
         Args:
             include_path: Path to the included file
+            ctx: Include context for error reporting
 
         Returns:
             Parsed data from included file
@@ -484,25 +546,26 @@ class Loader(yaml.SafeLoader):
         Raises:
             yaml.YAMLError: If include depth exceeds max_include_depth
         """
-        new_chain = self.include_chain | {include_path}
+        new_chain = ctx.include_chain | {include_path}
 
         # Security: Check include depth to prevent stack overflow
-        if len(new_chain) > self.max_include_depth:
+        if len(new_chain) > ctx.max_include_depth:
             raise yaml.YAMLError(
-                f"Include depth exceeds maximum of {self.max_include_depth}. "
+                f"Include depth exceeds maximum of {ctx.max_include_depth}. "
                 f"This could indicate a deeply nested include or recursive include pattern. "
-                f"Include chain: {' -> '.join(str(p) for p in new_chain)}"
+                f"Include chain: {' -> '.join(str(p) for p in new_chain)} "
+                f"({ctx.format_location()})"
             )
 
         with open(include_path) as f:
             included_loader = Loader(
                 f,
                 current_file=include_path,
-                include_chain=new_chain,
+                include_chain=set(new_chain),  # Convert frozenset back to set
                 merge_strategy=self.merge_strategy,
                 track_sources=self.track_sources,
-                project_root=self.project_root,
-                max_include_depth=self.max_include_depth,
+                project_root=ctx.project_root,
+                max_include_depth=ctx.max_include_depth,
             )
             included_data = included_loader.get_single_data()
 
@@ -514,13 +577,16 @@ class Loader(yaml.SafeLoader):
 
         return included_data
 
-    def _extract_section_from_data(self, data: Any, section_path: str) -> Any:
+    def _extract_section_from_data(
+        self, data: Any, section_path: str, ctx: IncludeContext
+    ) -> Any:
         """
         Extract a specific section from loaded data using dot notation.
 
         Args:
             data: Loaded YAML data (typically a dict)
             section_path: Dot-separated path to section (e.g., "pgserver" or "database.postgres")
+            ctx: Include context for error reporting
 
         Returns:
             Data at the specified section path
@@ -531,6 +597,7 @@ class Loader(yaml.SafeLoader):
         if not section_path:
             return data
 
+        location = ctx.format_location()
         current = data
         parts = section_path.split(".")
 
@@ -539,18 +606,43 @@ class Loader(yaml.SafeLoader):
                 traversed = ".".join(parts[:i])
                 raise yaml.YAMLError(
                     f"Cannot navigate to '{section_path}': "
-                    f"'{traversed}' is not a mapping (got {type(current).__name__})"
+                    f"'{traversed}' is not a mapping (got {type(current).__name__}) "
+                    f"({location})"
                 )
 
             if part not in current:
                 raise yaml.YAMLError(
                     f"Section '{section_path}' not found in included file. "
-                    f"Available keys at this level: {list(current.keys())}"
+                    f"Available keys at this level: {list(current.keys())} "
+                    f"({location})"
                 )
 
             current = current[part]
 
         return current
+
+    def _create_error_context(self, node: Any) -> ErrorContext:
+        """Create an ErrorContext from the current loader state and node position."""
+        line = node.start_mark.line if node.start_mark else None
+        column = node.start_mark.column if node.start_mark else None
+        return ErrorContext(
+            current_file=self.current_file,
+            line=line,
+            column=column,
+        )
+
+    def _create_include_context(self, node: Any) -> IncludeContext:
+        """Create an IncludeContext from the current loader state and node position."""
+        line = node.start_mark.line if node.start_mark else None
+        column = node.start_mark.column if node.start_mark else None
+        return IncludeContext(
+            current_file=self.current_file,
+            line=line,
+            column=column,
+            include_chain=frozenset(self.include_chain),
+            project_root=self.project_root,
+            max_include_depth=self.max_include_depth,
+        )
 
     def include_constructor(self, node: Any) -> Any:
         """
@@ -577,6 +669,9 @@ class Loader(yaml.SafeLoader):
             !include "config.yaml#database"       # Include only 'database' section
             !include "config.yaml#app.settings"   # Include nested 'app.settings' section
         """
+        # Create context for error reporting
+        ctx = self._create_include_context(node)
+
         # Parse include path and optional section anchor
         include_spec = self.construct_scalar(node)
 
@@ -588,13 +683,13 @@ class Loader(yaml.SafeLoader):
             section_path = ""
 
         # Simple pipeline: resolve → validate → load → extract section
-        include_path = self._resolve_include_path(include_path_str)
-        self._validate_include(include_path)
-        data = self._load_included_file(include_path)
+        include_path = self._resolve_include_path(include_path_str, ctx)
+        self._validate_include(include_path, ctx)
+        data = self._load_included_file(include_path, ctx)
 
         # Extract specific section if requested
         if section_path:
-            return self._extract_section_from_data(data, section_path)
+            return self._extract_section_from_data(data, section_path, ctx)
 
         return data
 
@@ -618,11 +713,12 @@ class Loader(yaml.SafeLoader):
         value: str = self.construct_scalar(node)
 
         if not ENV_VAR_PATTERN.match(value):
+            ctx = self._create_error_context(node)
             # Truncate for security - don't log full secret in warning
             display_value = value[:20] + "..." if len(value) > 20 else value
             warnings.warn(
-                f"Secret value appears to be a literal instead of env var reference. "
-                f"Use ${{VAR_NAME}} syntax. Found: {display_value}",
+                f"Secret value appears to be a literal instead of env var reference "
+                f"({ctx.format_location()}). Use ${{VAR_NAME}} syntax. Found: {display_value}",
                 SecretLiteralWarning,
                 stacklevel=6,  # Point to YAML load call site
             )
@@ -655,8 +751,10 @@ class Loader(yaml.SafeLoader):
 
         if not path.is_absolute():
             if self.current_file is None:
+                ctx = self._create_error_context(node)
                 raise yaml.YAMLError(
-                    f"Cannot resolve relative path '{path_str}' without a current file context"
+                    f"Cannot resolve relative path '{path_str}' without a current file context "
+                    f"({ctx.format_location()})"
                 )
             path = (self.current_file.parent / path).resolve()
         else:
@@ -739,6 +837,18 @@ def _filter_source_map_for_section(
     return filtered_map
 
 
+def _create_document_error_context(
+    current_file: Path | None, line: int | None
+) -> ErrorContext:
+    """Create ErrorContext for document-level include errors."""
+    # Line is 1-indexed from preprocessing, convert to 0-indexed for ErrorContext
+    return ErrorContext(
+        current_file=current_file,
+        line=line - 1 if line is not None else None,
+        column=0,  # Document-level includes are always at column 0
+    )
+
+
 def _load_document_include(
     include_spec: str,
     current_file: Path | None,
@@ -747,32 +857,19 @@ def _load_document_include(
     track_sources: bool,
     project_root: Path | None,
     max_include_depth: int,
+    line: int | None = None,
 ) -> tuple[Any, dict[str, Path | None]]:
-    """
-    Load a document-level include file with section extraction support.
-
-    Args:
-        include_spec: Include path, optionally with section anchor (e.g., "file.yaml#section")
-        current_file: Path to current file (for relative path resolution)
-        include_chain: Set of files in current include chain
-        merge_strategy: Strategy for merging includes
-        track_sources: If True, track source files
-        project_root: Optional project root for security validation
-        max_include_depth: Maximum allowed include depth
-
-    Returns:
-        Tuple of (data, source_map)
-    """
+    """Load a document-level include file with section extraction support."""
     # Parse include path and optional section anchor
     include_path_str, section_path = (
         include_spec.split("#", 1) if "#" in include_spec else (include_spec, "")
     )
 
-    # Resolve and validate path
+    ctx = _create_document_error_context(current_file, line)
     resolved_project_root = project_root.resolve() if project_root else None
-    include_path = _resolve_include_path_standalone(include_path_str, current_file)
+    include_path = _resolve_include_path_standalone(include_path_str, current_file, ctx)
     _validate_include_standalone(
-        include_path, include_chain, resolved_project_root, max_include_depth
+        include_path, include_chain, resolved_project_root, max_include_depth, ctx
     )
 
     # Load the included file recursively
@@ -834,7 +931,7 @@ def _load_include_file(
 
 
 def _merge_document_includes(
-    doc_include_paths: list[str],
+    doc_include_paths: list[tuple[str, int]],
     current_file: Path | None,
     include_chain: set[Path],
     merge_strategy: str,
@@ -846,7 +943,7 @@ def _merge_document_includes(
     Load and merge all document-level includes.
 
     Args:
-        doc_include_paths: List of include paths from preprocessing
+        doc_include_paths: List of (include_path, line_number) tuples from preprocessing
         current_file: Path to current file for relative path resolution
         include_chain: Current include chain for circular detection
         merge_strategy: Strategy for merging includes
@@ -860,7 +957,7 @@ def _merge_document_includes(
     merged_data: dict[str, Any] | None = None
     merged_source_map: dict[str, Path | None] = {}
 
-    for include_spec in doc_include_paths:
+    for include_spec, line_num in doc_include_paths:
         include_data, include_source_map = _load_document_include(
             include_spec,
             current_file,
@@ -869,6 +966,7 @@ def _merge_document_includes(
             track_sources,
             project_root,
             max_include_depth,
+            line=line_num,
         )
 
         if include_data is not None:

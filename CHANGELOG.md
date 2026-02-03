@@ -25,6 +25,14 @@ For API stability guarantees and deprecation policy, see
     level rules are restored and applied based on the logger name.
   - `LogLevelManager.to_dict()` / `from_dict()` - Serialize and restore topic-based level rules for
     multiprocess scenarios
+- `ErrorContext` and `IncludeContext` dataclasses in `appinfra.yaml` for error location tracking
+
+### Fixed
+- YAML `!include` directive errors now logged with file location instead of failing silently.
+  Previously, when `AppBuilder.with_config_file()` loaded a config with a bad `!include` (missing
+  file, circular include, etc.), the error was silently swallowed, resulting in empty config sections
+  with no indication of what went wrong. Now errors are stored during config loading and logged with
+  file path, line number, and column once the logger is initialized.
 
 ## [0.3.3] - 2026-01-29
 

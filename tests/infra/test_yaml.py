@@ -11,7 +11,69 @@ from pathlib import Path
 import pytest
 import yaml
 
-from appinfra.yaml import SecretLiteralWarning, deep_merge, load
+from appinfra.yaml import ErrorContext, SecretLiteralWarning, deep_merge, load
+
+# =============================================================================
+# Unit Tests for ErrorContext
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestErrorContext:
+    """Unit tests for ErrorContext.format_location()."""
+
+    def test_format_location_with_all_fields(self):
+        """Test format_location with file, line, and column."""
+        ctx = ErrorContext(
+            current_file=Path("/path/to/config.yaml"),
+            line=4,  # 0-indexed
+            column=6,  # 0-indexed
+        )
+        result = ctx.format_location()
+        assert result == "in '/path/to/config.yaml', line 5, column 7"
+
+    def test_format_location_with_file_and_line_only(self):
+        """Test format_location with file and line, no column."""
+        ctx = ErrorContext(
+            current_file=Path("/path/to/config.yaml"),
+            line=9,
+            column=None,
+        )
+        result = ctx.format_location()
+        assert result == "in '/path/to/config.yaml', line 10"
+
+    def test_format_location_with_file_only(self):
+        """Test format_location with only file."""
+        ctx = ErrorContext(
+            current_file=Path("/path/to/config.yaml"),
+            line=None,
+            column=None,
+        )
+        result = ctx.format_location()
+        assert result == "in '/path/to/config.yaml'"
+
+    def test_format_location_with_no_fields(self):
+        """Test format_location with no fields set."""
+        ctx = ErrorContext()
+        result = ctx.format_location()
+        assert result == "unknown location"
+
+    def test_format_location_with_line_zero(self):
+        """Test format_location with line 0 (first line)."""
+        ctx = ErrorContext(
+            current_file=Path("test.yaml"),
+            line=0,
+            column=0,
+        )
+        result = ctx.format_location()
+        assert result == "in 'test.yaml', line 1, column 1"
+
+    def test_error_context_is_immutable(self):
+        """Test that ErrorContext is frozen (immutable)."""
+        ctx = ErrorContext(current_file=Path("test.yaml"), line=1, column=1)
+        with pytest.raises(AttributeError):
+            ctx.line = 5  # type: ignore[misc]
+
 
 # =============================================================================
 # Fixtures
@@ -296,6 +358,21 @@ data: !include "./nonexistent.yaml"
 """
         with pytest.raises(yaml.YAMLError, match="Include file not found"):
             load(StringIO(yaml_content), current_file=yaml_files_dir / "test.yaml")
+
+    def test_include_error_includes_location_info(self, yaml_files_dir):
+        """Test that include errors include file and line/column info."""
+        yaml_content = """name: test
+data: !include "./nonexistent.yaml"
+other: value
+"""
+        with pytest.raises(yaml.YAMLError) as exc_info:
+            load(StringIO(yaml_content), current_file=yaml_files_dir / "test.yaml")
+
+        error_msg = str(exc_info.value)
+        # Should include file path
+        assert "test.yaml" in error_msg
+        # Should include line number (line 2, 0-indexed = 1, displayed as 2)
+        assert "line 2" in error_msg
 
 
 # =============================================================================
