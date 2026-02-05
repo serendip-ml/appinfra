@@ -553,6 +553,10 @@ run_raw() {
                 echo ""
             done
         else
+            # Parse fix_target for embedded coverage threshold (e.g., "docstring:95" -> "")
+            local parsed=$(parse_fix_target "$fix_target")
+            local actual_fix_target="${parsed#*|}"
+
             local cmd_exit_code=0
             eval "$cmd" || cmd_exit_code=$?
 
@@ -564,7 +568,7 @@ run_raw() {
                 # Don't fail on warnings in non-strict mode
             else
                 echo "${RED}✗${RESET} $name failed"
-                [ -n "$fix_target" ] && echo "  To fix: make $fix_target"
+                [ -n "$actual_fix_target" ] && echo "  To fix: make $actual_fix_target"
                 failed=true
                 [ "$FAIL_FAST" = true ] && break
             fi
