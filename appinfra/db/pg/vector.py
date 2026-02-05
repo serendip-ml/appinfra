@@ -6,7 +6,7 @@ the pgvector extension. Includes type wrapper, extension enabler, and
 index creation helpers.
 
 Example:
-    from appinfra.db.pg.vector import Vector, enable_pgvector, create_vector_index
+    from .vector import Vector, enable_pgvector, create_vector_index
 
     # Model definition
     class Content(Base):

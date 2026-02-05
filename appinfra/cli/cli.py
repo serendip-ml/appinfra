@@ -17,6 +17,8 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 import appinfra
+
+# Use absolute imports since this module is designed to run as a script
 from appinfra.app import App, AppBuilder
 from appinfra.cli.tools.code_quality import CodeQualityTool
 from appinfra.cli.tools.completion_tool import CompletionTool

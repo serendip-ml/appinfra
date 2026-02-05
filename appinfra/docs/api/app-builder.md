@@ -190,10 +190,15 @@ By default, AppBuilder adds these CLI arguments:
 |----------|-------------|
 | `--etc-dir` | Configuration directory path |
 | `--log-level` | Log level (trace2, trace, debug, info, warning, error) |
+| `--log-json` | Output logs in JSON format |
 | `--log-location` | Show file location in logs (0, 1, 2) |
 | `--log-micros` | Use microsecond timestamps |
 | `--log-topic` | Log topic filter |
+| `--no-log-colors` | Disable colored log output |
 | `-q, --quiet` | Suppress output |
+
+**Precedence:** CLI args override environment variables, which override YAML config values.
+See [Configuration Precedence](../guides/configuration-precedence.md) for the full precedence rules.
 
 Disable with `.without_standard_args()` or selectively with `.with_standard_args(log_micros=False)`.
 

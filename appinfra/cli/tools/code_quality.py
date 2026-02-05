@@ -7,8 +7,8 @@ complexity checking, import analysis, etc.
 
 from typing import Any
 
-from appinfra.app.tools import Tool, ToolConfig
-from appinfra.app.tracing.traceable import Traceable
+from ...app.tools import Tool, ToolConfig
+from ...app.tracing.traceable import Traceable
 
 
 class CodeQualityTool(Tool):

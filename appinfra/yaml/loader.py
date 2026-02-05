@@ -38,7 +38,7 @@ class Loader(yaml.SafeLoader):
           connection: !include "./db_config.yaml"
 
         # Load with the appinfra yaml module:
-        from appinfra.yaml import load
+        from . import load
         with open('config.yaml') as f:
             config = load(f, current_file=Path('config.yaml'))
     """

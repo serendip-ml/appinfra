@@ -323,7 +323,7 @@ def load_database_logging_config(
         Dictionary with database logging configuration
 
     Example:
-        from appinfra.config import Config
+        from ....config import Config
         config = Config("etc/infra.yaml")
 
         # From specific handler config

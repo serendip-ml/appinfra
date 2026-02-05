@@ -52,14 +52,14 @@ class LifecycleManager:
             "logging": 5.0,
         }
 
-    def _setup_loggers(self, config: Any) -> None:
+    def _setup_loggers(self, config: Any, args: Any = None) -> None:
         """Create and configure logger hierarchy."""
         from typing import cast
 
         from .logging_utils import setup_logging_from_config
 
         # Use setup_logging_from_config to properly handle handlers config
-        logger, self._handler_registry = setup_logging_from_config(config)
+        logger, self._handler_registry = setup_logging_from_config(config, args=args)
         self._logger = cast("Logger", logger)
 
         self._logger.debug(
@@ -74,12 +74,12 @@ class LifecycleManager:
             self._infra_logger, ["app", "lifecycle"]
         )
 
-    def initialize(self, config: Any) -> None:
+    def initialize(self, config: Any, args: Any = None) -> None:
         """Initialize the lifecycle manager."""
         self._start_time = time.start()
 
         # Setup logger hierarchy
-        self._setup_loggers(config)
+        self._setup_loggers(config, args=args)
 
         # Load shutdown timeouts and create shutdown manager
         if hasattr(config, "shutdown_timeouts"):
@@ -159,8 +159,8 @@ class LifecycleManager:
         self, hot_reload_config: Any, etc_dir: str, config_file: str
     ) -> Any:
         """Create and configure the config watcher."""
-        from appinfra.config import ConfigWatcher
-        from appinfra.log import LogConfigReloader
+        from ...config import ConfigWatcher
+        from ...log import LogConfigReloader
 
         debounce_ms = getattr(hot_reload_config, "debounce_ms", 500)
 

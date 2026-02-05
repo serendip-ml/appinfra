@@ -138,7 +138,7 @@ class LogConfig:
             LogConfig instance
 
         Example:
-            from appinfra.config import Config
+            from ..config import Config
             config = Config("etc/infra.yaml")
             log_config = LogConfig.from_config(config.dict(), "test.logging")
         """

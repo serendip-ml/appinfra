@@ -11,6 +11,16 @@ For API stability guarantees and deprecation policy, see
 ## [Unreleased]
 
 ### Added
+- Standard CLI arguments for agent-friendly log output:
+  - `--log-json` - Output logs in JSON format (overrides YAML handler `format: text`)
+  - `--no-log-colors` - Disable colored log output (overrides YAML handler `colors: true`)
+  - Both flags apply to all console handlers defined in config, not just the first one
+  - Available by default; disable with `.with_standard_args(log_json=False, log_colors=False)`
+- `ConsoleHandlerConfig.colors` parameter for handler-specific color control. When set, overrides
+  the global `LogConfig.colors` setting for that specific handler.
+- Configuration precedence guide (`docs/guides/configuration-precedence.md`) documenting the full
+  override hierarchy: CLI args > Environment variables > YAML config > Defaults. Also covers
+  topic-level priorities (API=10, CLI=5, YAML=1) and handler override behavior.
 - Docstring coverage checking via `interrogate`:
   - `make cq.docstring` - Report docstring coverage without failing
   - `make cq.docstring.strict` - Fail if below threshold

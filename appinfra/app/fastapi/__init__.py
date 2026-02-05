@@ -8,7 +8,7 @@ Installation:
     pip install appinfra[fastapi]
 
 Example (Simple Server - Direct Mode):
-    from appinfra.app.fastapi import ServerBuilder
+    from . import ServerBuilder
 
     async def health():
         return {"status": "ok"}
@@ -22,7 +22,7 @@ Example (Simple Server - Direct Mode):
 
 Example (Subprocess Mode with IPC):
     import multiprocessing as mp
-    from appinfra.app.fastapi import ServerBuilder
+    from . import ServerBuilder
 
     request_q, response_q = mp.Queue(), mp.Queue()
 
@@ -44,8 +44,8 @@ Example (Subprocess Mode with IPC):
         response_q.put(result)
 
 Example (AppBuilder Integration):
-    from appinfra.app import AppBuilder
-    from appinfra.app.fastapi import ServerBuilder, ServerPlugin
+    from .. import AppBuilder
+    from . import ServerBuilder, ServerPlugin
 
     server = ServerBuilder("myapi").with_port(8000).build()
 

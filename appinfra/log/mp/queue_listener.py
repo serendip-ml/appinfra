@@ -28,7 +28,7 @@ class LogQueueListener:
 
     Usage:
         from multiprocessing import Queue
-        from appinfra.log.mp import LogQueueListener
+        from . import LogQueueListener
 
         queue = Queue()
         listener = LogQueueListener(queue, parent_logger)

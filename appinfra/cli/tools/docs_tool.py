@@ -10,9 +10,9 @@ from typing import Any
 
 import yaml
 
-from appinfra.app.tools import Tool, ToolConfig
-from appinfra.app.tracing.traceable import Traceable
-from appinfra.cli.output import ConsoleOutput, OutputWriter
+from ...app.tools import Tool, ToolConfig
+from ...app.tracing.traceable import Traceable
+from ..output import ConsoleOutput, OutputWriter
 
 
 def get_package_root() -> Path:
@@ -857,7 +857,7 @@ class DocsGenerateTool(Tool):
 
     def run(self, **kwargs: Any) -> int:
         """Generate documentation from the current app's tools."""
-        from appinfra.app.docs import DocsGenerator
+        from ...app.docs import DocsGenerator
 
         generator = DocsGenerator(
             title=getattr(self.args, "title", "CLI Reference"),

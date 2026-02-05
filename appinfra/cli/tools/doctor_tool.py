@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from appinfra.app.tools import Tool, ToolConfig
-from appinfra.app.tracing.traceable import Traceable
+from ...app.tools import Tool, ToolConfig
+from ...app.tracing.traceable import Traceable
 
 
 @dataclass

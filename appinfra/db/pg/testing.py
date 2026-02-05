@@ -19,7 +19,7 @@ Usage (with migrations - recommended):
 
 Usage (with migrations - legacy, causes warning):
     from myapp.models import Base
-    from appinfra.db.pg.testing import make_migrate_fixture
+    from .testing import make_migrate_fixture
 
     pytest_plugins = ["appinfra.db.pg.testing"]
 
@@ -295,7 +295,7 @@ def make_migrate_fixture(
     Example (legacy - causes PytestAssertRewriteWarning):
         # In conftest.py
         from myapp.models import Base
-        from appinfra.db.pg.testing import make_migrate_fixture
+        from .testing import make_migrate_fixture
 
         pg_with_tables = make_migrate_fixture(Base, extensions=["vector"])
 

@@ -13,8 +13,7 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
-from appinfra.dot_dict import DotDict
-
+from ..dot_dict import DotDict
 from .constants import MAX_CONFIG_SIZE_BYTES
 
 # Helper functions for Config._load()
@@ -84,7 +83,7 @@ def _load_yaml_with_includes(
         merge_strategy: Strategy for merging includes
         project_root: Optional project root to restrict includes (security feature)
     """
-    from appinfra.yaml import load as yaml_load
+    from ..yaml import load as yaml_load
 
     with open(fname_path) as f:
         try:
@@ -251,7 +250,7 @@ class Config(DotDict):
         Raises:
             DotDictPathNotFoundError: If the variable is not defined
         """
-        from appinfra.dot_dict import DotDictPathNotFoundError
+        from ..dot_dict import DotDictPathNotFoundError
 
         var_name = match.group(1)
         if not self.has(var_name):

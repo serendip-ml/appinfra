@@ -11,7 +11,7 @@ This module provides a comprehensive framework for building CLI applications wit
 """
 
 # Import core modules
-from appinfra.config import (
+from ..config import (
     DEFAULT_CONFIG_FILE,
     DEFAULT_CONFIG_FILENAME,
     ETC_DIR,
@@ -22,7 +22,6 @@ from appinfra.config import (
     get_etc_dir,
     get_project_root,
 )
-
 from .args import DefaultsHelpFormatter
 from .builder import (
     AppBuilder,

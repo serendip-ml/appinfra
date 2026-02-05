@@ -24,7 +24,7 @@ Example:
 
 import time
 
-from appinfra.ewma import EWMA
+from ..ewma import EWMA
 
 
 class ETA:

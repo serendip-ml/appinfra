@@ -16,7 +16,7 @@ Security Notes:
 
 Example Usage:
     import logging
-    from appinfra.regex_utils import safe_compile, safe_match
+    from .regex_utils import safe_compile, safe_match
 
     lg = logging.getLogger(__name__)
 

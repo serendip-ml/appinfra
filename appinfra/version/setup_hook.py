@@ -9,13 +9,13 @@ Two approaches are available:
     appinfra version init-hook mypackage --output setup.py
 
     # Or programmatically:
-    from appinfra.version.setup_hook import generate_standalone_setup
+    from .setup_hook import generate_standalone_setup
     print(generate_standalone_setup("mypackage"))
 
 2. **Import-based** - Requires appinfra installed in build environment:
 
     # setup.py
-    from appinfra.version.setup_hook import make_build_py_class
+    from .setup_hook import make_build_py_class
     from setuptools import setup
 
     setup(cmdclass={"build_py": make_build_py_class("mypackage")})
@@ -128,7 +128,7 @@ def make_build_py_class(package_name: str) -> type:
         A build_py subclass to use in setup(cmdclass={"build_py": ...})
 
     Example:
-        from appinfra.version.setup_hook import make_build_py_class
+        from .setup_hook import make_build_py_class
         from setuptools import setup
 
         setup(cmdclass={"build_py": make_build_py_class("mypackage")})
@@ -159,7 +159,7 @@ def get_stub_content() -> str:
 
     Use this to create the initial stub file in your package:
 
-        from appinfra.version.setup_hook import get_stub_content
+        from .setup_hook import get_stub_content
         print(get_stub_content())
 
     Or via CLI:

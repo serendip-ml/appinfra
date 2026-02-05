@@ -14,9 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from appinfra.config import Config
-from appinfra.dot_dict import DotDict
-
+from ...config import Config
+from ...dot_dict import DotDict
 from ..core.app import App
 from ..decorators import DecoratorAPI
 from ..server.handlers import Middleware
@@ -295,6 +294,8 @@ class AppBuilder:
         "log_micros": True,
         "log_topic": True,
         "quiet": True,
+        "log_colors": True,
+        "log_json": True,
     }
 
     def __init__(self, name: str | None = None):
@@ -380,7 +381,7 @@ class AppBuilder:
         import os
         from pathlib import Path
 
-        from appinfra.config import DEFAULT_CONFIG_FILENAME
+        from ...config import DEFAULT_CONFIG_FILENAME
 
         if path is None:
             path = DEFAULT_CONFIG_FILENAME
@@ -448,6 +449,8 @@ class AppBuilder:
             "log_micros",
             "log_topic",
             "quiet",
+            "log_colors",
+            "log_json",
         }
         if name not in valid_args:
             raise ValueError(
@@ -585,7 +588,7 @@ class AppBuilder:
 
         from dataclasses import asdict
 
-        from appinfra.dot_dict import DotDict
+        from ...dot_dict import DotDict
 
         # Get non-None logging values
         logging_dict = {

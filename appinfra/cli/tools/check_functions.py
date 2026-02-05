@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from appinfra.app.tools import Tool, ToolConfig
+from ...app.tools import Tool, ToolConfig
 
 # Exit code for "warnings but ok" - violations found in non-strict mode
 EXIT_CODE_WARNING = 42

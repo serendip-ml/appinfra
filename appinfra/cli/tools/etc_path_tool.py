@@ -4,8 +4,8 @@ import sys
 from importlib.resources import files
 from typing import Any
 
-from appinfra.app.tools import Tool, ToolConfig
-from appinfra.app.tracing.traceable import Traceable
+from ...app.tools import Tool, ToolConfig
+from ...app.tracing.traceable import Traceable
 
 
 class EtcPathTool(Tool):
@@ -47,7 +47,7 @@ class EtcPathTool(Tool):
         except Exception:
             use_local = local
         if use_local:
-            from appinfra.app.core.config import resolve_etc_dir
+            from ...app.core.config import resolve_etc_dir
 
             try:
                 print(resolve_etc_dir())

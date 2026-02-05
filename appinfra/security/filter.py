@@ -22,7 +22,7 @@ class SecretMaskingFilter(logging.Filter):
     before the record is processed by handlers.
 
     Example:
-        from appinfra.security import SecretMaskingFilter, get_masker
+        from . import SecretMaskingFilter, get_masker
 
         # Add to a logger
         logger = logging.getLogger("myapp")
@@ -108,7 +108,7 @@ def add_masking_filter_to_logger(
         The created filter instance
 
     Example:
-        from appinfra.security import add_masking_filter_to_logger
+        from . import add_masking_filter_to_logger
 
         # By name
         add_masking_filter_to_logger("myapp")

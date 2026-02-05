@@ -31,11 +31,13 @@ class ConsoleHandlerConfig(HandlerConfig):
         stream: Any | None = None,
         level: str | int | None = None,
         format: str = "text",
+        colors: bool | None = None,
         **kwargs: Any,
     ):
         super().__init__(level)
         self.stream = stream if stream is not None else sys.stdout
         self.format = format
+        self.colors = colors  # None means use LogConfig default
 
         # Extract format-specific options (those starting with "format_")
         self.format_options = {}
@@ -55,6 +57,8 @@ class ConsoleHandlerConfig(HandlerConfig):
         }
         if self.level is not None:
             d["level"] = self.level
+        if self.colors is not None:
+            d["colors"] = self.colors
 
         # Add format options with prefix
         for key, value in self.format_options.items():
@@ -64,6 +68,8 @@ class ConsoleHandlerConfig(HandlerConfig):
 
     def create_handler(self, config: LogConfig, logger: Any = None) -> logging.Handler:
         """Create a console handler."""
+        from dataclasses import replace
+
         handler = logging.StreamHandler(self.stream)
         # Set handler level with proper resolution
         level = self.level or config.level
@@ -83,7 +89,11 @@ class ConsoleHandlerConfig(HandlerConfig):
             }
             formatter = JSONFormatter(**json_config)
         else:
-            formatter = _create_text_formatter(config, logger)
+            # Apply handler-specific colors override if set
+            effective_config = config
+            if self.colors is not None:
+                effective_config = replace(config, colors=self.colors)
+            formatter = _create_text_formatter(effective_config, logger)
 
         handler.setFormatter(formatter)
         return handler

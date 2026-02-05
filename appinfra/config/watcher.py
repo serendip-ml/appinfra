@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from appinfra.log import Logger
+    from ..log import Logger
 
 
 class ConfigWatcher:

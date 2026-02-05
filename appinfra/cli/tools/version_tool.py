@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import appinfra
-from appinfra.app.tools import Tool, ToolConfig
-from appinfra.app.tracing.traceable import Traceable
+
+from ...app.tools import Tool, ToolConfig
+from ...app.tracing.traceable import Traceable
 
 if TYPE_CHECKING:
     from argparse import ArgumentParser
@@ -21,7 +22,7 @@ _FIELDS = ("semver", "commit", "full", "modified", "time", "message", "init-hook
 def _get_build_info() -> dict[str, Any]:
     """Get build info from installed package."""
     try:
-        from appinfra import _build_info
+        from ... import _build_info
 
         return {
             "commit": getattr(_build_info, "COMMIT_SHORT", "") or None,
@@ -195,7 +196,7 @@ class VersionTool(Tool):
 
     def _generate_setup_py(self, package: str, output_file: str | None) -> None:
         """Generate setup.py content and write to file or stdout."""
-        from appinfra.version.setup_hook import generate_standalone_setup
+        from ...version.setup_hook import generate_standalone_setup
 
         setup_content = generate_standalone_setup(package)
 
@@ -208,7 +209,7 @@ class VersionTool(Tool):
 
     def _generate_stub_file(self, package: str) -> None:
         """Generate stub _build_info.py file in package directory."""
-        from appinfra.version.setup_hook import get_stub_content
+        from ...version.setup_hook import get_stub_content
 
         stub_path = Path(package) / "_build_info.py"
 

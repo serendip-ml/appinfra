@@ -5,7 +5,7 @@ Provides automatic secret detection and masking for logs and console output.
 Security by default - secrets are masked without requiring explicit configuration.
 
 Example:
-    from appinfra.security import SecretMasker, get_masker
+    from . import SecretMasker, get_masker
 
     # Get the global masker
     masker = get_masker()
