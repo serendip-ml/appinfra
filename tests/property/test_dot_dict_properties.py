@@ -24,10 +24,12 @@ valid_key = st.text(
     min_size=1,
     max_size=10,
 ).filter(
-    lambda s: s.isidentifier()
-    and not s.startswith("_")
-    and s not in RESERVED_KWARGS
-    and s not in RESERVED_METHOD_NAMES
+    lambda s: (
+        s.isidentifier()
+        and not s.startswith("_")
+        and s not in RESERVED_KWARGS
+        and s not in RESERVED_METHOD_NAMES
+    )
 )
 
 
