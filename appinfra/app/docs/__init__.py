@@ -5,7 +5,7 @@ Provides automatic documentation generation from tool definitions,
 keeping docs in sync with code.
 
 Example:
-    from appinfra.app.docs import DocsGenerator
+    from . import DocsGenerator
 
     # Generate docs for an app
     generator = DocsGenerator()

@@ -9,8 +9,8 @@ This module provides tools for logging across process boundaries:
 Queue Mode Usage:
     # Parent process
     from multiprocessing import Process, Queue
-    from appinfra.log import Logger
-    from appinfra.log.mp import LogQueueListener, MPQueueHandler
+    from .. import Logger
+    from . import LogQueueListener, MPQueueHandler
 
     # Create queue and start listener
     log_queue = Queue()
@@ -28,7 +28,7 @@ Queue Mode Usage:
 
     # Subprocess
     def worker(log_queue, name):
-        from appinfra.log.mp import MPQueueHandler
+        from . import MPQueueHandler
         import logging
 
         # Create logger with queue handler
@@ -40,7 +40,7 @@ Queue Mode Usage:
 
 Independent Mode Usage:
     # Parent process
-    from appinfra.log import LoggingBuilder
+    from .. import LoggingBuilder
     config = builder.to_dict()  # LoggingBuilder instance
     Process(target=worker, args=(config, "worker-1"))
 

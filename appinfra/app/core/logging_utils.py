@@ -81,6 +81,27 @@ def _extract_config_value(
     return default
 
 
+def _add_optional_overrides(
+    overrides: dict[str, Any], args_dict: dict[str, Any] | None, infra_config: Any
+) -> None:
+    """
+    Add optional config overrides for colors, location_color, and log_json.
+
+    These are only added if explicitly set (not None).
+    """
+    optional_mappings = [("log_colors", "colors"), ("location_color", "location_color")]
+    for arg_key, config_key in optional_mappings:
+        value = _extract_config_value(
+            arg_key, config_key, args_dict, infra_config, None
+        )
+        if value is not None:
+            overrides[config_key] = value
+
+    log_json = _extract_config_value("log_json", "json", args_dict, infra_config, None)
+    if log_json is not None:
+        overrides["log_json"] = log_json
+
+
 def _build_config_overrides(
     args_dict: dict[str, Any] | None, infra_config: Any, **kwargs: Any
 ) -> dict[str, Any]:
@@ -102,20 +123,12 @@ def _build_config_overrides(
         ),
     }
 
-    # Handle optional overrides
-    for arg_key, config_key in [
-        ("colors", "colors"),
-        ("location_color", "location_color"),
-    ]:
-        value = _extract_config_value(
-            arg_key, config_key, args_dict, infra_config, None
-        )
-        if value is not None:
-            config_overrides[config_key] = value
+    _add_optional_overrides(config_overrides, args_dict, infra_config)
 
     # Apply kwargs overrides (highest precedence)
+    valid_keys = {"level", "location", "micros", "colors", "location_color"}
     for key, value in kwargs.items():
-        if key in ["level", "location", "micros", "colors", "location_color"]:
+        if key in valid_keys:
             config_overrides[key] = value
 
     return config_overrides
@@ -188,7 +201,7 @@ def _add_default_console_handler(
         "type": "console",
         "enabled": True,
         "level": config_overrides.get("level", "info"),
-        "format": "text",
+        "format": "json" if config_overrides.get("log_json") else "text",
         "stream": "stdout",
     }
 
@@ -271,13 +284,51 @@ def _resolve_log_level(level: str | int) -> int:
     return getattr(logging, level.upper(), logging.INFO)
 
 
-def _load_handlers_from_config(config: Any, registry: HandlerRegistry) -> None:
-    """Load handlers from config into registry if handlers section exists."""
+def _apply_cli_overrides_to_handler(
+    cfg: dict[str, Any], force_json: bool, force_no_colors: bool
+) -> None:
+    """Apply CLI log overrides (--log-json, --no-log-colors) to a console handler config."""
+    if cfg.get("type") != "console":
+        return
+    if force_json:
+        cfg["format"] = "json"
+    if force_no_colors and cfg.get("format") != "json":
+        cfg["colors"] = False
+
+
+def _load_handlers_from_config(
+    config: Any, registry: HandlerRegistry, config_overrides: dict[str, Any]
+) -> None:
+    """Load handlers from config into registry if handlers section exists.
+
+    CLI args (log_json, log_colors) override handler config settings.
+    """
     if not hasattr(config, "logging"):
         return
     handlers = getattr(config.logging, "handlers", None)
-    if handlers and hasattr(handlers, "items"):
-        registry.load_from_config(handlers)
+    if not handlers:
+        return
+    if not hasattr(handlers, "items"):
+        from ...log.handler_factory import LogConfigurationError
+
+        raise LogConfigurationError(
+            f"Handlers configuration must be a dictionary, got {type(handlers)}"
+        )
+
+    force_json = config_overrides.get("log_json", False)
+    force_no_colors = "colors" in config_overrides and not config_overrides["colors"]
+
+    for handler_name, handler_config in handlers.items():
+        if hasattr(handler_config, "copy"):
+            cfg = handler_config.copy()
+        elif hasattr(handler_config, "to_dict"):
+            cfg = handler_config.to_dict()
+        else:
+            cfg = dict(handler_config)
+
+        cfg["_handler_name"] = handler_name
+        _apply_cli_overrides_to_handler(cfg, force_json, force_no_colors)
+        registry.add_handler_from_config(cfg, registry.global_level)
 
 
 def setup_logging_from_config(
@@ -318,7 +369,7 @@ def setup_logging_from_config(
     # Create handler registry and load handlers from config
     global_level = _resolve_log_level(config_overrides["level"])
     registry = HandlerRegistry(global_level)
-    _load_handlers_from_config(config, registry)
+    _load_handlers_from_config(config, registry, config_overrides)
 
     # Create logger without default handlers
     logger, log_config = _create_logger_without_default_handlers(config_overrides)

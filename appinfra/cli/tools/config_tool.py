@@ -11,9 +11,9 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
-from appinfra.app.tools import Tool, ToolConfig
-from appinfra.app.tracing.traceable import Traceable
-from appinfra.config import Config
+from ...app.tools import Tool, ToolConfig
+from ...app.tracing.traceable import Traceable
+from ...config import Config
 
 
 class ConfigTool(Tool):

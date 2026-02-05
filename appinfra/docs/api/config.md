@@ -312,6 +312,8 @@ app = (
 
 ## See Also
 
+- [Configuration Precedence](../guides/configuration-precedence.md) - Full precedence hierarchy (CLI > Env > YAML)
+- [Environment Variables](../guides/environment-variables.md) - Detailed env var documentation
 - [Utilities](utilities.md#dotdict) - DotDict base class
 - [Logging System](logging.md) - LogConfigReloader for hot-reload
 - [Hot-Reload Guide](../guides/hot-reload-logging.md) - Full hot-reload documentation

@@ -228,7 +228,7 @@ try:
 
         Example:
             import logging
-            from appinfra.config import validate_config
+            from . import validate_config
 
             lg = logging.getLogger(__name__)
             config_data = {...}

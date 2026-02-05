@@ -16,6 +16,7 @@ appinfra docs find <text>        # Search documentation for text
 
 ## Guides
 
+- [Configuration Precedence](guides/configuration-precedence.md) - CLI > Env > YAML override rules
 - [Logging Builder](guides/logging-builder.md) - Fluent API for logging configuration
 - [Config-Based Logging](guides/config-based-logging.md) - YAML-based logging setup
 - [Hot-Reload Logging](guides/hot-reload-logging.md) - Dynamic config reloading without restart

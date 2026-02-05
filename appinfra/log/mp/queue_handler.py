@@ -29,7 +29,7 @@ class MPQueueHandler(logging.Handler):
     Usage:
         # In subprocess
         from multiprocessing import Queue
-        from appinfra.log.mp import MPQueueHandler
+        from . import MPQueueHandler
 
         queue = Queue()
         handler = MPQueueHandler(queue)

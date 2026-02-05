@@ -94,14 +94,14 @@ class TestConfigOverrides:
     """Test configuration overrides."""
 
     def test_colors_override_from_args(self):
-        """Test colors override from args (line 107)."""
+        """Test colors override from args via log_colors key."""
         config = DotDict(
             logging=DotDict(
                 level="info",
                 handlers=DotDict(console=DotDict(type="console", enabled=True)),
             )
         )
-        args = {"log_level": "info", "log_location": 0, "colors": True}
+        args = {"log_level": "info", "log_location": 0, "log_colors": True}
 
         logger, registry = setup_logging_from_config(config, args)
 
@@ -715,3 +715,102 @@ class TestResolveLogLevel:
 
         result = _resolve_log_level("INFO")
         assert result == logging.INFO
+
+
+# =============================================================================
+# Test --no-log-colors and --log-json CLI Arguments
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestLogColorsArg:
+    """Test --no-log-colors CLI argument handling."""
+
+    def test_log_colors_false_disables_colors(self):
+        """Test log_colors=False from args disables colors in config."""
+        from appinfra.app.core.logging_utils import _build_config_overrides
+
+        args_dict = {"log_level": "info", "log_colors": False}
+        config = DotDict(logging=DotDict(level="info", colors=True))
+
+        overrides = _build_config_overrides(args_dict, config)
+
+        assert overrides["colors"] is False
+
+    def test_log_colors_none_uses_config_default(self):
+        """Test log_colors=None falls back to config value."""
+        from appinfra.app.core.logging_utils import _build_config_overrides
+
+        args_dict = {"log_level": "info", "log_colors": None}
+        config = DotDict(logging=DotDict(level="info", colors=False))
+
+        overrides = _build_config_overrides(args_dict, config)
+
+        assert overrides["colors"] is False
+
+    def test_log_colors_true_enables_colors(self):
+        """Test log_colors=True from args enables colors."""
+        from appinfra.app.core.logging_utils import _build_config_overrides
+
+        args_dict = {"log_level": "info", "log_colors": True}
+        config = DotDict(logging=DotDict(level="info", colors=False))
+
+        overrides = _build_config_overrides(args_dict, config)
+
+        assert overrides["colors"] is True
+
+
+@pytest.mark.unit
+class TestLogJsonArg:
+    """Test --log-json CLI argument handling."""
+
+    def test_log_json_true_sets_format(self):
+        """Test log_json=True from args sets log_json in config overrides."""
+        from appinfra.app.core.logging_utils import _build_config_overrides
+
+        args_dict = {"log_level": "info", "log_json": True}
+        config = DotDict(logging=DotDict(level="info"))
+
+        overrides = _build_config_overrides(args_dict, config)
+
+        assert overrides["log_json"] is True
+
+    def test_log_json_none_not_in_overrides(self):
+        """Test log_json=None does not add to overrides."""
+        from appinfra.app.core.logging_utils import _build_config_overrides
+
+        args_dict = {"log_level": "info", "log_json": None}
+        config = DotDict(logging=DotDict(level="info"))
+
+        overrides = _build_config_overrides(args_dict, config)
+
+        assert "log_json" not in overrides
+
+    def test_log_json_creates_json_handler(self):
+        """Test --log-json creates JSON formatted console handler."""
+        config = DotDict(logging=DotDict(level="info"))
+        args = {"log_level": "info", "log_json": True}
+
+        logger, registry = setup_logging_from_config(config, args)
+
+        # Verify JSON formatter is used
+        assert len(logger.handlers) > 0
+        handler = logger.handlers[0]
+        formatter = handler.formatter
+        # JSONFormatter has a format method that produces JSON
+        assert formatter is not None
+        # Check formatter type - JSONFormatter should be from our json module
+        assert "JSONFormatter" in type(formatter).__name__
+
+    def test_log_json_false_creates_text_handler(self):
+        """Test log_json=False creates text formatted console handler."""
+        config = DotDict(logging=DotDict(level="info"))
+        args = {"log_level": "info", "log_json": False}
+
+        logger, registry = setup_logging_from_config(config, args)
+
+        # Verify text formatter is used (not JSONFormatter)
+        assert len(logger.handlers) > 0
+        handler = logger.handlers[0]
+        formatter = handler.formatter
+        assert "JSONFormatter" not in type(formatter).__name__

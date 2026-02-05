@@ -157,6 +157,8 @@ class TestStandardArgsIntegration:
         assert "log_location" in parser_args
         assert "log_micros" in parser_args
         assert "quiet" in parser_args
+        assert "log_colors" in parser_args
+        assert "log_json" in parser_args
 
     def test_disabled_args_not_added_to_parser(self):
         """Test disabled args are not added to parser."""

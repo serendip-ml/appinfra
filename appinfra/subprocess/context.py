@@ -10,8 +10,8 @@ from types import FrameType
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from appinfra.config import ConfigWatcher
-    from appinfra.log import Logger
+    from ..config import ConfigWatcher
+    from ..log import Logger
 
 
 class SubprocessContext:
@@ -107,8 +107,8 @@ class SubprocessContext:
             return
 
         try:
-            from appinfra.config import ConfigWatcher
-            from appinfra.log import LogConfigReloader
+            from ..config import ConfigWatcher
+            from ..log import LogConfigReloader
 
             # Create reloader callback for logger config updates
             reloader = LogConfigReloader(self._lg, section="logging")

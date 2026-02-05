@@ -416,7 +416,8 @@ class LocationRenderer:
 
         fmt = ""
         # Use configurable color - read fresh from config for hot-reload
-        fmt += ColorManager.RESET + self._location_color + "m"
+        if self._holder.colors:
+            fmt += ColorManager.RESET + self._location_color + "m"
 
         # Use __infra__pathnames if available (multi-location trace from appinfra logger)
         pathnames = getattr(record, "__infra__pathnames", None)

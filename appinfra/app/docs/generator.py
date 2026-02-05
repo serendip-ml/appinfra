@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from appinfra.app.core.app import App
-    from appinfra.app.tools.base import Tool
+    from ..core.app import App
+    from ..tools.base import Tool
 
 
 class DocsGenerator:
@@ -26,7 +26,7 @@ class DocsGenerator:
     by extracting information from tool configurations and argument parsers.
 
     Example:
-        from appinfra.app.docs import DocsGenerator
+        from . import DocsGenerator
 
         generator = DocsGenerator()
 

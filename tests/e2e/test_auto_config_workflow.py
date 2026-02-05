@@ -609,3 +609,253 @@ name: test-app
                 assert "missing-base.yaml" in error_str
                 # Document-level include should have line 1
                 assert "line 1" in error_str
+
+
+@pytest.mark.e2e
+class TestLogOutputCliOverrides:
+    """E2E tests for --log-json and --no-log-colors CLI overrides."""
+
+    def test_log_json_overrides_yaml_text_format(self):
+        """Test that --log-json CLI arg overrides YAML text format to JSON."""
+        from appinfra.log.builder.console import ConsoleHandlerConfig
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+
+            # Create config with text format handler
+            (etc_dir / "app.yaml").write_text(
+                "logging:\n"
+                "  level: info\n"
+                "  handlers:\n"
+                "    console:\n"
+                "      type: console\n"
+                "      level: info\n"
+                "      format: text\n"
+                "      colors: true\n"
+            )
+
+            app = AppBuilder("test-app").with_config_file("app.yaml").build()
+
+            # Pass --log-json to override YAML format
+            with patch.object(
+                sys, "argv", ["test", "--etc-dir", str(etc_dir), "--log-json"]
+            ):
+                try:
+                    app.setup()
+
+                    # Verify the handler was overridden to JSON format
+                    # The handler_registry tracks all handlers
+                    registry = app.lifecycle._handler_registry
+                    handlers = list(registry.iter_enabled_handlers())
+                    assert len(handlers) >= 1
+
+                    # Find console handler and verify JSON format
+                    console_handlers = [
+                        h for h in handlers if isinstance(h, ConsoleHandlerConfig)
+                    ]
+                    assert len(console_handlers) >= 1
+                    assert console_handlers[0].format == "json"
+                finally:
+                    if app.lifecycle.logger:
+                        app.lifecycle.logger.handlers.clear()
+
+    def test_no_log_colors_overrides_yaml_colors(self):
+        """Test that --no-log-colors CLI arg disables colors in YAML config."""
+        from appinfra.log.builder.console import ConsoleHandlerConfig
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+
+            # Create config with colors enabled
+            (etc_dir / "app.yaml").write_text(
+                "logging:\n"
+                "  level: info\n"
+                "  handlers:\n"
+                "    console:\n"
+                "      type: console\n"
+                "      level: info\n"
+                "      format: text\n"
+                "      colors: true\n"
+            )
+
+            app = AppBuilder("test-app").with_config_file("app.yaml").build()
+
+            # Pass --no-log-colors to override YAML colors
+            with patch.object(
+                sys, "argv", ["test", "--etc-dir", str(etc_dir), "--no-log-colors"]
+            ):
+                try:
+                    app.setup()
+
+                    # Verify the handler was overridden to no colors
+                    registry = app.lifecycle._handler_registry
+                    handlers = list(registry.iter_enabled_handlers())
+                    console_handlers = [
+                        h for h in handlers if isinstance(h, ConsoleHandlerConfig)
+                    ]
+                    assert len(console_handlers) >= 1
+                    assert console_handlers[0].colors is False
+                finally:
+                    if app.lifecycle.logger:
+                        app.lifecycle.logger.handlers.clear()
+
+    def test_log_json_and_no_log_colors_together(self):
+        """Test using both --log-json and --no-log-colors together."""
+        from appinfra.log.builder.console import ConsoleHandlerConfig
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+
+            # Create config with text format and colors
+            (etc_dir / "app.yaml").write_text(
+                "logging:\n"
+                "  level: info\n"
+                "  handlers:\n"
+                "    console:\n"
+                "      type: console\n"
+                "      level: info\n"
+                "      format: text\n"
+                "      colors: true\n"
+            )
+
+            app = AppBuilder("test-app").with_config_file("app.yaml").build()
+
+            # Pass both flags
+            with patch.object(
+                sys,
+                "argv",
+                ["test", "--etc-dir", str(etc_dir), "--log-json", "--no-log-colors"],
+            ):
+                try:
+                    app.setup()
+
+                    # Verify JSON format wins (colors don't apply to JSON anyway)
+                    registry = app.lifecycle._handler_registry
+                    handlers = list(registry.iter_enabled_handlers())
+                    console_handlers = [
+                        h for h in handlers if isinstance(h, ConsoleHandlerConfig)
+                    ]
+                    assert len(console_handlers) >= 1
+                    assert console_handlers[0].format == "json"
+                finally:
+                    if app.lifecycle.logger:
+                        app.lifecycle.logger.handlers.clear()
+
+    def test_cli_overrides_multiple_handlers(self):
+        """Test that CLI args override settings in multiple console handlers."""
+        from appinfra.log.builder.console import ConsoleHandlerConfig
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+
+            # Create config with multiple console handlers
+            (etc_dir / "app.yaml").write_text(
+                "logging:\n"
+                "  level: info\n"
+                "  handlers:\n"
+                "    stdout:\n"
+                "      type: console\n"
+                "      level: info\n"
+                "      stream: stdout\n"
+                "      format: text\n"
+                "      colors: true\n"
+                "    stderr:\n"
+                "      type: console\n"
+                "      level: error\n"
+                "      stream: stderr\n"
+                "      format: text\n"
+                "      colors: true\n"
+            )
+
+            app = AppBuilder("test-app").with_config_file("app.yaml").build()
+
+            # Pass --log-json to override both handlers
+            with patch.object(
+                sys, "argv", ["test", "--etc-dir", str(etc_dir), "--log-json"]
+            ):
+                try:
+                    app.setup()
+
+                    # Verify all console handlers were overridden to JSON
+                    registry = app.lifecycle._handler_registry
+                    handlers = list(registry.iter_enabled_handlers())
+                    console_handlers = [
+                        h for h in handlers if isinstance(h, ConsoleHandlerConfig)
+                    ]
+                    assert len(console_handlers) == 2
+
+                    for handler in console_handlers:
+                        assert handler.format == "json"
+                finally:
+                    if app.lifecycle.logger:
+                        app.lifecycle.logger.handlers.clear()
+
+    def test_default_handler_respects_log_json(self):
+        """Test that --log-json works when no handlers are configured in YAML."""
+        from appinfra.log.builder.console import ConsoleHandlerConfig
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+
+            # Create minimal config without handlers
+            (etc_dir / "app.yaml").write_text("logging:\n  level: info\n")
+
+            app = AppBuilder("test-app").with_config_file("app.yaml").build()
+
+            # Pass --log-json - should apply to default handler
+            with patch.object(
+                sys, "argv", ["test", "--etc-dir", str(etc_dir), "--log-json"]
+            ):
+                try:
+                    app.setup()
+
+                    # Verify default handler uses JSON format
+                    registry = app.lifecycle._handler_registry
+                    handlers = list(registry.iter_enabled_handlers())
+                    assert len(handlers) >= 1
+
+                    console_handlers = [
+                        h for h in handlers if isinstance(h, ConsoleHandlerConfig)
+                    ]
+                    assert len(console_handlers) >= 1
+                    assert console_handlers[0].format == "json"
+                finally:
+                    if app.lifecycle.logger:
+                        app.lifecycle.logger.handlers.clear()
+
+    def test_default_handler_respects_no_log_colors(self):
+        """Test that --no-log-colors works when no handlers are configured in YAML."""
+        from appinfra.log.builder.console import ConsoleHandlerConfig
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+
+            # Create minimal config without handlers
+            (etc_dir / "app.yaml").write_text("logging:\n  level: info\n")
+
+            app = AppBuilder("test-app").with_config_file("app.yaml").build()
+
+            # Pass --no-log-colors - should apply to default handler
+            with patch.object(
+                sys, "argv", ["test", "--etc-dir", str(etc_dir), "--no-log-colors"]
+            ):
+                try:
+                    app.setup()
+
+                    # Verify default handler has colors disabled
+                    registry = app.lifecycle._handler_registry
+                    handlers = list(registry.iter_enabled_handlers())
+                    console_handlers = [
+                        h for h in handlers if isinstance(h, ConsoleHandlerConfig)
+                    ]
+                    assert len(console_handlers) >= 1
+                    assert console_handlers[0].colors is False
+                finally:
+                    if app.lifecycle.logger:
+                        app.lifecycle.logger.handlers.clear()

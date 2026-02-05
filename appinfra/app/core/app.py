@@ -12,12 +12,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from appinfra.config import Config
-from appinfra.dot_dict import DotDict
+from ...config import Config
+from ...dot_dict import DotDict
 
 if TYPE_CHECKING:
-    from appinfra.config import ConfigWatcher
-    from appinfra.subprocess import SubprocessContext
+    from ...config import ConfigWatcher
+    from ...subprocess import SubprocessContext
 
 from ... import time
 from ..cli.commands import CommandHandler
@@ -65,6 +65,8 @@ class App(Traceable):
             "log_location": True,
             "log_micros": True,
             "log_topic": True,
+            "log_colors": True,
+            "log_json": True,
             "quiet": True,
         }
 
@@ -176,9 +178,11 @@ class App(Traceable):
     def add_log_default_args(self) -> None:
         """Add logging-related command-line arguments."""
         self._add_log_level_arg()
+        self._add_log_json_arg()
         self._add_log_location_arg()
         self._add_log_micros_arg()
         self._add_log_topic_arg()
+        self._add_log_colors_arg()
         self._add_quiet_arg()
 
     def _add_log_level_arg(self) -> None:
@@ -229,6 +233,27 @@ class App(Traceable):
         """Add quiet argument."""
         self._add_log_argument(
             "quiet", "-q", "--quiet", action="store_true", help="disable logging"
+        )
+
+    def _add_log_colors_arg(self) -> None:
+        """Add no-log-colors argument (disables colors)."""
+        self._add_log_argument(
+            "log_colors",
+            "--no-log-colors",
+            action="store_false",
+            dest="log_colors",
+            default=None,
+            help="disable colored log output",
+        )
+
+    def _add_log_json_arg(self) -> None:
+        """Add log-json argument (enables JSON format)."""
+        self._add_log_argument(
+            "log_json",
+            "--log-json",
+            action="store_true",
+            default=None,
+            help="output logs in JSON format",
         )
 
     def setup_config(
@@ -328,8 +353,8 @@ class App(Traceable):
         # Load and merge configuration
         auto_load_result = self._load_and_merge_config()
 
-        # Initialize lifecycle with final merged config
-        self.lifecycle.initialize(self.config)
+        # Initialize lifecycle with final merged config and parsed args
+        self.lifecycle.initialize(self.config, args=self._parsed_args)
 
         # Log configuration loading results
         self._log_config_loading(auto_load_result)
@@ -648,9 +673,9 @@ class App(Traceable):
         Returns:
             SubprocessContext configured with fresh logger and config watcher
         """
-        from appinfra.log import LoggerFactory
-        from appinfra.log.config import LogConfig
-        from appinfra.subprocess import SubprocessContext
+        from ...log import LoggerFactory
+        from ...log.config import LogConfig
+        from ...subprocess import SubprocessContext
 
         # Create fresh logger for subprocess (forked memory is isolated)
         config_dict = (
@@ -686,8 +711,8 @@ class App(Traceable):
         """
         from typing import cast as type_cast
 
-        from appinfra.config import ConfigWatcher
-        from appinfra.log import Logger
+        from ...config import ConfigWatcher
+        from ...log import Logger
 
         etc_dir = getattr(self, "_etc_dir", None)
         config_file = getattr(self, "_config_file", None)

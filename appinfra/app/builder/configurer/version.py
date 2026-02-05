@@ -12,8 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from appinfra.version import BuildInfo, PackageVersionInfo
-
+    from ....version import BuildInfo, PackageVersionInfo
     from ..app import AppBuilder
 
 
@@ -99,7 +98,7 @@ class VersionConfigurer:
         Returns:
             Self for method chaining
         """
-        from appinfra.version import BuildInfo
+        from ....version import BuildInfo
 
         if path is None:
             path = self._find_build_info_path()
@@ -142,7 +141,7 @@ class VersionConfigurer:
 
     def done(self) -> AppBuilder:
         """Finish version configuration and return to main builder."""
-        from appinfra.version import PackageVersionTracker
+        from ....version import PackageVersionTracker
 
         tracker: PackageVersionTracker | None = None
         if self._packages:
@@ -163,7 +162,7 @@ class VersionConfigurer:
 
     def _add_version_argument(self, tracker: Any, build_info: BuildInfo | None) -> None:
         """Add --version CLI argument with tracker support."""
-        from appinfra.version.actions import VersionWithTrackerAction
+        from ....version.actions import VersionWithTrackerAction
 
         app_name = self._app_builder._name or "app"
         app_version = self._app_builder._version or "0.0.0"

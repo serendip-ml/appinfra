@@ -133,7 +133,7 @@ class LoggingConfigurer:
                     .done()
                 .build())
         """
-        from appinfra.log.level_manager import LogLevelManager
+        from ....log.level_manager import LogLevelManager
 
         manager = LogLevelManager.get_instance()
         manager.add_rule(pattern, level, source="api", priority=10)
@@ -167,7 +167,7 @@ class LoggingConfigurer:
                     .done()
                 .build())
         """
-        from appinfra.log.level_manager import LogLevelManager
+        from ....log.level_manager import LogLevelManager
 
         manager = LogLevelManager.get_instance()
         manager.add_rules_from_dict(levels, source="api", priority=10)
@@ -199,7 +199,7 @@ class LoggingConfigurer:
                     .done()
                 .build())
         """
-        from appinfra.log.level_manager import LogLevelManager
+        from ....log.level_manager import LogLevelManager
 
         manager = LogLevelManager.get_instance()
         if enabled:
@@ -245,7 +245,7 @@ class LoggingConfigurer:
             ImportError: If watchdog is not installed
             ValueError: If with_config_file() was not called first
         """
-        from appinfra.dot_dict import DotDict
+        from ....dot_dict import DotDict
 
         # Require config path from with_config_file()
         if not (

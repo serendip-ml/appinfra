@@ -8,8 +8,8 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from appinfra.config import Config, get_etc_dir
-from appinfra.dot_dict import DotDict
+from ...config import Config, get_etc_dir
+from ...dot_dict import DotDict
 
 # Logging level constant for quiet mode (suppresses all logging)
 LOG_LEVEL_QUIET = 1000

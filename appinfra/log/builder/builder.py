@@ -151,7 +151,7 @@ class LoggingBuilder(LoggingBuilderInterface):
             Self for method chaining
 
         Example:
-            from appinfra.log.colors import ColorManager
+            from ..colors import ColorManager
 
             logger = (LoggingBuilder("app")
                 .with_location(1)

@@ -9,7 +9,7 @@ packages, with support for multiple detection methods:
 3. Git runtime - Runs git commands for editable installs
 
 Example usage:
-    from appinfra.version import PackageVersionTracker
+    from . import PackageVersionTracker
 
     tracker = PackageVersionTracker()
     tracker.track("mylib", "otherlib")

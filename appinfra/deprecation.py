@@ -4,7 +4,7 @@ This module provides decorators for marking functions and methods as deprecated,
 emitting warnings when they are used.
 
 Example:
-    from appinfra.deprecation import deprecated
+    from .deprecation import deprecated
 
     @deprecated(version="0.2.0", replacement="new_function")
     def old_function():

@@ -6,7 +6,7 @@ enhanced help formatting, and interactive prompts. Gracefully degrades
 when rich/questionary is not installed or in non-TTY environments.
 
 Example:
-    from appinfra.ui import console, Table, Panel, prompts
+    from . import console, Table, Panel, prompts
 
     # Print styled text
     console.print("[green]Success![/green] Operation completed.")

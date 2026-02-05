@@ -20,8 +20,12 @@ This document describes how to use environment variables to override configurati
 
 ## Overview
 
-The `infra.cfg.Config` class now supports environment variable overrides, allowing you to modify
-configuration values without changing the YAML file. This is particularly useful for:
+The `appinfra.config.Config` class supports environment variable overrides, allowing you to modify
+configuration values without changing the YAML file. Environment variables have **lower precedence
+than CLI arguments** but **higher precedence than YAML config values**. See
+[Configuration Precedence](configuration-precedence.md) for the full precedence hierarchy.
+
+Environment variable overrides are particularly useful for:
 
 - Development environments
 - Testing scenarios
@@ -344,3 +348,9 @@ print("Final configuration:", config.dict())
 
 See `examples/environment_variable_overrides_example.py` for a comprehensive demonstration of the
 environment variable override functionality.
+
+## See Also
+
+- [Configuration Precedence](configuration-precedence.md) - Full precedence hierarchy (CLI > Env > YAML)
+- [AppBuilder API](../api/app-builder.md) - Standard CLI arguments
+- [Configuration API](../api/config.md) - Config class reference

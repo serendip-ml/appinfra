@@ -45,8 +45,8 @@ def _build_uvicorn_log_config(config: ApiConfig) -> dict[str, Any]:
 
 def _create_subprocess_logger(config: ApiConfig) -> Any:
     """Create appinfra logger for subprocess hot-reload support."""
-    from appinfra.log import LoggerFactory
-    from appinfra.log.config import LogConfig
+    from ....log import LoggerFactory
+    from ....log.config import LogConfig
 
     setup_subprocess_logging(
         config.log_file, log_level=config.uvicorn.log_level.upper()
@@ -69,8 +69,7 @@ def _uvicorn_subprocess_entry(
     """
     import uvicorn
 
-    from appinfra.subprocess import SubprocessContext
-
+    from ....subprocess import SubprocessContext
     from .ipc import IPCChannel
 
     lg = _create_subprocess_logger(config)
