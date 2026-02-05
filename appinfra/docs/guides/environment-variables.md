@@ -20,7 +20,7 @@ This document describes how to use environment variables to override configurati
 
 ## Overview
 
-The `infra.cfg.Config` class supports environment variable overrides, allowing you to modify
+The `appinfra.config.Config` class supports environment variable overrides, allowing you to modify
 configuration values without changing the YAML file. Environment variables have **lower precedence
 than CLI arguments** but **higher precedence than YAML config values**. See
 [Configuration Precedence](configuration-precedence.md) for the full precedence hierarchy.
