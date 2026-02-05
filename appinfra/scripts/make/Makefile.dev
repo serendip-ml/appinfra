@@ -167,9 +167,13 @@ cq.docstring:: ## Check docstring coverage (reports only)
 	@echo "* docstring coverage check done"
 
 cq.docstring.strict:: ## Check docstring coverage (fails if below threshold)
+ifeq ($(INFRA_DEV_DOCSTRING_THRESHOLD),0)
+	@echo "* docstring coverage check disabled (threshold=0)"
+else
 	@echo "* checking docstring coverage (threshold: $(INFRA_DEV_DOCSTRING_THRESHOLD)%)..."
 	@$(PYTHON) -m interrogate -v $(INFRA_DEV_PKG_NAME)/ --ignore-init-module --ignore-init-method --fail-under=$(INFRA_DEV_DOCSTRING_THRESHOLD)
 	@echo "* docstring coverage check passed"
+endif
 endif # skip cq.docstring
 .PHONY: cq.docstring cq.docstring.strict
 
