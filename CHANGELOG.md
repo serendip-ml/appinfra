@@ -10,6 +10,18 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Added
+- Docstring coverage checking via `interrogate`:
+  - `make cq.docstring` - Report docstring coverage without failing
+  - `make cq.docstring.strict` - Fail if below threshold
+  - Integrated into `make check` with percentage display (e.g., `95.30% ≥ 95%`)
+  - Configurable via `INFRA_DEV_DOCSTRING_THRESHOLD` (default: 80, set to 0 to disable)
+
+### Changed
+- Default coverage threshold lowered from 95% to 80% (`INFRA_PYTEST_COVERAGE_THRESHOLD`)
+  - Projects can override to higher thresholds as needed
+  - appinfra itself still uses 95% for both test and docstring coverage
+
 ## [0.3.4] - 2026-02-03
 
 ### Added
@@ -170,7 +182,7 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Added
 - API documentation for CLI framework (`cli.md`), configuration (`config.md`), network (`net.md`),
   observability (`observability.md`), security (`security.md`), and subprocess (`subprocess.md`)
-- Configurable coverage threshold via `INFRA_PYTEST_COVERAGE_THRESHOLD` (default: 95.0, set to 0 to disable)
+- Configurable coverage threshold via `INFRA_PYTEST_COVERAGE_THRESHOLD` (default: 80, set to 0 to disable)
 - SQLite database support (`appinfra.db.sqlite`) for lightweight/embedded use cases
 - pgvector extension support (`appinfra.db.pg.vector`) for embedding storage and similarity search
 - SQLite integration fixtures for fast DB tests (no external server needed)

@@ -34,6 +34,7 @@ PYTHON_ENVS ?= $(PYTHON)
 export INFRA_DEV_PKG_NAME
 export INFRA_DEV_CQ_STRICT
 export INFRA_DEV_CQ_EXCLUDE
+export INFRA_DEV_DOCSTRING_THRESHOLD
 export INFRA_DEV_PROJECT_ROOT
 export INFRA_DEV_INSTALL_EXTRAS
 export INFRA_DEV_MYPY_FLAGS
@@ -158,6 +159,19 @@ cq.strict:: ## Check function sizes (fails on violations)
 	@echo "* function size check passed"
 endif # skip cq.strict
 .PHONY: cq.strict
+
+ifeq ($(filter cq,$(INFRA_DEV_SKIP_TARGETS)),)
+cq.docstring:: ## Check docstring coverage (reports only)
+	@echo "* checking docstring coverage..."
+	@$(PYTHON) -m interrogate -v $(INFRA_DEV_PKG_NAME)/ --ignore-init-module --ignore-init-method || true
+	@echo "* docstring coverage check done"
+
+cq.docstring.strict:: ## Check docstring coverage (fails if below threshold)
+	@echo "* checking docstring coverage (threshold: $(INFRA_DEV_DOCSTRING_THRESHOLD)%)..."
+	@$(PYTHON) -m interrogate -v $(INFRA_DEV_PKG_NAME)/ --ignore-init-module --ignore-init-method --fail-under=$(INFRA_DEV_DOCSTRING_THRESHOLD)
+	@echo "* docstring coverage check passed"
+endif # skip cq.docstring
+.PHONY: cq.docstring cq.docstring.strict
 
 export PYTHON
 
