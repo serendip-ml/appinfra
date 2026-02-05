@@ -348,6 +348,24 @@ class TestLocationRenderer:
         # Should contain the gray color code
         assert gray_color in result
 
+    def test_render_location_no_ansi_when_colors_disabled(self, log_record):
+        """Test that render_location emits no ANSI codes when colors=False."""
+        import re
+
+        config = LogConfig(location=1, micros=False, colors=False)
+        renderer = LocationRenderer(config)
+        result = renderer.render_location(log_record)
+
+        # Should still contain the location info
+        assert "file.py" in result
+        assert "42" in result
+
+        # Must contain zero ANSI escape sequences
+        ansi_pattern = re.compile(r"\x1b\[")
+        assert not ansi_pattern.search(result), (
+            f"ANSI escape codes in location output with colors=False: {result!r}"
+        )
+
 
 # =============================================================================
 # Test LogFormatter
