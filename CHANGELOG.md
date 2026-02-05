@@ -182,7 +182,7 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Added
 - API documentation for CLI framework (`cli.md`), configuration (`config.md`), network (`net.md`),
   observability (`observability.md`), security (`security.md`), and subprocess (`subprocess.md`)
-- Configurable coverage threshold via `INFRA_PYTEST_COVERAGE_THRESHOLD` (default: 80, set to 0 to disable)
+- Configurable coverage threshold via `INFRA_PYTEST_COVERAGE_THRESHOLD` (default: 95.0, set to 0 to disable)
 - SQLite database support (`appinfra.db.sqlite`) for lightweight/embedded use cases
 - pgvector extension support (`appinfra.db.pg.vector`) for embedding storage and similarity search
 - SQLite integration fixtures for fast DB tests (no external server needed)

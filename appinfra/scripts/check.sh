@@ -241,13 +241,25 @@ parse_coverage() {
 
 parse_docstring_coverage() {
     # Parse interrogate output: "RESULT: PASSED (minimum: 95.0%, actual: 95.3%)"
-    local val=$(grep -oP 'actual: \K[0-9.]+' "$1" 2>/dev/null || echo "0")
+    # Using portable grep+sed instead of grep -oP (not available on macOS BSD grep)
+    local val=$(grep -o 'actual: [0-9.]*' "$1" 2>/dev/null | sed 's/actual: //' || echo "0")
     printf "%.2f" "$val"
 }
 
 check_coverage_threshold() {
     local actual="$1" target="$2"
     awk "BEGIN {exit !($actual >= $target)}" 2>/dev/null
+}
+
+# Parse fix_target field for embedded coverage target (format: "type:threshold")
+# Returns: "coverage_target|actual_fix_target" (pipe-separated)
+parse_fix_target() {
+    local fix_target="$1"
+    if [[ "$fix_target" == docstring:* ]]; then
+        echo "${fix_target#docstring:}|"
+    else
+        echo "|$fix_target"
+    fi
 }
 
 # === CHECK EXECUTION ===
@@ -317,6 +329,18 @@ run_check() {
                 update_line "$line_num" "${GREEN}${CHECK_SUCCESS}${RESET}" "${prefix}${name}" ""
             fi
             rm -f "$tmpfile"
+            ;;
+        1)  # For docstring check, exit code 1 means coverage below threshold
+            if [[ "$name" == *"Docstring"* ]] && [ -n "$coverage_target" ]; then
+                local actual=$(parse_docstring_coverage "$tmpfile")
+                update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% < ${coverage_target}%)${RESET}"
+                record_failure "$name" "$make_target" "" "$tmpfile" "Coverage: ${actual}% (target: ${coverage_target}%)"
+                return 1
+            fi
+            # Fall through to default failure handling for non-docstring checks
+            update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" ""
+            record_failure "$name" "$make_target" "$fix_target" "$tmpfile"
+            return 1
             ;;
         5)  # No tests collected
             update_line "$line_num" "${GRAY}${CHECK_PENDING}${RESET}" "${prefix}${name}" " ${GRAY}(no tests)${RESET}"
@@ -432,13 +456,9 @@ run_checks() {
                 test_suite_line="$line_num"
                 update_line "$line_num" "${YELLOW}${CHECK_RUNNING}${RESET}" "Test suite" ""
             else
-                # Check for coverage target in fix_target field (format: "type:threshold")
-                local coverage_target=""
-                local actual_fix_target="$fix_target"
-                if [[ "$fix_target" == docstring:* ]]; then
-                    coverage_target="${fix_target#docstring:}"
-                    actual_fix_target=""
-                fi
+                local parsed=$(parse_fix_target "$fix_target")
+                local coverage_target="${parsed%%|*}"
+                local actual_fix_target="${parsed#*|}"
                 run_check "$name" "$cmd" "$line_num" false "$coverage_target" "$actual_fix_target" "$make_target" &
                 pids+=($!)
             fi
@@ -485,13 +505,9 @@ run_checks() {
             if [[ "$name" == "Test suite" ]]; then
                 run_test_suite "$line_num" || { any_failed=true; [ "$FAIL_FAST" = true ] && break; }
             else
-                # Check for coverage target in fix_target field (format: "type:threshold")
-                local coverage_target=""
-                local actual_fix_target="$fix_target"
-                if [[ "$fix_target" == docstring:* ]]; then
-                    coverage_target="${fix_target#docstring:}"
-                    actual_fix_target=""
-                fi
+                local parsed=$(parse_fix_target "$fix_target")
+                local coverage_target="${parsed%%|*}"
+                local actual_fix_target="${parsed#*|}"
                 run_check "$name" "$cmd" "$line_num" false "$coverage_target" "$actual_fix_target" "$make_target" || {
                     any_failed=true; [ "$FAIL_FAST" = true ] && break
                 }
