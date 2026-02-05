@@ -284,6 +284,18 @@ def _resolve_log_level(level: str | int) -> int:
     return getattr(logging, level.upper(), logging.INFO)
 
 
+def _apply_cli_overrides_to_handler(
+    cfg: dict[str, Any], force_json: bool, force_no_colors: bool
+) -> None:
+    """Apply CLI log overrides (--log-json, --no-log-colors) to a console handler config."""
+    if cfg.get("type") != "console":
+        return
+    if force_json:
+        cfg["format"] = "json"
+    if force_no_colors and cfg.get("format") != "json":
+        cfg["colors"] = False
+
+
 def _load_handlers_from_config(
     config: Any, registry: HandlerRegistry, config_overrides: dict[str, Any]
 ) -> None:
@@ -294,32 +306,28 @@ def _load_handlers_from_config(
     if not hasattr(config, "logging"):
         return
     handlers = getattr(config.logging, "handlers", None)
-    if not handlers or not hasattr(handlers, "items"):
+    if not handlers:
         return
+    if not hasattr(handlers, "items"):
+        from ..log.handler_factory import LogConfigurationError
 
-    # Check for CLI overrides
+        raise LogConfigurationError(
+            f"Handlers configuration must be a dictionary, got {type(handlers)}"
+        )
+
     force_json = config_overrides.get("log_json", False)
     force_no_colors = "colors" in config_overrides and not config_overrides["colors"]
 
-    # Load handlers, applying CLI overrides
     for handler_name, handler_config in handlers.items():
-        # Convert to mutable dict
-        if hasattr(handler_config, "to_dict"):
-            cfg = handler_config.to_dict()
-        elif hasattr(handler_config, "copy"):
+        if hasattr(handler_config, "copy"):
             cfg = handler_config.copy()
+        elif hasattr(handler_config, "to_dict"):
+            cfg = handler_config.to_dict()
         else:
             cfg = dict(handler_config)
 
         cfg["_handler_name"] = handler_name
-
-        # Apply CLI overrides to console handlers
-        if cfg.get("type") == "console":
-            if force_json:
-                cfg["format"] = "json"
-            if force_no_colors and cfg.get("format") != "json":
-                cfg["colors"] = False
-
+        _apply_cli_overrides_to_handler(cfg, force_json, force_no_colors)
         registry.add_handler_from_config(cfg, registry.global_level)
 
 

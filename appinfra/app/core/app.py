@@ -65,6 +65,8 @@ class App(Traceable):
             "log_location": True,
             "log_micros": True,
             "log_topic": True,
+            "log_colors": True,
+            "log_json": True,
             "quiet": True,
         }
 
