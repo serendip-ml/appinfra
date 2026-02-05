@@ -56,13 +56,13 @@ The `make check` command enforces a coverage threshold. Configure via
 
 ```makefile
 # In your Makefile (before includes)
-INFRA_PYTEST_COVERAGE_THRESHOLD := 80    # Require 80% coverage
+INFRA_PYTEST_COVERAGE_THRESHOLD := 95    # Require 95% coverage
 
 # Or disable coverage check entirely
 INFRA_PYTEST_COVERAGE_THRESHOLD := 0
 ```
 
-**Default:** 95.0%
+**Default:** 80%
 
 **Use cases:**
 - Open-sourcing existing projects with limited test coverage

@@ -72,10 +72,13 @@ DISPLAY_LOCK="/tmp/infra-check-display-lock-${MAIN_PID}"
 STATUS_DIR="/tmp/infra-check-status-${MAIN_PID}"
 mkdir -p "$STATUS_DIR"
 
-# Coverage threshold precedence: CLI arg > env var > default (95.0)
+# Coverage threshold precedence: CLI arg > env var > default (80)
 # Set to 0 to disable coverage checking entirely
-DEFAULT_COVERAGE_TARGET="${INFRA_PYTEST_COVERAGE_THRESHOLD:-95.0}"
+DEFAULT_COVERAGE_TARGET="${INFRA_PYTEST_COVERAGE_THRESHOLD:-80}"
 COVERAGE_TARGET="${COVERAGE_TARGET:-$DEFAULT_COVERAGE_TARGET}"
+
+# Docstring coverage threshold (0 to disable)
+DOCSTRING_THRESHOLD="${INFRA_DEV_DOCSTRING_THRESHOLD:-80}"
 
 # Check definitions: "Name|Make Target|Command|Fix Target"
 declare -a CHECKS=(
@@ -117,9 +120,20 @@ else
     CQ_LABEL="Function size check (non-strict)"
 fi
 
+# Docstring coverage check command (only if threshold > 0)
+DOCSTRING_CMD="${PYTHON} -m interrogate -v ${PKG_NAME}/ --ignore-init-module --ignore-init-method --fail-under=${DOCSTRING_THRESHOLD}"
+
 # Add remaining checks
 CHECKS+=(
     "${CQ_LABEL}|cq.strict|${CQ_CMD}|"
+)
+
+# Add docstring check only if threshold > 0
+if awk "BEGIN {exit !($DOCSTRING_THRESHOLD > 0)}" 2>/dev/null; then
+    CHECKS+=("Docstring coverage|cq.docstring.strict|${DOCSTRING_CMD}|docstring:${DOCSTRING_THRESHOLD}")
+fi
+
+CHECKS+=(
     "Test suite|test.all|SPECIAL|test.v"
 )
 
@@ -225,9 +239,27 @@ parse_coverage() {
     grep "^TOTAL" "$1" 2>/dev/null | awk '{print $NF}' | tr -d '%' || echo "0"
 }
 
+parse_docstring_coverage() {
+    # Parse interrogate output: "RESULT: PASSED (minimum: 95.0%, actual: 95.3%)"
+    # Using portable grep+sed instead of grep -oP (not available on macOS BSD grep)
+    local val=$(grep -o 'actual: [0-9.]*' "$1" 2>/dev/null | sed 's/actual: //' || echo "0")
+    printf "%.2f" "$val"
+}
+
 check_coverage_threshold() {
     local actual="$1" target="$2"
     awk "BEGIN {exit !($actual >= $target)}" 2>/dev/null
+}
+
+# Parse fix_target field for embedded coverage target (format: "type:threshold")
+# Returns: "coverage_target|actual_fix_target" (pipe-separated)
+parse_fix_target() {
+    local fix_target="$1"
+    if [[ "$fix_target" == docstring:* ]]; then
+        echo "${fix_target#docstring:}|"
+    else
+        echo "|$fix_target"
+    fi
 }
 
 # === CHECK EXECUTION ===
@@ -279,7 +311,13 @@ run_check() {
     case "$exit_code" in
         0)
             if [ -n "$coverage_target" ]; then
-                local actual=$(parse_coverage "$tmpfile")
+                # Use appropriate parser based on check type
+                local actual
+                if [[ "$name" == *"Docstring"* ]]; then
+                    actual=$(parse_docstring_coverage "$tmpfile")
+                else
+                    actual=$(parse_coverage "$tmpfile")
+                fi
                 if check_coverage_threshold "$actual" "$coverage_target"; then
                     update_line "$line_num" "${GREEN}${CHECK_SUCCESS}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% ≥ ${coverage_target}%)${RESET}"
                 else
@@ -291,6 +329,18 @@ run_check() {
                 update_line "$line_num" "${GREEN}${CHECK_SUCCESS}${RESET}" "${prefix}${name}" ""
             fi
             rm -f "$tmpfile"
+            ;;
+        1)  # For docstring check, exit code 1 means coverage below threshold
+            if [[ "$name" == *"Docstring"* ]] && [ -n "$coverage_target" ]; then
+                local actual=$(parse_docstring_coverage "$tmpfile")
+                update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% < ${coverage_target}%)${RESET}"
+                record_failure "$name" "$make_target" "" "$tmpfile" "Coverage: ${actual}% (target: ${coverage_target}%)"
+                return 1
+            fi
+            # Fall through to default failure handling for non-docstring checks
+            update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" ""
+            record_failure "$name" "$make_target" "$fix_target" "$tmpfile"
+            return 1
             ;;
         5)  # No tests collected
             update_line "$line_num" "${GRAY}${CHECK_PENDING}${RESET}" "${prefix}${name}" " ${GRAY}(no tests)${RESET}"
@@ -406,7 +456,10 @@ run_checks() {
                 test_suite_line="$line_num"
                 update_line "$line_num" "${YELLOW}${CHECK_RUNNING}${RESET}" "Test suite" ""
             else
-                run_check "$name" "$cmd" "$line_num" false "" "$fix_target" "$make_target" &
+                local parsed=$(parse_fix_target "$fix_target")
+                local coverage_target="${parsed%%|*}"
+                local actual_fix_target="${parsed#*|}"
+                run_check "$name" "$cmd" "$line_num" false "$coverage_target" "$actual_fix_target" "$make_target" &
                 pids+=($!)
             fi
         done
@@ -452,7 +505,10 @@ run_checks() {
             if [[ "$name" == "Test suite" ]]; then
                 run_test_suite "$line_num" || { any_failed=true; [ "$FAIL_FAST" = true ] && break; }
             else
-                run_check "$name" "$cmd" "$line_num" false "" "$fix_target" "$make_target" || {
+                local parsed=$(parse_fix_target "$fix_target")
+                local coverage_target="${parsed%%|*}"
+                local actual_fix_target="${parsed#*|}"
+                run_check "$name" "$cmd" "$line_num" false "$coverage_target" "$actual_fix_target" "$make_target" || {
                     any_failed=true; [ "$FAIL_FAST" = true ] && break
                 }
             fi
@@ -497,6 +553,10 @@ run_raw() {
                 echo ""
             done
         else
+            # Parse fix_target for embedded coverage threshold (e.g., "docstring:95" -> "")
+            local parsed=$(parse_fix_target "$fix_target")
+            local actual_fix_target="${parsed#*|}"
+
             local cmd_exit_code=0
             eval "$cmd" || cmd_exit_code=$?
 
@@ -508,7 +568,7 @@ run_raw() {
                 # Don't fail on warnings in non-strict mode
             else
                 echo "${RED}✗${RESET} $name failed"
-                [ -n "$fix_target" ] && echo "  To fix: make $fix_target"
+                [ -n "$actual_fix_target" ] && echo "  To fix: make $actual_fix_target"
                 failed=true
                 [ "$FAIL_FAST" = true ] && break
             fi

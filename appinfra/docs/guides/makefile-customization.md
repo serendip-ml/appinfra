@@ -395,6 +395,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 |----------|---------|-------------|
 | `INFRA_DEV_PKG_NAME` | `appinfra` | Package name for install, type, coverage |
 | `INFRA_DEV_CQ_STRICT` | `false` | Code quality: `true`=30-line, `false`=50-line |
+| `INFRA_DEV_DOCSTRING_THRESHOLD` | `80` | Docstring coverage threshold for `make check` (0 to disable) |
 | `INFRA_DEV_PROJECT_ROOT` | `$(CURDIR)` | Project root for check.sh |
 | `INFRA_DEV_INSTALL_EXTRAS` | (empty) | Optional extras for install (e.g., `ui,fastapi`) |
 | `INFRA_DEV_MYPY_FLAGS` | (empty) | Extra mypy flags (e.g., `--follow-imports=skip` for large deps) |
@@ -406,7 +407,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `INFRA_PYTEST_COVERAGE_PKG` | `$(INFRA_DEV_PKG_NAME)` | Package to measure coverage |
-| `INFRA_PYTEST_COVERAGE_THRESHOLD` | `95.0` | Coverage threshold for `make check` (0 to disable) |
+| `INFRA_PYTEST_COVERAGE_THRESHOLD` | `80` | Coverage threshold for `make check` (0 to disable) |
 | `INFRA_PYTEST_TESTS_DIR` | `tests` | Tests directory |
 | `INFRA_PYTEST_ARGS` | (empty) | Additional pytest arguments |
 

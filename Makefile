@@ -11,6 +11,12 @@ INFRA_DEV_CQ_STRICT := true
 # Include all tests in coverage (not just unit tests)
 INFRA_PYTEST_COVERAGE_MARKERS := unit or e2e
 
+# Coverage threshold (framework default is 80%)
+INFRA_PYTEST_COVERAGE_THRESHOLD := 95
+
+# Docstring coverage threshold (framework default is 80%)
+INFRA_DEV_DOCSTRING_THRESHOLD := 95
+
 # Install with all optional extras
 INFRA_DEV_INSTALL_EXTRAS := dev,validation,docs,fastapi,hotreload,ui
 
