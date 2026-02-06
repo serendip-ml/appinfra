@@ -318,7 +318,7 @@ class TestSchemaFromConfig:
         schema_name = f"test_cfg_{int(time.time())}_{os.getpid()}"
 
         # Create config dict with schema
-        config = dict(pg_connection.cfg.__dict__)
+        config = dict(pg_connection.cfg)
         config["schema"] = schema_name
 
         try:
@@ -336,7 +336,7 @@ class TestSchemaFromConfig:
         config_schema = f"test_cfg_schema_{int(time.time())}_{os.getpid()}"
         param_schema = f"test_param_schema_{int(time.time())}_{os.getpid()}"
 
-        config = dict(pg_connection.cfg.__dict__)
+        config = dict(pg_connection.cfg)
         config["schema"] = config_schema
 
         try:

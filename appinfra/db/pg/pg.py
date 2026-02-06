@@ -7,13 +7,13 @@ using composition pattern for clean separation of concerns.
 
 import re
 from collections.abc import Callable
-from types import SimpleNamespace
 from typing import Any
 
 import sqlalchemy
 import sqlalchemy_utils
 from sqlalchemy import text
 
+from ...dot_dict import DotDict
 from ...log import LoggerFactory
 from .connection import ConnectionManager
 from .core import (
@@ -103,9 +103,9 @@ class PG(Interface):
         """
         validate_init_params(lg, cfg)
 
-        # Normalize dict config to object with attribute access
-        if isinstance(cfg, dict):
-            cfg = SimpleNamespace(**cfg)
+        # Normalize plain dict config to DotDict for attribute access
+        if type(cfg) is dict:
+            cfg = DotDict(**cfg)
 
         self._cfg = cfg
         self._lg = LoggerFactory.derive(lg, "pg")
