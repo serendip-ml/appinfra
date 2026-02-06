@@ -8,6 +8,7 @@ import pytest
 from appinfra.db.pg.connection import validate_readonly_config
 from appinfra.db.pg.core import validate_init_params
 from appinfra.db.pg.pg import PG
+from appinfra.dot_dict import DotDict
 
 
 @pytest.mark.unit
@@ -236,7 +237,7 @@ class TestPGDictConfig:
         mock_create_managers,
         mock_logger_factory,
     ):
-        """Test that PG accepts dict config and normalizes it to SimpleNamespace."""
+        """Test that PG accepts dict config and normalizes it to DotDict."""
         mock_logger = Mock()
         mock_logger_factory.derive.return_value = mock_logger
 
@@ -248,8 +249,8 @@ class TestPGDictConfig:
 
         pg = PG(mock_logger, dict_config)
 
-        # Verify config was normalized to SimpleNamespace
-        assert isinstance(pg._cfg, SimpleNamespace)
+        # Verify config was normalized to DotDict
+        assert isinstance(pg._cfg, DotDict)
         assert pg._cfg.url == "postgresql://user:pass@localhost/testdb"
         assert pg._cfg.create_db is True
         assert pg._cfg.readonly is False
