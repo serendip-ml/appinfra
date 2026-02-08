@@ -32,6 +32,12 @@ For API stability guarantees and deprecation policy, see
   - Projects can override to higher thresholds as needed
   - appinfra itself still uses 95% for both test and docstring coverage
 
+### Fixed
+- Coverage display formatting now consistent across all projects:
+  - Both actual and target percentages show 1 decimal place (e.g., `89.9% ≥ 90.0%`)
+  - Uses pessimistic floor rounding to prevent misleading displays (89.99% shows as 89.9%, not 90.0%)
+  - Previously varied between 0-2 decimals depending on pytest output
+
 ## [0.3.4] - 2026-02-03
 
 ### Added

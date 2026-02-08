@@ -236,14 +236,17 @@ display_failures() {
 # === COVERAGE HELPERS ===
 
 parse_coverage() {
-    grep "^TOTAL" "$1" 2>/dev/null | awk '{print $NF}' | tr -d '%' || echo "0"
+    local val=$(grep "^TOTAL" "$1" 2>/dev/null | awk '{print $NF}' | tr -d '%' || echo "0")
+    # Floor to 1 decimal (pessimistic rounding)
+    awk "BEGIN {printf \"%.1f\", int($val * 10) / 10}"
 }
 
 parse_docstring_coverage() {
     # Parse interrogate output: "RESULT: PASSED (minimum: 95.0%, actual: 95.3%)"
     # Using portable grep+sed instead of grep -oP (not available on macOS BSD grep)
     local val=$(grep -o 'actual: [0-9.]*' "$1" 2>/dev/null | sed 's/actual: //' || echo "0")
-    printf "%.2f" "$val"
+    # Floor to 1 decimal (pessimistic rounding)
+    awk "BEGIN {printf \"%.1f\", int($val * 10) / 10}"
 }
 
 check_coverage_threshold() {
@@ -318,11 +321,13 @@ run_check() {
                 else
                     actual=$(parse_coverage "$tmpfile")
                 fi
+                # Format target to 1 decimal for consistent display
+                local target_display=$(awk "BEGIN {printf \"%.1f\", int($coverage_target * 10) / 10}")
                 if check_coverage_threshold "$actual" "$coverage_target"; then
-                    update_line "$line_num" "${GREEN}${CHECK_SUCCESS}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% ≥ ${coverage_target}%)${RESET}"
+                    update_line "$line_num" "${GREEN}${CHECK_SUCCESS}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% ≥ ${target_display}%)${RESET}"
                 else
-                    update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% < ${coverage_target}%)${RESET}"
-                    record_failure "$name" "$make_target" "" "$tmpfile" "Coverage: ${actual}% (target: ${coverage_target}%)"
+                    update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% < ${target_display}%)${RESET}"
+                    record_failure "$name" "$make_target" "" "$tmpfile" "Coverage: ${actual}% (target: ${target_display}%)"
                     return 1
                 fi
             else
