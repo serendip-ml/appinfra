@@ -238,8 +238,11 @@ class Ticker:
                 handle_message(msg)
             ticker.try_tick()  # Only ticks if interval elapsed
 
-    Thread safety: The ticker is not thread-safe by default. If you need
-    thread safety, consider using locks or running in a separate thread.
+    Thread safety: The ticker is NOT thread-safe. Internal state (_first flag,
+    _last_tick_time, _api_mode) is not protected by locks. Do not call ticker
+    methods concurrently from multiple threads. Do not mix API modes (run/try_tick/
+    iterator) even from the same thread - each Ticker instance must use exactly
+    one API pattern throughout its lifetime.
 
     Example:
         import logging
@@ -336,8 +339,9 @@ class Ticker:
             **kwargs: Keyword arguments to pass to handler
 
         Raises:
-            RuntimeError: If ticker is already running, or if try_tick() was used
-            ValueError: If no handler was provided
+            TickerStateError: If ticker is already running
+            TickerAPIError: If try_tick() or iterator was already used (API mode conflict)
+            TickerConfigError: If no handler was provided
 
         Example:
             >>> import threading
@@ -491,8 +495,10 @@ class Ticker:
         Returns:
             float: Delay in seconds until next tick (>= 0)
         """
-        if self._secs is None:
-            return 0.0
+        if self._secs is None:  # pragma: no cover
+            raise TickerConfigError(
+                "Cannot calculate delay without secs parameter (continuous mode not supported)"
+            )
 
         # Initialize timing reference if needed
         if self._last_tick_time is None:
@@ -506,12 +512,30 @@ class Ticker:
             return self._delay_spaced_mode(tick_end_time)
 
     def _delay_flex_mode(self, tick_start_time: float, tick_end_time: float) -> float:
-        """Calculate delay for FLEX mode (no catch-up, resets if late)."""
-        next_tick_time = self._last_tick_time + self._secs  # type: ignore
+        """
+        Calculate delay for FLEX mode (no catch-up, resets if late).
+
+        IMPORTANT: This method calculates the next tick time using the CURRENT value
+        of _last_tick_time, then updates it for the next iteration. The order matters:
+        - First: Calculate next_tick_time from OLD _last_tick_time
+        - Then: Update _last_tick_time based on whether we're late or on-time
+        This ensures the calculation uses the previous tick's reference time.
+        """
+        # Invariant: both secs and _last_tick_time must be set when calling this method
+        if self._secs is None:  # pragma: no cover
+            raise TickerConfigError("secs must be set for FLEX mode")
+        if self._last_tick_time is None:  # pragma: no cover
+            raise TickerConfigError(
+                "_last_tick_time must be initialized before FLEX mode"
+            )
+
+        # Calculate when next tick SHOULD happen based on previous tick
+        next_tick_time = self._last_tick_time + self._secs
+
         if tick_end_time >= next_tick_time:
-            # Late - reset timing from now
+            # Late - reset timing from now to prevent catch-up
             self._last_tick_time = tick_end_time
-            return self._secs  # type: ignore
+            return self._secs
         else:
             # On time - maintain interval from last tick start
             self._last_tick_time = tick_start_time
@@ -519,14 +543,41 @@ class Ticker:
 
     def _delay_strict_mode(self, tick_end_time: float) -> float:
         """Calculate delay for STRICT mode (maintains average rate)."""
-        self._last_tick_time += self._secs  # type: ignore
+        # Invariant: both secs and _last_tick_time must be set when calling this method
+        if self._secs is None:  # pragma: no cover
+            raise TickerConfigError("secs must be set for STRICT mode")
+        if self._last_tick_time is None:  # pragma: no cover
+            raise TickerConfigError(
+                "_last_tick_time must be initialized before STRICT mode"
+            )
+
+        self._last_tick_time += self._secs
         next_tick_time = self._last_tick_time
-        return max(0.0, next_tick_time - tick_end_time)
+        delay = next_tick_time - tick_end_time
+
+        # Warn if we're falling far behind (catch-up will cause back-to-back ticks)
+        if delay < 0:
+            intervals_behind = abs(delay) / self._secs
+            if intervals_behind > 5:
+                self._lg.warning(
+                    "STRICT mode: falling behind schedule, catch-up will cause rapid ticking",
+                    extra={
+                        "intervals_behind": intervals_behind,
+                        "delay_seconds": delay,
+                        "interval_seconds": self._secs,
+                    },
+                )
+
+        return max(0.0, delay)
 
     def _delay_spaced_mode(self, tick_end_time: float) -> float:
         """Calculate delay for SPACED mode (guaranteed spacing from completion)."""
+        # Invariant: secs must be set when calling this method
+        if self._secs is None:  # pragma: no cover
+            raise TickerConfigError("secs must be set for SPACED mode")
+
         self._last_tick_time = tick_end_time
-        return self._secs  # type: ignore
+        return self._secs
 
     def _update_params_from_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """
@@ -599,6 +650,33 @@ class Ticker:
 
     # Non-blocking API for manual control
 
+    def _validate_now_parameter(self, now: float, caller: str) -> None:
+        """Validate user-provided 'now' parameter to catch common timing mistakes."""
+        if now < 0:
+            self._lg.warning(
+                "Invalid 'now' parameter: negative value",
+                extra={"now": now, "caller": caller},
+            )
+        elif self._last_tick_time is not None and now < self._last_tick_time - 10.0:
+            # Allow small backwards jumps (clock adjustments), but warn on large ones
+            self._lg.warning(
+                "Suspicious 'now' parameter: far in past relative to last tick",
+                extra={
+                    "now": now,
+                    "last_tick_time": self._last_tick_time,
+                    "delta": now - self._last_tick_time,
+                },
+            )
+
+    def _initialize_timing_state(self, now: float) -> None:
+        """Initialize timing reference on first use with initial=False."""
+        if (
+            self._last_tick_time is None
+            and not self._initial
+            and self._secs is not None
+        ):
+            self._last_tick_time = now
+
     def time_until_next_tick(self, now: float | None = None) -> float:
         """
         Get seconds until next tick is due.
@@ -643,6 +721,8 @@ class Ticker:
         if now is None:
             now = time.monotonic()
 
+        self._validate_now_parameter(now, "time_until_next_tick")
+
         # Continuous mode - always ready to tick
         if self._secs is None:
             return 0.0
@@ -651,10 +731,11 @@ class Ticker:
         if self._first and self._initial:
             return 0.0
 
-        # Initialize timing reference on first use with initial=False
+        # If timing not initialized yet, first tick needs full interval
+        # (Initialization happens in try_tick() to avoid side effects in query method)
         if self._last_tick_time is None:
-            # Set reference point so first tick happens after full interval
-            self._last_tick_time = now
+            # Return full interval - first tick will happen after secs elapse
+            return self._secs
 
         # Calculate next tick time
         next_tick_time = self._last_tick_time + self._secs
@@ -705,8 +786,8 @@ class Ticker:
             ...     do_work()
 
         Raises:
-            RuntimeError: If run() was already used on this Ticker instance.
-                          Cannot mix blocking (run) and non-blocking (try_tick) APIs.
+            TickerAPIError: If run() or iterator was already used on this Ticker instance.
+                            Cannot mix different API modes (blocking/non-blocking/iterator).
 
         Note:
             - Safe to call repeatedly - only ticks when ready
@@ -726,6 +807,11 @@ class Ticker:
         now_provided = now is not None
         if now is None:
             now = time.monotonic()
+
+        if now_provided:
+            self._validate_now_parameter(now, "try_tick")
+
+        self._initialize_timing_state(now)
 
         # Check if it's time to tick (using captured time)
         if self.time_until_next_tick(now=now) > 0:
@@ -794,6 +880,20 @@ class Ticker:
                     # Advance by interval (may be behind actual time, allows catch-up)
                     self._last_tick_time += self._secs
 
+                    # Warn if we're falling far behind (catch-up will cause back-to-back ticks)
+                    lag = now - self._last_tick_time
+                    if lag > 0:
+                        intervals_behind = lag / self._secs
+                        if intervals_behind > 5:
+                            self._lg.warning(
+                                "STRICT mode: falling behind schedule, catch-up will cause rapid ticking",
+                                extra={
+                                    "intervals_behind": intervals_behind,
+                                    "lag_seconds": lag,
+                                    "interval_seconds": self._secs,
+                                },
+                            )
+
     # Context manager and iterator support
 
     def __enter__(self) -> "Ticker":
@@ -837,8 +937,8 @@ class Ticker:
             int: Tick count starting from 0.
 
         Raises:
-            ValueError: If secs parameter was not provided
-            RuntimeError: If run() or try_tick() was already used
+            TickerConfigError: If secs parameter was not provided
+            TickerAPIError: If run() or try_tick() was already used (API mode conflict)
         """
         if self._secs is None:
             raise TickerConfigError("secs parameter required for iterator mode")

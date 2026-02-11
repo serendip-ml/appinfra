@@ -1589,6 +1589,63 @@ class TestNonBlockingAPI:
             it = iter(ticker)
             next(it)  # Exception raised on first iteration
 
+    def test_time_until_next_tick_no_side_effects(self, mock_logger):
+        """Test that time_until_next_tick() doesn't mutate state (query method invariant)."""
+        ticker = Ticker(mock_logger, secs=1.0, initial=False)
+
+        # Call time_until_next_tick() multiple times with different timestamps
+        # This should NOT affect the timing state
+        now1 = time.monotonic()
+        remaining1 = ticker.time_until_next_tick(now=now1)
+
+        time.sleep(0.01)
+        now2 = time.monotonic()
+        remaining2 = ticker.time_until_next_tick(now=now2)
+
+        # Both calls should return the full interval (1.0s) since ticker hasn't initialized yet
+        assert remaining1 == 1.0
+        assert remaining2 == 1.0
+
+        # Now call try_tick() which WILL initialize the state
+        result = ticker.try_tick(now=now2)
+        assert result is False  # Not ready yet (initial=False requires full interval)
+
+        # After initialization, time_until_next_tick should use the initialized state
+        now3 = time.monotonic()
+        remaining3 = ticker.time_until_next_tick(now=now3)
+        # Should be close to 1.0 - (now3 - now2)
+        expected = 1.0 - (now3 - now2)
+        assert abs(remaining3 - expected) < 0.01
+
+    def test_validates_negative_now_parameter(self, mock_logger):
+        """Test that negative 'now' parameter triggers warning."""
+        ticker = Ticker(mock_logger, secs=1.0)
+
+        # Pass negative timestamp - should warn
+        ticker.time_until_next_tick(now=-1.0)
+
+        # Check warning was logged
+        assert mock_logger.warning.called
+        call_args = mock_logger.warning.call_args
+        assert "negative value" in call_args[0][0]
+
+    def test_validates_past_now_parameter(self, mock_logger):
+        """Test that 'now' far in past triggers warning."""
+        ticker = Ticker(mock_logger, secs=1.0)
+
+        # Initialize ticker with a normal timestamp
+        now = time.monotonic()
+        ticker.try_tick(now=now)
+
+        # Pass timestamp far in the past - should warn
+        past_time = now - 20.0  # 20 seconds in the past (> 10s threshold)
+        ticker.try_tick(now=past_time)
+
+        # Check warning was logged
+        assert mock_logger.warning.called
+        warnings = [call[0][0] for call in mock_logger.warning.call_args_list]
+        assert any("far in past" in msg for msg in warnings)
+
 
 # =============================================================================
 # Test Blocking API Timing Modes (run() with FLEX/STRICT/SPACED)
