@@ -18,6 +18,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from appinfra.exceptions import TickerAPIError, TickerConfigError, TickerStateError
 from appinfra.time.ticker import Ticker, TickerHandler, TickerMode
 
 # =============================================================================
@@ -147,7 +148,9 @@ class TestTickerInitialization:
     def test_run_with_none_handler_raises_error(self, mock_logger):
         """Test run() with None handler raises ValueError."""
         ticker = Ticker(mock_logger, secs=1.0)
-        with pytest.raises(ValueError, match="Handler required for run\\(\\) mode"):
+        with pytest.raises(
+            TickerConfigError, match="Handler required for run\\(\\) mode"
+        ):
             ticker.run()
 
     def test_init_creates_stop_event(self, mock_logger, mock_handler):
@@ -565,7 +568,7 @@ class TestTickerControl:
         time.sleep(0.05)
 
         # Try to run again
-        with pytest.raises(RuntimeError, match="already running"):
+        with pytest.raises(TickerStateError, match="already running"):
             ticker.run()
 
         ticker.stop()
@@ -633,7 +636,7 @@ class TestIntegrationScenarios:
         mock_handler.ticker_start.side_effect = Exception("start error")
         ticker = Ticker(mock_logger, mock_handler, secs=0.1)
 
-        with pytest.raises(RuntimeError, match="Ticker execution failed"):
+        with pytest.raises(TickerStateError, match="Ticker execution failed"):
             ticker.run()
 
         # Should not be running after error
@@ -754,7 +757,7 @@ class TestEdgeCases:
         mock_handler.ticker_start.side_effect = Exception("start error")
         ticker = Ticker(mock_logger, mock_handler, secs=0.1)
 
-        with pytest.raises(RuntimeError, match="Ticker execution failed"):
+        with pytest.raises(TickerStateError, match="Ticker execution failed"):
             ticker.run()
 
         # Should not be running after error
@@ -791,7 +794,9 @@ class TestEdgeCases:
         ticker = Ticker(mock_logger, mock_handler)  # No secs
         ticker._secs = None
 
-        with pytest.raises(RuntimeError, match="Cannot schedule tick without secs"):
+        with pytest.raises(
+            TickerConfigError, match="Cannot schedule tick without secs"
+        ):
             ticker._tick_sched()
 
     def test_ticker_stop_handles_handler_stop_error(self, mock_logger, mock_handler):
@@ -885,7 +890,7 @@ class TestTickerIterator:
     def test_iter_requires_secs(self, mock_logger):
         """Test iterator mode requires secs parameter."""
         ticker = Ticker(mock_logger)  # No secs
-        with pytest.raises(ValueError, match="secs parameter required"):
+        with pytest.raises(TickerConfigError, match="secs parameter required"):
             for _ in ticker:
                 pass
 
@@ -1438,6 +1443,34 @@ class TestNonBlockingAPI:
         for interval in intervals:
             assert interval >= 0.10  # At least the minimum spacing
 
+    def test_spaced_mode_handles_exceptions(self, mock_logger):
+        """Test SPACED mode handles handler exceptions and maintains spacing."""
+        from unittest.mock import Mock
+
+        # Handler that raises on first call, succeeds on second
+        handler = Mock(side_effect=[Exception("boom"), None, None])
+        ticker = Ticker(mock_logger, handler, secs=0.1, mode=TickerMode.SPACED)
+
+        # First tick should not raise (exception caught)
+        start = time.monotonic()
+        assert ticker.try_tick() is True
+
+        # Exception should be logged
+        assert mock_logger.exception.called
+
+        # Should still maintain spacing even after exception
+        remaining = ticker.time_until_next_tick()
+        assert 0.09 < remaining < 0.11  # Full interval from completion
+
+        # Wait for next tick
+        time.sleep(0.11)
+
+        # Second tick should succeed
+        assert ticker.try_tick() is True
+
+        # Handler should have been called twice total
+        assert handler.call_count == 2
+
     def test_cannot_mix_try_tick_and_run(self, mock_logger, mock_handler):
         """Test that mixing try_tick() and run() raises RuntimeError."""
         ticker = Ticker(mock_logger, mock_handler, secs=0.1)
@@ -1446,7 +1479,9 @@ class TestNonBlockingAPI:
         ticker.try_tick()
 
         # Attempting to use run() should raise
-        with pytest.raises(RuntimeError, match="Cannot call run.*after using try_tick"):
+        with pytest.raises(
+            TickerAPIError, match="Cannot call run.*after using try_tick"
+        ):
             ticker.run()
 
     def test_cannot_mix_run_and_try_tick(self, mock_logger, mock_handler):
@@ -1463,9 +1498,211 @@ class TestNonBlockingAPI:
         # Attempting to use try_tick() should raise
         try:
             with pytest.raises(
-                RuntimeError, match="Cannot call try_tick.*after using run"
+                TickerAPIError, match="Cannot call try_tick.*after using run"
             ):
                 ticker.try_tick()
         finally:
             ticker.stop()
             thread.join(timeout=1.0)
+
+    def test_cannot_mix_iterator_and_run(self, mock_logger, mock_handler):
+        """Test that mixing iterator and run() raises RuntimeError."""
+        ticker = Ticker(mock_logger, mock_handler, secs=0.1)
+
+        # Start iterator in a thread so it doesn't block
+        import threading
+
+        def iterate():
+            for _ in ticker:
+                ticker.stop()  # Stop after first tick
+                break
+
+        thread = threading.Thread(target=iterate, daemon=True)
+        thread.start()
+        time.sleep(0.05)  # Let iterator start and set mode
+
+        # Attempting to use run() should raise
+        try:
+            with pytest.raises(
+                TickerAPIError, match="Cannot call run.*after using iterator"
+            ):
+                ticker.run()
+        finally:
+            ticker.stop()
+            thread.join(timeout=1.0)
+
+    def test_cannot_mix_iterator_and_try_tick(self, mock_logger):
+        """Test that mixing iterator and try_tick() raises RuntimeError."""
+        ticker = Ticker(mock_logger, secs=0.1)
+
+        # Start iterator in a thread so it doesn't block
+        import threading
+
+        def iterate():
+            for _ in ticker:
+                ticker.stop()  # Stop after first tick
+                break
+
+        thread = threading.Thread(target=iterate, daemon=True)
+        thread.start()
+        time.sleep(0.05)  # Let iterator start and set mode
+
+        # Attempting to use try_tick() should raise
+        try:
+            with pytest.raises(
+                TickerAPIError, match="Cannot call try_tick.*after using iterator"
+            ):
+                ticker.try_tick()
+        finally:
+            ticker.stop()
+            thread.join(timeout=1.0)
+
+    def test_cannot_mix_run_and_iterator(self, mock_logger, mock_handler):
+        """Test that mixing run() and iterator raises RuntimeError."""
+        import threading
+
+        ticker = Ticker(mock_logger, mock_handler, secs=0.1)
+
+        # Start run() in background
+        thread = threading.Thread(target=ticker.run, daemon=True)
+        thread.start()
+        time.sleep(0.05)  # Let it start
+
+        # Attempting to use iterator should raise when starting iteration
+        try:
+            with pytest.raises(TickerAPIError, match="Cannot use iterator after run"):
+                it = iter(ticker)
+                next(it)  # Exception raised on first iteration
+        finally:
+            ticker.stop()
+            thread.join(timeout=1.0)
+
+    def test_cannot_mix_try_tick_and_iterator(self, mock_logger):
+        """Test that mixing try_tick() and iterator raises RuntimeError."""
+        ticker = Ticker(mock_logger, secs=0.1)
+
+        # Use try_tick() first
+        ticker.try_tick()
+
+        # Attempting to use iterator should raise when starting iteration
+        with pytest.raises(TickerAPIError, match="Cannot use iterator after.*try_tick"):
+            it = iter(ticker)
+            next(it)  # Exception raised on first iteration
+
+
+# =============================================================================
+# Test Blocking API Timing Modes (run() with FLEX/STRICT/SPACED)
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestBlockingAPITimingModes:
+    """Test that blocking API (run()) respects timing modes."""
+
+    def test_blocking_flex_mode_no_catchup(self, mock_logger):
+        """Test FLEX mode in blocking API doesn't catch up after slow tasks."""
+        tick_times = []
+
+        def slow_handler():
+            tick_times.append(time.monotonic())
+            if len(tick_times) == 2:
+                time.sleep(0.15)  # Slow task (longer than interval)
+
+        ticker = Ticker(mock_logger, slow_handler, secs=0.1, mode=TickerMode.FLEX)
+
+        import threading
+
+        thread = threading.Thread(target=ticker.run, daemon=True)
+        thread.start()
+
+        # Wait for 3 ticks
+        while len(tick_times) < 3:
+            time.sleep(0.01)
+
+        ticker.stop()
+        thread.join(timeout=1.0)
+
+        # Check intervals
+        intervals = [
+            tick_times[i + 1] - tick_times[i] for i in range(len(tick_times) - 1)
+        ]
+
+        # First interval should be ~0.1s
+        assert 0.08 < intervals[0] < 0.12
+
+        # Second interval is slow (0.15s task) - FLEX resets timing
+        # So next tick should be after full interval from completion
+        assert intervals[1] >= 0.09  # At least close to full interval
+
+    def test_blocking_strict_mode_catches_up(self, mock_logger):
+        """Test STRICT mode in blocking API catches up after slow tasks."""
+        tick_times = []
+
+        def slow_handler():
+            tick_times.append(time.monotonic())
+            if len(tick_times) == 2:
+                time.sleep(0.25)  # Very slow task
+
+        ticker = Ticker(mock_logger, slow_handler, secs=0.1, mode=TickerMode.STRICT)
+
+        import threading
+
+        thread = threading.Thread(target=ticker.run, daemon=True)
+        thread.start()
+
+        # Wait for 5 ticks
+        while len(tick_times) < 5:
+            time.sleep(0.01)
+
+        ticker.stop()
+        thread.join(timeout=1.0)
+
+        # Check intervals
+        intervals = [
+            tick_times[i + 1] - tick_times[i] for i in range(len(tick_times) - 1)
+        ]
+
+        # Second interval is slow (0.25s)
+        assert intervals[1] >= 0.20
+
+        # STRICT mode should catch up - next interval should be very short (near 0)
+        assert intervals[2] < 0.05  # Catches up quickly
+
+    def test_blocking_spaced_mode_guarantees_spacing(self, mock_logger):
+        """Test SPACED mode in blocking API guarantees spacing from completion."""
+        tick_times = []
+        completion_times = []
+
+        def varying_handler():
+            tick_times.append(time.monotonic())
+            # Simulate variable task duration
+            if len(tick_times) == 2:
+                time.sleep(0.08)  # Longer task
+            else:
+                time.sleep(0.02)  # Short task
+            completion_times.append(time.monotonic())
+
+        ticker = Ticker(mock_logger, varying_handler, secs=0.1, mode=TickerMode.SPACED)
+
+        import threading
+
+        thread = threading.Thread(target=ticker.run, daemon=True)
+        thread.start()
+
+        # Wait for 4 ticks
+        while len(tick_times) < 4:
+            time.sleep(0.01)
+
+        ticker.stop()
+        thread.join(timeout=1.0)
+
+        # Check spacing between completions
+        completion_intervals = [
+            completion_times[i + 1] - completion_times[i]
+            for i in range(len(completion_times) - 1)
+        ]
+
+        # All intervals should be at least the configured spacing (0.1s)
+        # plus the task duration
+        for interval in completion_intervals:
+            assert interval >= 0.09  # At least close to minimum spacing
