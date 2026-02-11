@@ -33,6 +33,40 @@ class TestDotDictBasicOperations:
         assert dd.name == "John"
         assert dd.age == 30
 
+    def test_init_with_dict(self):
+        """Test creating DotDict from dict positional argument."""
+        dd = DotDict({"name": "John", "age": 30})
+        assert dd.name == "John"
+        assert dd.age == 30
+
+    def test_init_with_dict_and_kwargs(self):
+        """Test creating DotDict with both dict and kwargs (kwargs override)."""
+        dd = DotDict({"name": "John", "age": 30}, age=25, city="NYC")
+        assert dd.name == "John"
+        assert dd.age == 25  # kwargs override
+        assert dd.city == "NYC"
+
+    def test_init_with_nested_dict(self):
+        """Test creating DotDict from nested dict."""
+        dd = DotDict({"user": {"name": "John", "age": 30}})
+        assert dd.user.name == "John"
+        assert dd.user.age == 30
+
+    def test_init_with_multiple_positional_args_raises(self):
+        """Test that multiple positional arguments raise TypeError."""
+        with pytest.raises(TypeError, match="takes at most 1 positional argument"):
+            DotDict({"a": 1}, {"b": 2})
+
+    def test_init_with_non_dict_positional_raises(self):
+        """Test that non-dict positional argument raises TypeError."""
+        with pytest.raises(TypeError, match="argument must be a dict"):
+            DotDict("not a dict")
+
+    def test_init_with_data_keyword(self):
+        """Test that 'data' can still be used as a keyword argument."""
+        dd = DotDict(data="some_value")
+        assert dd.data == "some_value"
+
     def test_set_method(self):
         """Test set() method."""
         dd = DotDict()

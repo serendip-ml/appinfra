@@ -450,6 +450,60 @@ class TestEnvironmentOverrides:
         overrides = config.get_env_overrides()
         assert overrides == {}
 
+    def test_env_override_hyphenated_key(self, tmp_path, clean_env):
+        """Test environment override for hyphenated YAML keys."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("services:\n  web-server:\n    port: 3000")
+        os.environ["INFRA_SERVICES_WEB_SERVER_PORT"] = "8080"
+        config = Config(str(config_file))
+        assert config.services["web-server"].port == 8080
+
+    def test_env_override_multiple_hyphens(self, tmp_path, clean_env):
+        """Test environment override for keys with multiple hyphens."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("database:\n  primary-db-pool:\n    size: 10")
+        os.environ["INFRA_DATABASE_PRIMARY_DB_POOL_SIZE"] = "50"
+        config = Config(str(config_file))
+        assert config.database["primary-db-pool"].size == 50
+
+    def test_env_override_nested_hyphenated_keys(self, tmp_path, clean_env):
+        """Test environment override for nested hyphenated keys."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("app-config:\n  cache-settings:\n    ttl: 300")
+        os.environ["INFRA_APP_CONFIG_CACHE_SETTINGS_TTL"] = "600"
+        config = Config(str(config_file))
+        assert config["app-config"]["cache-settings"].ttl == 600
+
+    def test_env_override_creates_hyphenated_sections(self, tmp_path, clean_env):
+        """Test that env overrides can create new hyphenated sections."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("app:\n  name: test")
+        os.environ["INFRA_NEW_SECTION_API_SERVER_PORT"] = "9000"
+        config = Config(str(config_file))
+        # Creates with underscores since key doesn't exist
+        assert config.new.section.api.server.port == 9000
+
+    def test_env_override_exact_match_preferred(self, tmp_path, clean_env):
+        """Test that exact matches are preferred over normalized matches."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            "services:\n  web_server:\n    port: 3000\n  web-server:\n    port: 4000"
+        )
+        os.environ["INFRA_SERVICES_WEB_SERVER_PORT"] = "8080"
+        config = Config(str(config_file))
+        # Should match web_server exactly, not web-server
+        assert config.services.web_server.port == 8080
+        # web-server should remain unchanged
+        assert config.services["web-server"].port == 4000
+
+    def test_env_override_mixed_hyphens_underscores(self, tmp_path, clean_env):
+        """Test environment override with mixed hyphens and underscores in keys."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("api:\n  rate-limit_config:\n    max_requests: 100")
+        os.environ["INFRA_API_RATE_LIMIT_CONFIG_MAX_REQUESTS"] = "500"
+        config = Config(str(config_file))
+        assert config.api["rate-limit_config"].max_requests == 500
+
 
 # =============================================================================
 # Test Path Resolution
