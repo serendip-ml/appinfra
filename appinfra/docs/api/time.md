@@ -4,8 +4,8 @@ Periodic task execution, scheduling, and time utilities.
 
 ## Ticker
 
-Periodic task execution with configurable intervals. Supports three usage patterns: callback-based,
-iterator, and iterator with context manager.
+Periodic task execution with configurable intervals. Supports four usage patterns: callback-based,
+iterator, iterator with context manager, and non-blocking manual control.
 
 ```python
 class Ticker:
@@ -14,13 +14,18 @@ class Ticker:
         lg: Logger,                                    # Logger instance
         handler: TickerHandler | Callable | None = None,  # Optional for iterator mode
         secs: float | None = None,                     # Seconds between ticks
-        initial: bool = True                           # Run initial tick immediately
+        initial: bool = True,                          # Run initial tick immediately
+        mode: TickerMode = TickerMode.LAZY             # Timing mode (LAZY or STRICT)
     ): ...
 
     # Callback mode
     def run(self) -> None: ...       # Start ticker (blocking, requires handler)
     def stop(self) -> None: ...      # Stop ticker gracefully
     def is_running(self) -> bool: ...
+
+    # Non-blocking API (for mixed event sources)
+    def time_until_next_tick(self, now: float | None = None) -> float: ...  # Seconds until next tick
+    def try_tick(self, now: float | None = None) -> bool: ...               # Execute if ready
 
     # Context manager (installs signal handlers)
     def __enter__(self) -> Ticker: ...
@@ -29,6 +34,20 @@ class Ticker:
     # Iterator (yields tick count)
     def __iter__(self) -> Iterator[int]: ...
 ```
+
+**Timing Modes:**
+
+```python
+from appinfra.time import TickerMode
+
+TickerMode.LAZY     # Fixed-delay: waits full interval from completion (default)
+TickerMode.STRICT   # Fixed-rate: maintains average rate, catches up if tasks slow
+```
+
+- **LAZY** (default): Prevents catch-up, waits full interval after each tick completes. Use for rate
+  limiting and preventing runaway execution.
+- **STRICT**: Maintains average tick rate by catching up if tasks run slow. Use when synchronizing to
+  external clocks or maintaining precise intervals.
 
 **Iterator Pattern (Recommended):**
 
@@ -107,6 +126,64 @@ thread.start()
 # Later...
 ticker.stop()
 ```
+
+**Non-Blocking Pattern (Mixed Event Sources):**
+
+```python
+from appinfra.time import Ticker, TickerMode
+
+# For event loops with messages and scheduled tasks
+ticker = Ticker(lg, secs=30, mode=TickerMode.LAZY)
+
+while running:
+    # Use ticker for timeout calculation
+    timeout = ticker.time_until_next_tick()
+    msg = channel.recv(timeout=timeout)
+
+    if msg:
+        handle_message(msg)
+
+    # Try to tick - only executes if interval elapsed
+    if ticker.try_tick():
+        run_scheduled_cycle()
+```
+
+**Non-Blocking Without Handler (Timing Oracle):**
+
+```python
+# No handler - manual control over tick execution
+ticker = Ticker(lg, secs=5.0)
+
+while running:
+    if ticker.try_tick():
+        print("Time to execute scheduled work!")
+        do_scheduled_work()
+
+    # Do other work...
+    time.sleep(0.1)
+```
+
+**Drift-Free with Shared Timestamp:**
+
+```python
+# Share timestamp between calls for maximum accuracy
+ticker = Ticker(lg, secs=1.0)
+
+while running:
+    now = time.monotonic()  # IMPORTANT: Must use time.monotonic()
+    timeout = ticker.time_until_next_tick(now=now)
+
+    # ... use timeout ...
+
+    if ticker.try_tick(now=now):
+        do_work()
+```
+
+**Important Notes:**
+
+- Ticker uses `time.monotonic()` internally for drift-free, accurate timing
+- If passing `now` parameter, it **must** be from `time.monotonic()`, not `time.time()`
+- Using `time.time()` will cause incorrect behavior due to clock adjustments (NTP, DST)
 
 ## Sched (Scheduler)
 

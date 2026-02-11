@@ -18,7 +18,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from appinfra.time.ticker import Ticker, TickerHandler
+from appinfra.time.ticker import Ticker, TickerHandler, TickerMode
 
 # =============================================================================
 # Fixtures
@@ -1023,3 +1023,293 @@ class TestTickerIteratorIntegration:
             if tick >= 2:
                 ticker2.stop()
         assert iter_count == 3
+
+
+# =============================================================================
+# Test Non-Blocking API (try_tick / time_until_next_tick)
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestNonBlockingAPI:
+    """Test non-blocking API for manual tick control."""
+
+    def test_time_until_next_tick_continuous_mode(self, mock_logger):
+        """Test time_until_next_tick returns 0 in continuous mode."""
+        ticker = Ticker(mock_logger, secs=None)
+        assert ticker.time_until_next_tick() == 0.0
+
+    def test_time_until_next_tick_first_tick_immediate(self, mock_logger):
+        """Test time_until_next_tick returns 0 for first tick with initial=True."""
+        ticker = Ticker(mock_logger, secs=1.0, initial=True)
+        assert ticker.time_until_next_tick() == 0.0
+
+    def test_time_until_next_tick_first_tick_delayed(self, mock_logger):
+        """Test time_until_next_tick returns full interval for initial=False."""
+        ticker = Ticker(mock_logger, secs=1.0, initial=False)
+        assert ticker.time_until_next_tick() == 1.0
+
+    def test_time_until_next_tick_not_started(self, mock_logger):
+        """Test time_until_next_tick returns full interval when not started."""
+        ticker = Ticker(mock_logger, secs=1.0)
+        # Execute first tick
+        ticker.try_tick()
+        # Now wait and check
+        time.sleep(0.1)
+        remaining = ticker.time_until_next_tick()
+        assert 0.85 < remaining < 0.95  # ~0.9s remaining
+
+    def test_time_until_next_tick_with_now_parameter(self, mock_logger):
+        """Test time_until_next_tick accepts optional now parameter."""
+        ticker = Ticker(mock_logger, secs=1.0)
+        ticker.try_tick()  # First tick
+
+        now = time.monotonic()
+        time.sleep(0.1)
+
+        # Using captured time should give different result than calling without it
+        with_old_time = ticker.time_until_next_tick(now=now)
+        with_new_time = ticker.time_until_next_tick()
+
+        assert with_old_time > with_new_time
+
+    def test_try_tick_returns_false_when_not_ready(self, mock_logger):
+        """Test try_tick returns False when interval hasn't elapsed."""
+        ticker = Ticker(mock_logger, secs=1.0)
+
+        # First tick succeeds
+        assert ticker.try_tick() is True
+
+        # Immediate retry fails (not enough time elapsed)
+        assert ticker.try_tick() is False
+
+    def test_try_tick_returns_true_when_ready(self, mock_logger):
+        """Test try_tick returns True when interval has elapsed."""
+        ticker = Ticker(mock_logger, secs=0.05)
+
+        # First tick
+        assert ticker.try_tick() is True
+
+        # Wait for interval
+        time.sleep(0.06)
+
+        # Second tick should succeed
+        assert ticker.try_tick() is True
+
+    def test_try_tick_without_handler(self, mock_logger):
+        """Test try_tick works without handler (timing oracle mode)."""
+        ticker = Ticker(mock_logger, secs=0.05)
+
+        # Should work without handler
+        assert ticker.try_tick() is True
+        time.sleep(0.06)
+        assert ticker.try_tick() is True
+
+    def test_try_tick_calls_handler(self, mock_logger, mock_handler):
+        """Test try_tick calls handler when present."""
+        ticker = Ticker(mock_logger, mock_handler, secs=0.05)
+
+        ticker.try_tick()
+        ticker.try_tick()  # Too soon, shouldn't call
+
+        # Handler should be called once (first tick)
+        assert mock_handler.ticker_tick.call_count == 1
+
+    def test_try_tick_calls_before_first_tick(self, mock_logger, mock_handler):
+        """Test try_tick calls ticker_before_first_tick on first execution."""
+        ticker = Ticker(mock_logger, mock_handler, secs=0.05)
+
+        ticker.try_tick()
+
+        mock_handler.ticker_before_first_tick.assert_called_once()
+        mock_handler.ticker_tick.assert_called_once()
+
+    def test_try_tick_handles_handler_errors(self, mock_logger, mock_handler):
+        """Test try_tick handles handler exceptions gracefully."""
+        mock_handler.ticker_tick.side_effect = Exception("tick error")
+        ticker = Ticker(mock_logger, mock_handler, secs=0.05)
+
+        # Should not raise, returns True
+        assert ticker.try_tick() is True
+
+        # Error should be logged
+        mock_logger.exception.assert_called()
+
+    def test_lazy_mode_waits_full_interval(self, mock_logger):
+        """Test LAZY mode waits full interval from completion."""
+        ticker = Ticker(mock_logger, secs=0.1, mode=TickerMode.LAZY)
+
+        # First tick at t=0
+        assert ticker.try_tick() is True
+
+        # Wait partway through interval
+        time.sleep(0.05)
+
+        # Should have ~0.05s remaining (next tick at t=0.1)
+        remaining = ticker.time_until_next_tick()
+        assert 0.04 < remaining < 0.06
+
+        # Wait until ready
+        time.sleep(remaining + 0.01)
+
+        # Should be ready now
+        assert ticker.try_tick() is True
+
+        # Key test: After second tick, if we check immediately,
+        # we should need full interval again (LAZY behavior)
+        remaining_after = ticker.time_until_next_tick()
+        assert 0.09 < remaining_after < 0.11  # ~0.1s (full interval)
+
+    def test_strict_mode_maintains_rate(self, mock_logger):
+        """Test STRICT mode maintains average rate."""
+        ticker = Ticker(mock_logger, secs=0.1, mode=TickerMode.STRICT)
+
+        # First tick at t=0
+        assert ticker.try_tick() is True
+
+        # Wait less than interval
+        time.sleep(0.08)
+
+        # Should need ~0.02s more
+        remaining = ticker.time_until_next_tick()
+        assert 0.01 < remaining < 0.03
+
+        # Wait for it
+        time.sleep(0.03)
+
+        # Should be ready
+        assert ticker.try_tick() is True
+
+    def test_strict_mode_catches_up(self, mock_logger):
+        """Test STRICT mode catches up when tasks run slow."""
+        ticker = Ticker(mock_logger, secs=0.05, mode=TickerMode.STRICT)
+
+        # First tick
+        assert ticker.try_tick() is True
+
+        # Simulate slow task (longer than interval)
+        time.sleep(0.12)
+
+        # Should be ready immediately (catch-up)
+        assert ticker.time_until_next_tick() == 0.0
+        assert ticker.try_tick() is True
+
+        # Should still be ready (still behind)
+        assert ticker.time_until_next_tick() == 0.0
+        assert ticker.try_tick() is True
+
+    def test_no_drift_with_fast_ticks(self, mock_logger):
+        """Test that rapid try_tick calls don't accumulate drift."""
+        ticker = Ticker(mock_logger, secs=0.05, mode=TickerMode.LAZY)
+
+        start = time.monotonic()
+        tick_times = []
+
+        # Execute many ticks
+        for _ in range(10):
+            while not ticker.try_tick():
+                time.sleep(0.001)  # Tight loop
+            tick_times.append(time.monotonic() - start)
+
+        # Check intervals between ticks
+        intervals = [
+            tick_times[i + 1] - tick_times[i] for i in range(len(tick_times) - 1)
+        ]
+
+        # All intervals should be close to 0.05s (allowing some tolerance)
+        for interval in intervals:
+            assert 0.045 < interval < 0.055
+
+    def test_mixed_event_source_pattern(self, mock_logger):
+        """Test typical mixed event source usage pattern."""
+        ticker = Ticker(mock_logger, secs=0.05)
+
+        # Simulate event loop with mock channel
+        messages = ["msg1", None, "msg2", None]  # None = timeout
+        tick_count = 0
+        msg_count = 0
+
+        for msg in messages:
+            # Use ticker for timeout calculation
+            timeout = ticker.time_until_next_tick()
+            assert timeout >= 0.0
+
+            if msg:
+                msg_count += 1
+
+            # Try to tick
+            if ticker.try_tick():
+                tick_count += 1
+
+        assert msg_count == 2
+        assert tick_count >= 1  # At least one tick should have fired
+
+    def test_initial_false_with_try_tick(self, mock_logger):
+        """Test initial=False delays first tick in non-blocking API."""
+        ticker = Ticker(mock_logger, secs=0.1, initial=False)
+
+        # First call should not tick immediately
+        assert ticker.try_tick() is False
+
+        # Should need approximately full interval
+        remaining = ticker.time_until_next_tick()
+        assert 0.09 < remaining < 0.11
+
+        # Wait partway
+        time.sleep(0.05)
+
+        # Should still not be ready
+        assert ticker.try_tick() is False
+
+        # Remaining should have decreased
+        remaining = ticker.time_until_next_tick()
+        assert 0.04 < remaining < 0.06
+
+        # Wait for it
+        time.sleep(0.06)
+
+        # Now should be ready
+        assert ticker.try_tick() is True
+
+    def test_initial_true_with_try_tick(self, mock_logger):
+        """Test initial=True fires immediately in non-blocking API."""
+        ticker = Ticker(mock_logger, secs=1.0, initial=True)
+
+        # First call should tick immediately
+        assert ticker.try_tick() is True
+
+        # Next call should not be ready
+        assert ticker.try_tick() is False
+
+    def test_try_tick_with_now_parameter(self, mock_logger):
+        """Test try_tick accepts optional now parameter."""
+        ticker = Ticker(mock_logger, secs=0.1)
+
+        # First tick
+        now = time.monotonic()
+        assert ticker.try_tick(now=now) is True
+
+        # Using same timestamp should not tick (not enough time)
+        assert ticker.try_tick(now=now) is False
+
+        # Wait and use new timestamp
+        time.sleep(0.11)
+        now = time.monotonic()
+        assert ticker.try_tick(now=now) is True
+
+    def test_shared_timestamp_pattern(self, mock_logger):
+        """Test pattern of sharing timestamp between methods."""
+        ticker = Ticker(mock_logger, secs=0.1)
+
+        # Capture time once
+        now = time.monotonic()
+
+        # First tick using shared timestamp
+        remaining = ticker.time_until_next_tick(now=now)
+        assert remaining == 0.0
+        assert ticker.try_tick(now=now) is True
+
+        # Check again with same timestamp - should not be ready
+        remaining = ticker.time_until_next_tick(now=now)
+        assert 0.09 < remaining < 0.11  # ~0.1 (full interval from that moment)
+        assert ticker.try_tick(now=now) is False

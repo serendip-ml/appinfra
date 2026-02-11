@@ -10,6 +10,27 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Added
+- Non-blocking Ticker API for mixed event sources (`time_until_next_tick()` and `try_tick()`):
+  - `time_until_next_tick(now=None)` returns seconds until next tick (use as timeout for event loops)
+  - `try_tick(now=None)` executes tick if ready, returns `bool` (works with or without handler)
+  - Both methods accept optional `now` parameter for drift-free operation with shared timestamps
+  - Supports timing oracle mode without handler: `if ticker.try_tick(): do_work()`
+  - Example: `msg = channel.recv(timeout=ticker.time_until_next_tick()); ticker.try_tick()`
+- `TickerMode` enum for timing behavior control:
+  - `LAZY` (default): Fixed-delay mode - waits full interval from completion, prevents catch-up
+  - `STRICT`: Fixed-rate mode - maintains average rate by catching up if tasks run slow
+- Monotonic time for drift-free ticker operation:
+  - All Ticker timing now uses `time.monotonic()` instead of `time.time()`
+  - Immune to NTP adjustments, daylight saving time changes, and system clock modifications
+  - Guaranteed monotonic progression for accurate interval timing
+  - Works correctly with Python's `sched.scheduler`
+
+### Changed
+- Ticker timing is now drift-free by capturing `time.monotonic()` once per tick
+  - Accurate: 3600 ticks in exactly 3600 seconds (for `secs=1`)
+  - No accumulated drift from multiple time queries per tick
+
 ## [0.3.5] - 2026-02-11
 
 ### Added

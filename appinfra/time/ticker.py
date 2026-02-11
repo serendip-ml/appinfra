@@ -51,6 +51,14 @@ Example Usage:
     # Continuous execution (no secs parameter)
     ticker = Ticker(lg, handler)
     ticker.run()
+
+    # Non-blocking mode for mixed event sources
+    ticker = Ticker(lg, secs=30, mode=TickerMode.LAZY)
+    while running:
+        msg = channel.recv(timeout=ticker.time_until_next_tick())
+        if msg:
+            handle_message(msg)
+        ticker.try_tick()
 """
 
 import sched
@@ -58,8 +66,35 @@ import signal
 import threading
 import time
 from collections.abc import Callable, Iterator
+from enum import Enum
 from types import FrameType
 from typing import Any
+
+
+class TickerMode(Enum):
+    """
+    Timing mode for ticker execution.
+
+    Attributes:
+        LAZY: Fixed-delay mode - always waits full interval between task
+              completions. Prevents catch-up behavior if tasks run slow.
+              Safe default that prevents runaway execution.
+
+        STRICT: Fixed-rate mode - maintains average tick rate by catching up
+                if tasks run slow. Use for synchronization to external clock.
+
+    Example:
+        # Lazy mode (default) - safe, no catch-up
+        ticker = Ticker(lg, secs=1, mode=TickerMode.LAZY)
+        # If task takes 2s, waits 1s, next tick at t=3s
+
+        # Strict mode - maintains rate, catches up
+        ticker = Ticker(lg, secs=1, mode=TickerMode.STRICT)
+        # If task takes 2s, ticks immediately (no wait) to maintain rate
+    """
+
+    LAZY = "lazy"
+    STRICT = "strict"
 
 
 class TickerHandler:
@@ -165,7 +200,7 @@ class Ticker:
     for periodic tasks. Can work with TickerHandler objects to execute
     periodic operations.
 
-    The ticker supports three usage patterns:
+    The ticker supports four usage patterns:
 
     1. Callback-based (using run()):
         ticker = Ticker(lg, lambda: do_work(), secs=5)
@@ -180,6 +215,14 @@ class Ticker:
             for tick in t:
                 do_work()
                 # Stops gracefully on SIGTERM/SIGINT
+
+    4. Non-blocking manual control (for mixed event sources):
+        ticker = Ticker(lg, secs=30)
+        while running:
+            msg = channel.recv(timeout=ticker.time_until_next_tick())
+            if msg:
+                handle_message(msg)
+            ticker.try_tick()  # Only ticks if interval elapsed
 
     Thread safety: The ticker is not thread-safe by default. If you need
     thread safety, consider using locks or running in a separate thread.
@@ -221,6 +264,7 @@ class Ticker:
         handler: TickerHandler | Callable[[], None] | None = None,
         secs: float | None = None,
         initial: bool = True,
+        mode: TickerMode = TickerMode.LAZY,
     ) -> None:
         """
         Initialize the ticker.
@@ -233,6 +277,9 @@ class Ticker:
             secs: Interval between ticks in seconds (None for continuous mode)
             initial: Whether to run tick immediately on start (default True).
                      If False, waits for first interval before firing.
+            mode: Timing mode (LAZY or STRICT). LAZY (default) waits full
+                  interval between ticks, preventing catch-up. STRICT maintains
+                  average rate by catching up if tasks run slow.
         """
         # Auto-wrap plain callables in a TickerHandler
         if (
@@ -246,15 +293,18 @@ class Ticker:
         self._handler: TickerHandler | None = handler
         self._secs = secs
         self._initial = initial
+        self._mode = mode
         self._first = True
         self._running = False
         self._stop_event = threading.Event()
         self._sched = (
-            sched.scheduler(time.time, time.sleep) if secs is not None else None
+            sched.scheduler(time.monotonic, time.sleep) if secs is not None else None
         )
         # For context manager signal handling (stores previous handlers)
         self._prev_sigterm: Any = None
         self._prev_sigint: Any = None
+        # For non-blocking API (try_tick/time_until_next_tick)
+        self._last_tick_time: float | None = None
 
     def run(self, *args: Any, **kwargs: Any) -> None:
         """
@@ -440,6 +490,170 @@ class Ticker:
             "first_tick": self._first,
             "stop_requested": self._stop_event.is_set(),
         }
+
+    # Non-blocking API for manual control
+
+    def time_until_next_tick(self, now: float | None = None) -> float:
+        """
+        Get seconds until next tick is due.
+
+        This method provides timing information for event loops that need to
+        multiplex multiple event sources. Use the return value as a timeout
+        for blocking operations like channel.recv() or select().
+
+        Args:
+            now: Optional current time from time.monotonic(). If not provided,
+                 time.monotonic() will be called. Pass this to avoid multiple
+                 time.monotonic() calls and ensure timing accuracy.
+                 **IMPORTANT**: Must be from time.monotonic(), not time.time()
+                 or any other time source.
+
+        Returns:
+            float: Seconds until next tick is due.
+                   Returns 0.0 if tick is ready now or in continuous mode.
+
+        Example:
+            >>> ticker = Ticker(lg, secs=30)
+            >>> while running:
+            ...     timeout = ticker.time_until_next_tick()
+            ...     msg = channel.recv(timeout=timeout)
+            ...     if msg:
+            ...         handle_message(msg)
+            ...     ticker.try_tick()
+
+        Note:
+            - Uses time.monotonic() for monotonic, drift-free timing
+            - Continuous mode (secs=None) always returns 0.0
+            - First tick with initial=True returns 0.0 (ready immediately)
+            - LAZY mode: Waits full interval from completion time
+            - STRICT mode: Maintains rate, can return 0.0 for catch-up
+
+        Warning:
+            If passing 'now', it MUST be from time.monotonic(). Using time.time()
+            or other time sources will cause incorrect behavior due to clock
+            adjustments (NTP, DST, manual changes).
+        """
+        if now is None:
+            now = time.monotonic()
+
+        # Continuous mode - always ready to tick
+        if self._secs is None:
+            return 0.0
+
+        # First tick with initial=True - ready immediately
+        if self._first and self._initial:
+            return 0.0
+
+        # Initialize timing reference on first use with initial=False
+        if self._last_tick_time is None:
+            # Set reference point so first tick happens after full interval
+            self._last_tick_time = now
+
+        # Calculate next tick time
+        next_tick_time = self._last_tick_time + self._secs
+        remaining = next_tick_time - now
+        return max(0.0, remaining)
+
+    def try_tick(self, now: float | None = None) -> bool:
+        """
+        Execute tick if interval has elapsed. Returns True if tick was executed.
+
+        This method is non-blocking and safe to call repeatedly. It only
+        executes a tick when the configured interval has elapsed. Use this
+        for event loops that need manual control over tick execution.
+
+        Timing behavior depends on mode:
+        - LAZY (default): Waits full interval from completion, never catches up
+        - STRICT: Maintains average rate, catches up if tasks run slow
+
+        Args:
+            now: Optional current time from time.monotonic(). If not provided,
+                 time.monotonic() will be called. Pass this to avoid multiple
+                 time.monotonic() calls and ensure timing accuracy.
+                 **IMPORTANT**: Must be from time.monotonic(), not time.time()
+                 or any other time source.
+
+        Returns:
+            bool: True if tick was executed, False if not ready yet.
+
+        Example with handler:
+            >>> ticker = Ticker(lg, lambda: sync_data(), secs=30)
+            >>> while running:
+            ...     msg = channel.recv(timeout=ticker.time_until_next_tick())
+            ...     if msg:
+            ...         handle_message(msg)
+            ...     ticker.try_tick()  # Calls handler if ready
+
+        Example without handler (timing oracle):
+            >>> ticker = Ticker(lg, secs=30)
+            >>> while running:
+            ...     if ticker.try_tick():
+            ...         do_scheduled_work()
+
+        Example with shared timestamp:
+            >>> now = time.monotonic()
+            >>> timeout = ticker.time_until_next_tick(now=now)
+            >>> if ticker.try_tick(now=now):
+            ...     do_work()
+
+        Note:
+            - Safe to call repeatedly - only ticks when ready
+            - Drift-free: Uses single time.monotonic() call for accuracy
+            - Updates timing state even without a handler
+            - Calls ticker_before_first_tick on first execution
+            - Logs exceptions from handler but continues
+
+        Warning:
+            If passing 'now', it MUST be from time.monotonic(). Using time.time()
+            or other time sources will cause incorrect behavior due to clock
+            adjustments (NTP, DST, manual changes).
+        """
+        # Capture time ONCE for drift-free accuracy
+        if now is None:
+            now = time.monotonic()
+
+        # Check if it's time to tick (using captured time)
+        if self.time_until_next_tick(now=now) > 0:
+            return False
+
+        # Execute tick and update timing
+        self._execute_tick_handler()
+        self._update_tick_timing(now)
+        return True
+
+    def _execute_tick_handler(self) -> None:
+        """Execute tick handler with first-tick initialization."""
+        # Handle first tick initialization
+        if self._first:
+            self._first = False
+            if self._handler is not None:
+                try:
+                    self._handler.ticker_before_first_tick()
+                except Exception:
+                    self._lg.exception("Error in ticker_before_first_tick")
+
+        # Execute tick via handler if present
+        if self._handler is not None:
+            try:
+                self._handler.ticker_tick()
+            except Exception:
+                self._lg.exception("Error in ticker_tick")
+
+    def _update_tick_timing(self, now: float) -> None:
+        """Update timing state based on mode after tick execution."""
+        # Note: In continuous mode (secs=None), timing state is not used
+        if self._secs is not None:
+            if self._mode == TickerMode.LAZY:
+                # LAZY: Next tick after full interval from this moment
+                self._last_tick_time = now
+            else:
+                # STRICT: Advance scheduled time to maintain rate
+                if self._last_tick_time is None:
+                    # First tick - initialize to captured time
+                    self._last_tick_time = now
+                else:
+                    # Advance by interval (may be behind actual time, allows catch-up)
+                    self._last_tick_time += self._secs
 
     # Context manager and iterator support
 

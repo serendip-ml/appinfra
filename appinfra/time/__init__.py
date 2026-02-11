@@ -20,7 +20,7 @@ from .sched import (
 )
 
 # Ticker
-from .ticker import Ticker, TickerHandler
+from .ticker import Ticker, TickerHandler, TickerMode
 
 # Time utilities
 from .time import (
@@ -59,6 +59,7 @@ __all__ = [
     # Ticker
     "Ticker",
     "TickerHandler",
+    "TickerMode",
     # Time utilities
     "start",
     "since",
