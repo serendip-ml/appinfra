@@ -203,8 +203,8 @@ def main():
     example_without_handler()
     example_strict_mode()
     example_flex_mode()
-    example_spaced_mode()
     example_shared_timestamp()
+    example_spaced_mode()
     return 0
 
 
