@@ -28,11 +28,22 @@ For API stability guarantees and deprecation policy, see
   - Configurable via `INFRA_DEV_DOCSTRING_THRESHOLD` (default: 80, set to 0 to disable)
 
 ### Changed
+- `DotDict.__init__()` now accepts dict as positional argument, matching built-in `dict()` API:
+  - `DotDict({"a": 1, "b": 2})` now works alongside existing `DotDict(a=1, b=2)`
+  - Kwargs override positional dict values when both are provided
+  - Backward compatible - existing code using only kwargs continues to work
 - Default coverage threshold lowered from 95% to 80% (`INFRA_PYTEST_COVERAGE_THRESHOLD`)
   - Projects can override to higher thresholds as needed
   - appinfra itself still uses 95% for both test and docstring coverage
 
 ### Fixed
+- Environment variable overrides with hyphenated YAML keys now handle edge cases correctly:
+  - Fixed `AttributeError` crash when env vars target non-dict YAML values (scalars, lists, null)
+  - Fixed ambiguous key matching - `INFRA_SERVICES_WEB_SERVER_PORT` now correctly prioritizes
+    exact matches (`web_server`) over shorter matches (`web`)
+  - Scalar and null values are now replaced with dicts when env vars create nested paths
+  - List values remain unchanged when env vars attempt nested overrides (cannot traverse into lists)
+  - Added comprehensive test coverage (23 new tests) for edge cases and backward compatibility
 - Coverage display formatting now consistent across all projects:
   - Both actual and target percentages show 1 decimal place (e.g., `89.9% ≥ 90.0%`)
   - Uses pessimistic floor rounding to prevent misleading displays (89.99% shows as 89.9%, not 90.0%)

@@ -257,6 +257,45 @@ INFRA_TEST_MY_KEY=value
 
 To access: `config.test.my.key` (not `config.test.my_key`)
 
+### Hyphenated Keys
+
+Environment variables with underscores automatically match hyphenated YAML keys:
+
+```yaml
+# YAML
+services:
+  web-server:
+    port: 3000
+  cache-config:
+    ttl: 300
+```
+
+```bash
+# Underscores in env vars match hyphens in YAML
+INFRA_SERVICES_WEB_SERVER_PORT=8080
+INFRA_SERVICES_CACHE_CONFIG_TTL=600
+```
+
+**Matching priority** (when ambiguous keys exist):
+1. Exact match with underscores (e.g., `web_server`)
+2. Exact match with hyphens (e.g., `web-server`)
+3. Normalized match (e.g., `web-server` or `web_server`)
+
+**Edge cases:**
+- **Scalar values**: Replaced with dict when creating nested paths
+  ```yaml
+  # Before: web-server: "http://localhost"
+  # After INFRA_SERVICES_WEB_SERVER_PORT=8080
+  # Result: web-server: {port: 8080}
+  ```
+- **List values**: Nested overrides are ignored (cannot traverse into lists)
+  ```yaml
+  # YAML: web-servers: [host1, host2]
+  # INFRA_SERVICES_WEB_SERVERS_PRIMARY=host3  # Ignored
+  # INFRA_SERVICES_WEB_SERVERS=host3,host4,host5  # Works (replaces entire list)
+  ```
+- **Null values**: Replaced with dict when creating nested paths
+
 ### Variable Substitution
 
 Environment variable overrides are applied before variable substitution (`${variable_name}`), so
