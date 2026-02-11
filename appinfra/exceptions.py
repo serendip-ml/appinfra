@@ -159,6 +159,67 @@ class ObservabilityError(InfraError):
     pass
 
 
+class TickerError(InfraError):
+    """
+    Ticker-related errors.
+
+    Base class for all Ticker system errors. Use specific subclasses
+    for different error conditions to enable targeted error handling.
+
+    Examples:
+        - API mode conflicts
+        - Invalid state transitions
+        - Configuration errors
+    """
+
+    pass
+
+
+class TickerAPIError(TickerError):
+    """
+    Ticker API mode conflict errors.
+
+    Raised when attempting to mix incompatible Ticker API modes
+    (blocking run(), non-blocking try_tick(), or iterator).
+
+    Examples:
+        - Calling run() after using try_tick()
+        - Calling try_tick() after using iterator
+        - Using iterator after run() started
+    """
+
+    pass
+
+
+class TickerStateError(TickerError):
+    """
+    Ticker state violation errors.
+
+    Raised when Ticker is in an invalid state for the requested operation.
+
+    Examples:
+        - Starting already running ticker
+        - Invalid state transition
+    """
+
+    pass
+
+
+class TickerConfigError(TickerError):
+    """
+    Ticker configuration errors.
+
+    Raised when Ticker configuration is invalid or incomplete.
+
+    Examples:
+        - Missing required handler for run() mode
+        - Missing secs parameter for scheduled mode
+        - Invalid mode or parameter combination
+    """
+
+    pass
+
+
 # Maintain backward compatibility with existing exception classes
 # by keeping them importable from their original locations while
 # also making them inherit from the new hierarchy

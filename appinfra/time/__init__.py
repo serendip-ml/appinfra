@@ -1,6 +1,14 @@
 """Time utilities including scheduling, periodic execution, and duration formatting."""
 
 # Date range utilities
+# Ticker exceptions
+from appinfra.exceptions import (
+    TickerAPIError,
+    TickerConfigError,
+    TickerError,
+    TickerStateError,
+)
+
 from .date_range import dates_from_lists, iter_dates, iter_dates_midnight_gmt
 
 # Duration formatting
@@ -20,7 +28,7 @@ from .sched import (
 )
 
 # Ticker
-from .ticker import Ticker, TickerHandler
+from .ticker import Ticker, TickerHandler, TickerMode
 
 # Time utilities
 from .time import (
@@ -59,6 +67,11 @@ __all__ = [
     # Ticker
     "Ticker",
     "TickerHandler",
+    "TickerMode",
+    "TickerError",
+    "TickerAPIError",
+    "TickerStateError",
+    "TickerConfigError",
     # Time utilities
     "start",
     "since",
