@@ -13,7 +13,8 @@ import time
 
 # Add the project root to the path
 project_root = str(pathlib.Path(__file__).resolve().parents[3])
-sys.path.append(project_root) if project_root not in sys.path else None
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
 from appinfra.log import LogConfig, LoggerFactory
 from appinfra.time import Ticker, TickerMode
@@ -46,8 +47,10 @@ def example_with_handler():
             msg = messages.get(timeout=timeout)
             lg.info(f"received message: {msg}")
         except queue.Empty:
-            # Timeout - try to tick
-            ticker.try_tick()
+            pass  # Timeout is expected
+
+        # Always try to tick (whether we got a message or not)
+        ticker.try_tick()
 
 
 def example_without_handler():
