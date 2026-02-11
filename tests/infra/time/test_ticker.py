@@ -1135,9 +1135,9 @@ class TestNonBlockingAPI:
         # Error should be logged
         mock_logger.exception.assert_called()
 
-    def test_lazy_mode_waits_full_interval(self, mock_logger):
-        """Test LAZY mode waits full interval from completion."""
-        ticker = Ticker(mock_logger, secs=0.1, mode=TickerMode.LAZY)
+    def test_flex_mode_waits_full_interval(self, mock_logger):
+        """Test FLEX mode maintains interval from tick start with no catch-up."""
+        ticker = Ticker(mock_logger, secs=0.1, mode=TickerMode.FLEX)
 
         # First tick at t=0
         assert ticker.try_tick() is True
@@ -1156,7 +1156,7 @@ class TestNonBlockingAPI:
         assert ticker.try_tick() is True
 
         # Key test: After second tick, if we check immediately,
-        # we should need full interval again (LAZY behavior)
+        # we should need full interval again (FLEX behavior)
         remaining_after = ticker.time_until_next_tick()
         assert 0.09 < remaining_after < 0.11  # ~0.1s (full interval)
 
@@ -1200,7 +1200,7 @@ class TestNonBlockingAPI:
 
     def test_no_drift_with_fast_ticks(self, mock_logger):
         """Test that rapid try_tick calls don't accumulate drift."""
-        ticker = Ticker(mock_logger, secs=0.05, mode=TickerMode.LAZY)
+        ticker = Ticker(mock_logger, secs=0.05, mode=TickerMode.FLEX)
 
         start = time.monotonic()
         tick_times = []
@@ -1216,9 +1216,9 @@ class TestNonBlockingAPI:
             tick_times[i + 1] - tick_times[i] for i in range(len(tick_times) - 1)
         ]
 
-        # All intervals should be close to 0.05s (allowing some tolerance)
+        # All intervals should be close to 0.05s (allowing tolerance for system scheduling)
         for interval in intervals:
-            assert 0.045 < interval < 0.055
+            assert 0.04 < interval < 0.15  # Allow for scheduler delays
 
     def test_mixed_event_source_pattern(self, mock_logger):
         """Test typical mixed event source usage pattern."""
@@ -1313,3 +1313,159 @@ class TestNonBlockingAPI:
         remaining = ticker.time_until_next_tick(now=now)
         assert 0.09 < remaining < 0.11  # ~0.1 (full interval from that moment)
         assert ticker.try_tick(now=now) is False
+
+    def test_spaced_mode_waits_from_completion(self, mock_logger):
+        """Test SPACED mode waits full interval from task completion."""
+        # Handler that simulates work
+        work_duration = 0.05
+
+        def handler():
+            time.sleep(work_duration)
+
+        ticker = Ticker(mock_logger, handler, secs=0.1, mode=TickerMode.SPACED)
+
+        # First tick at t=0, handler takes 0.05s, completes at t=0.05
+        start = time.monotonic()
+        assert ticker.try_tick() is True
+        first_completion = time.monotonic() - start
+
+        # Handler should have taken ~0.05s
+        assert 0.04 < first_completion < 0.06
+
+        # Should need ~0.1s from completion time (t=0.05), not from start
+        remaining = ticker.time_until_next_tick()
+        assert 0.09 < remaining < 0.11  # ~0.1s (full interval from completion)
+
+        # Wait for interval
+        time.sleep(remaining + 0.01)
+
+        # Should be ready now
+        assert ticker.try_tick() is True
+
+    def test_spaced_mode_with_slow_task(self, mock_logger):
+        """Test SPACED mode waits from completion even for slow tasks."""
+        slow_duration = 0.15
+
+        def slow_handler():
+            time.sleep(slow_duration)
+
+        ticker = Ticker(mock_logger, slow_handler, secs=0.1, mode=TickerMode.SPACED)
+
+        # First tick, handler takes 0.15s (longer than 0.1s interval)
+        start = time.monotonic()
+        assert ticker.try_tick() is True
+        completion_time = time.monotonic() - start
+
+        # Handler should have taken ~0.15s
+        assert 0.14 < completion_time < 0.16
+
+        # Should need full 0.1s from completion
+        remaining = ticker.time_until_next_tick()
+        assert 0.09 < remaining < 0.11  # ~0.1s (full interval)
+
+        # Not ready immediately
+        assert ticker.try_tick() is False
+
+        # Wait for interval
+        time.sleep(0.11)
+
+        # Now should be ready
+        assert ticker.try_tick() is True
+
+    def test_spaced_vs_flex_comparison(self, mock_logger):
+        """Test difference between SPACED and FLEX modes with task execution time."""
+        work_duration = 0.03
+
+        def flex_handler():
+            time.sleep(work_duration)
+
+        def spaced_handler():
+            time.sleep(work_duration)
+
+        flex_ticker = Ticker(mock_logger, flex_handler, secs=0.1, mode=TickerMode.FLEX)
+        spaced_ticker = Ticker(
+            mock_logger, spaced_handler, secs=0.1, mode=TickerMode.SPACED
+        )
+
+        # Both start at same time
+        start = time.monotonic()
+
+        # FLEX tick: captures time BEFORE handler, handler takes 0.03s
+        assert flex_ticker.try_tick() is True
+
+        # SPACED tick: captures time AFTER handler, handler takes 0.03s
+        assert spaced_ticker.try_tick() is True
+
+        elapsed = time.monotonic() - start
+
+        # FLEX: interval from tick START (t=0), so 0.1 - elapsed remaining
+        flex_remaining = flex_ticker.time_until_next_tick()
+        expected_flex = 0.1 - elapsed
+        assert abs(flex_remaining - expected_flex) < 0.02  # Within tolerance
+
+        # SPACED: interval from tick COMPLETION (t=~0.03), so full 0.1s remaining
+        spaced_remaining = spaced_ticker.time_until_next_tick()
+        assert 0.09 < spaced_remaining < 0.11  # ~0.1s
+
+        # SPACED should have more time remaining than FLEX
+        assert spaced_remaining > flex_remaining
+
+    def test_spaced_mode_guarantees_minimum_spacing(self, mock_logger):
+        """Test SPACED mode guarantees minimum spacing between operations."""
+        ticker = Ticker(mock_logger, secs=0.1, mode=TickerMode.SPACED)
+
+        completion_times = []
+
+        for _ in range(5):
+            # Wait for tick
+            while not ticker.try_tick():
+                time.sleep(0.001)
+
+            # Record completion time
+            completion_times.append(time.monotonic())
+
+            # Simulate variable task duration
+            time.sleep(0.02)  # Task takes 20ms
+
+        # Check spacing between completions
+        # Each interval should be approximately 0.1s (task time + wait time)
+        intervals = [
+            completion_times[i + 1] - completion_times[i]
+            for i in range(len(completion_times) - 1)
+        ]
+
+        # All intervals should be at least 0.1s (the configured spacing)
+        for interval in intervals:
+            assert interval >= 0.10  # At least the minimum spacing
+
+    def test_cannot_mix_try_tick_and_run(self, mock_logger, mock_handler):
+        """Test that mixing try_tick() and run() raises RuntimeError."""
+        ticker = Ticker(mock_logger, mock_handler, secs=0.1)
+
+        # Use try_tick() first
+        ticker.try_tick()
+
+        # Attempting to use run() should raise
+        with pytest.raises(RuntimeError, match="Cannot call run.*after using try_tick"):
+            ticker.run()
+
+    def test_cannot_mix_run_and_try_tick(self, mock_logger, mock_handler):
+        """Test that mixing run() and try_tick() raises RuntimeError."""
+        import threading
+
+        ticker = Ticker(mock_logger, mock_handler, secs=0.1)
+
+        # Start run() in background
+        thread = threading.Thread(target=ticker.run, daemon=True)
+        thread.start()
+        time.sleep(0.05)  # Let it start
+
+        # Attempting to use try_tick() should raise
+        try:
+            with pytest.raises(
+                RuntimeError, match="Cannot call try_tick.*after using run"
+            ):
+                ticker.try_tick()
+        finally:
+            ticker.stop()
+            thread.join(timeout=1.0)

@@ -18,8 +18,9 @@ For API stability guarantees and deprecation policy, see
   - Supports timing oracle mode without handler: `if ticker.try_tick(): do_work()`
   - Example: `msg = channel.recv(timeout=ticker.time_until_next_tick()); ticker.try_tick()`
 - `TickerMode` enum for timing behavior control:
-  - `LAZY` (default): Fixed-delay mode - waits full interval from completion, prevents catch-up
-  - `STRICT`: Fixed-rate mode - maintains average rate by catching up if tasks run slow
+  - `FLEX` (default): Flexible timing - fixed-rate from tick start, no catch-up (resets if late)
+  - `STRICT`: Strict timing - maintains average rate by catching up if tasks run slow
+  - `SPACED`: Spaced timing - waits full interval from task completion for guaranteed minimum spacing
 - Monotonic time for drift-free ticker operation:
   - All Ticker timing now uses `time.monotonic()` instead of `time.time()`
   - Immune to NTP adjustments, daylight saving time changes, and system clock modifications
@@ -30,6 +31,11 @@ For API stability guarantees and deprecation policy, see
 - Ticker timing is now drift-free by capturing `time.monotonic()` once per tick
   - Accurate: 3600 ticks in exactly 3600 seconds (for `secs=1`)
   - No accumulated drift from multiple time queries per tick
+
+### Fixed
+- Ticker API mode mixing protection: `try_tick()` and `run()` cannot be mixed on the same instance
+  - Prevents state corruption from shared `_first` flag between different API modes
+  - Clear error message: "Cannot call run() after using try_tick()"
 
 ## [0.3.5] - 2026-02-11
 

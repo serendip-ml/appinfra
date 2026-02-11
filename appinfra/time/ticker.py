@@ -53,7 +53,7 @@ Example Usage:
     ticker.run()
 
     # Non-blocking mode for mixed event sources
-    ticker = Ticker(lg, secs=30, mode=TickerMode.LAZY)
+    ticker = Ticker(lg, secs=30, mode=TickerMode.FLEX)
     while running:
         msg = channel.recv(timeout=ticker.time_until_next_tick())
         if msg:
@@ -76,25 +76,37 @@ class TickerMode(Enum):
     Timing mode for ticker execution.
 
     Attributes:
-        LAZY: Fixed-delay mode - always waits full interval between task
-              completions. Prevents catch-up behavior if tasks run slow.
-              Safe default that prevents runaway execution.
+        FLEX: Flexible timing - fixed-rate from tick start with no catch-up.
+              Maintains interval timing but resets if tasks run late. Prevents
+              multiple back-to-back ticks. Safe default that prevents runaway
+              execution.
 
-        STRICT: Fixed-rate mode - maintains average tick rate by catching up
-                if tasks run slow. Use for synchronization to external clock.
+        STRICT: Strict timing - maintains average tick rate by catching up if
+                tasks run slow. Use for synchronization to external clock.
+
+        SPACED: Spaced timing - always waits full interval from task completion.
+                Guarantees minimum spacing between tasks. Use for rate limiting
+                API calls or ensuring recovery time between ops.
 
     Example:
-        # Lazy mode (default) - safe, no catch-up
-        ticker = Ticker(lg, secs=1, mode=TickerMode.LAZY)
-        # If task takes 2s, waits 1s, next tick at t=3s
+        # Flex mode (default) - maintains interval, no catch-up
+        ticker = Ticker(lg, secs=1, mode=TickerMode.FLEX)
+        # If task takes 0.2s, next tick at t=1.0 (0.8s wait)
+        # If task takes 1.2s, next tick at t=1.2 (0s wait), then resets from there
 
         # Strict mode - maintains rate, catches up
         ticker = Ticker(lg, secs=1, mode=TickerMode.STRICT)
-        # If task takes 2s, ticks immediately (no wait) to maintain rate
+        # If task takes 1.2s, ticks immediately to catch up, maintains average rate
+
+        # Spaced mode - guarantees spacing
+        ticker = Ticker(lg, secs=1, mode=TickerMode.SPACED)
+        # If task takes 0.2s, next tick at t=1.2 (1.0s wait from completion)
+        # If task takes 1.2s, next tick at t=2.2 (1.0s wait from completion)
     """
 
-    LAZY = "lazy"
+    FLEX = "flex"
     STRICT = "strict"
+    SPACED = "spaced"
 
 
 class TickerHandler:
@@ -264,7 +276,7 @@ class Ticker:
         handler: TickerHandler | Callable[[], None] | None = None,
         secs: float | None = None,
         initial: bool = True,
-        mode: TickerMode = TickerMode.LAZY,
+        mode: TickerMode = TickerMode.FLEX,
     ) -> None:
         """
         Initialize the ticker.
@@ -277,9 +289,9 @@ class Ticker:
             secs: Interval between ticks in seconds (None for continuous mode)
             initial: Whether to run tick immediately on start (default True).
                      If False, waits for first interval before firing.
-            mode: Timing mode (LAZY or STRICT). LAZY (default) waits full
-                  interval between ticks, preventing catch-up. STRICT maintains
-                  average rate by catching up if tasks run slow.
+            mode: Timing mode (FLEX, STRICT, or SPACED). FLEX (default) maintains
+                  interval from tick start without catch-up. STRICT maintains average
+                  rate by catching up. SPACED waits full interval from completion.
         """
         # Auto-wrap plain callables in a TickerHandler
         if (
@@ -305,6 +317,10 @@ class Ticker:
         self._prev_sigint: Any = None
         # For non-blocking API (try_tick/time_until_next_tick)
         self._last_tick_time: float | None = None
+        # API mode tracking (prevents mixing run() with try_tick())
+        self._api_mode: str | None = (
+            None  # "blocking" for run(), "nonblocking" for try_tick()
+        )
 
     def run(self, *args: Any, **kwargs: Any) -> None:
         """
@@ -318,7 +334,7 @@ class Ticker:
             **kwargs: Keyword arguments to pass to handler
 
         Raises:
-            RuntimeError: If ticker is already running
+            RuntimeError: If ticker is already running, or if try_tick() was used
             ValueError: If no handler was provided
 
         Example:
@@ -344,7 +360,13 @@ class Ticker:
             )
         if self._running:
             raise RuntimeError("Ticker is already running")
+        if self._api_mode == "nonblocking":
+            raise RuntimeError(
+                "Cannot call run() after using try_tick(). "
+                "Choose one API mode per Ticker instance."
+            )
 
+        self._api_mode = "blocking"
         self._running = True
         self._stop_event.clear()
 
@@ -525,8 +547,9 @@ class Ticker:
             - Uses time.monotonic() for monotonic, drift-free timing
             - Continuous mode (secs=None) always returns 0.0
             - First tick with initial=True returns 0.0 (ready immediately)
-            - LAZY mode: Waits full interval from completion time
+            - FLEX mode: Interval from tick start, no catch-up (resets if late)
             - STRICT mode: Maintains rate, can return 0.0 for catch-up
+            - SPACED mode: Interval from tick completion (guaranteed spacing)
 
         Warning:
             If passing 'now', it MUST be from time.monotonic(). Using time.time()
@@ -563,8 +586,9 @@ class Ticker:
         for event loops that need manual control over tick execution.
 
         Timing behavior depends on mode:
-        - LAZY (default): Waits full interval from completion, never catches up
+        - FLEX (default): Interval from tick start, no catch-up (resets if late)
         - STRICT: Maintains average rate, catches up if tasks run slow
+        - SPACED: Interval from tick completion (guaranteed minimum spacing)
 
         Args:
             now: Optional current time from time.monotonic(). If not provided,
@@ -596,6 +620,10 @@ class Ticker:
             >>> if ticker.try_tick(now=now):
             ...     do_work()
 
+        Raises:
+            RuntimeError: If run() was already used on this Ticker instance.
+                          Cannot mix blocking (run) and non-blocking (try_tick) APIs.
+
         Note:
             - Safe to call repeatedly - only ticks when ready
             - Drift-free: Uses single time.monotonic() call for accuracy
@@ -608,6 +636,14 @@ class Ticker:
             or other time sources will cause incorrect behavior due to clock
             adjustments (NTP, DST, manual changes).
         """
+        # Check for API mode mixing
+        if self._api_mode == "blocking":
+            raise RuntimeError(
+                "Cannot call try_tick() after using run(). "
+                "Choose one API mode per Ticker instance."
+            )
+        self._api_mode = "nonblocking"
+
         # Capture time ONCE for drift-free accuracy
         if now is None:
             now = time.monotonic()
@@ -618,6 +654,12 @@ class Ticker:
 
         # Execute tick and update timing
         self._execute_tick_handler()
+
+        # For SPACED mode, capture time AFTER handler completes
+        if self._mode == TickerMode.SPACED:
+            now = time.monotonic()
+        # For FLEX and STRICT, use pre-handler timestamp
+
         self._update_tick_timing(now)
         return True
 
@@ -643,8 +685,10 @@ class Ticker:
         """Update timing state based on mode after tick execution."""
         # Note: In continuous mode (secs=None), timing state is not used
         if self._secs is not None:
-            if self._mode == TickerMode.LAZY:
-                # LAZY: Next tick after full interval from this moment
+            if self._mode in (TickerMode.FLEX, TickerMode.SPACED):
+                # FLEX/SPACED: Next tick after full interval from this moment
+                # For FLEX: 'now' is pre-handler time (interval from tick start)
+                # For SPACED: 'now' is post-handler time (interval from completion)
                 self._last_tick_time = now
             else:
                 # STRICT: Advance scheduled time to maintain rate

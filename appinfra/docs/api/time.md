@@ -15,7 +15,7 @@ class Ticker:
         handler: TickerHandler | Callable | None = None,  # Optional for iterator mode
         secs: float | None = None,                     # Seconds between ticks
         initial: bool = True,                          # Run initial tick immediately
-        mode: TickerMode = TickerMode.LAZY             # Timing mode (LAZY or STRICT)
+        mode: TickerMode = TickerMode.FLEX             # Timing mode (FLEX, STRICT, or SPACED)
     ): ...
 
     # Callback mode
@@ -40,14 +40,27 @@ class Ticker:
 ```python
 from appinfra.time import TickerMode
 
-TickerMode.LAZY     # Fixed-delay: waits full interval from completion (default)
-TickerMode.STRICT   # Fixed-rate: maintains average rate, catches up if tasks slow
+TickerMode.FLEX     # Flexible timing: fixed-rate from tick start, no catch-up (default)
+TickerMode.STRICT   # Strict timing: maintains average rate, catches up if tasks slow
+TickerMode.SPACED   # Spaced timing: waits full interval from completion
 ```
 
-- **LAZY** (default): Prevents catch-up, waits full interval after each tick completes. Use for rate
-  limiting and preventing runaway execution.
-- **STRICT**: Maintains average tick rate by catching up if tasks run slow. Use when synchronizing to
-  external clocks or maintaining precise intervals.
+- **FLEX** (default): Flexible timing - maintains interval from tick start but prevents catch-up if
+  tasks run slow. Resets timing after late ticks. Use for rate limiting and preventing runaway
+  execution.
+- **STRICT**: Strict timing - maintains average tick rate by catching up if tasks run slow. Use when
+  synchronizing to external clocks or maintaining precise intervals.
+- **SPACED**: Spaced timing - waits full interval from task completion. Guarantees minimum spacing
+  between operations. Use for rate-limited APIs, batch jobs, or ensuring recovery time between
+  operations.
+
+**Mode Comparison (secs=1.0):**
+
+| Scenario | FLEX | STRICT | SPACED |
+|----------|------|--------|--------|
+| Task takes 0.2s | Next tick at t=1.0<br>(0.8s wait) | Next tick at t=1.0<br>(0.8s wait) | Next tick at t=1.2<br>(1.0s wait) |
+| Task takes 1.2s | Next tick at t=1.2<br>(0s wait, resets) | Next tick at t=1.2<br>(then catches up) | Next tick at t=2.2<br>(1.0s wait) |
+| Best for | Rate limiting,<br>prevent overload | External sync,<br>maintain rate | API throttling,<br>guaranteed gaps |
 
 **Iterator Pattern (Recommended):**
 
@@ -133,7 +146,7 @@ ticker.stop()
 from appinfra.time import Ticker, TickerMode
 
 # For event loops with messages and scheduled tasks
-ticker = Ticker(lg, secs=30, mode=TickerMode.LAZY)
+ticker = Ticker(lg, secs=30, mode=TickerMode.FLEX)
 
 while running:
     # Use ticker for timeout calculation

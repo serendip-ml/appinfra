@@ -58,7 +58,7 @@ def example_without_handler():
     lg = LoggerFactory.create_root(config)
 
     # No handler - we control what happens on tick
-    ticker = Ticker(lg, secs=1.5, mode=TickerMode.LAZY)
+    ticker = Ticker(lg, secs=1.5, mode=TickerMode.FLEX)
 
     print("Running for 5 seconds...")
     start = time.monotonic()
@@ -103,14 +103,14 @@ def example_strict_mode():
     print(f"→ STRICT mode: {tick_count} ticks in 4 seconds (caught up after slow task)")
 
 
-def example_lazy_mode():
-    """Example: LAZY mode never catches up."""
-    print("\n=== Example 4: LAZY Mode (No Catch-up) ===")
+def example_flex_mode():
+    """Example: FLEX mode never catches up."""
+    print("\n=== Example 4: FLEX Mode (No Catch-up) ===")
 
     config = LogConfig.from_params(level="info", location=1)
     lg = LoggerFactory.create_root(config)
 
-    ticker = Ticker(lg, secs=0.5, mode=TickerMode.LAZY)
+    ticker = Ticker(lg, secs=0.5, mode=TickerMode.FLEX)
 
     print("Ticking every 0.5s, with one slow task (2s)...")
     tick_count = 0
@@ -132,7 +132,7 @@ def example_lazy_mode():
             time.sleep(0.01)  # Check frequently
 
     print(
-        f"→ LAZY mode: {tick_count} ticks in 4 seconds (waited after slow task, no catch-up)"
+        f"→ FLEX mode: {tick_count} ticks in 4 seconds (waited after slow task, no catch-up)"
     )
 
 
@@ -161,12 +161,46 @@ def example_shared_timestamp():
         time.sleep(1.1)
 
 
+def example_spaced_mode():
+    """Example: SPACED mode guarantees spacing from completion."""
+    print("\n=== Example 6: SPACED Mode (Guaranteed Spacing) ===")
+
+    config = LogConfig.from_params(level="info", location=1)
+    lg = LoggerFactory.create_root(config)
+
+    ticker = Ticker(lg, secs=0.5, mode=TickerMode.SPACED)
+
+    print("Ticking every 0.5s FROM COMPLETION, with one slow task (1.5s)...")
+    tick_count = 0
+    start = time.monotonic()
+
+    while time.monotonic() - start < 4.0:
+        if ticker.try_tick():
+            tick_count += 1
+            elapsed = time.monotonic() - start
+            lg.info(f"tick {tick_count} at t={elapsed:.2f}s")
+
+            # Simulate slow task on tick 2
+            if tick_count == 2:
+                lg.warning("task running slow (1.5 seconds)...")
+                time.sleep(1.5)
+            else:
+                time.sleep(0.05)  # Fast task
+        else:
+            time.sleep(0.01)  # Check frequently
+
+    print(
+        f"→ SPACED mode: {tick_count} ticks in 4 seconds (waited 0.5s after each completion)"
+    )
+
+
 def main():
     """Run all examples."""
     example_with_handler()
     example_without_handler()
     example_strict_mode()
-    example_lazy_mode()
+    example_flex_mode()
+    example_spaced_mode()
     example_shared_timestamp()
     return 0
 
