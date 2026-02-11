@@ -153,6 +153,18 @@ class TestTickerInitialization:
         ):
             ticker.run()
 
+    def test_init_with_invalid_mode_raises_error(self, mock_logger):
+        """Test initialization with invalid mode raises error."""
+        with pytest.raises(
+            TickerConfigError, match="mode must be TickerMode enum, got str"
+        ):
+            Ticker(mock_logger, secs=1.0, mode="invalid")
+
+    def test_init_with_negative_secs_raises_error(self, mock_logger):
+        """Test initialization with negative secs raises error."""
+        with pytest.raises(TickerConfigError, match="secs must be positive, got -1.0"):
+            Ticker(mock_logger, secs=-1.0)
+
     def test_init_creates_stop_event(self, mock_logger, mock_handler):
         """Test initialization creates stop event."""
         ticker = Ticker(mock_logger, mock_handler, secs=1.0)
@@ -764,20 +776,11 @@ class TestEdgeCases:
         assert not ticker.is_running()
 
     def test_ticker_with_zero_interval(self, mock_logger, simple_handler):
-        """Test ticker with zero second interval."""
-        ticker = Ticker(mock_logger, simple_handler, secs=0.0)
-
-        def run_and_stop():
-            ticker.run()
-
-        thread = threading.Thread(target=run_and_stop, daemon=True)
-        thread.start()
-        time.sleep(0.1)
-        ticker.stop()
-        thread.join(timeout=1.0)
-
-        # Should execute multiple times even with 0 interval
-        assert simple_handler.tick_count >= 1
+        """Test ticker with zero second interval raises error."""
+        # secs=0.0 is invalid - causes division by zero in STRICT mode
+        # Use secs=None for continuous mode instead
+        with pytest.raises(TickerConfigError, match="secs must be positive, got 0.0"):
+            Ticker(mock_logger, simple_handler, secs=0.0)
 
     def test_ticker_stop_when_not_running(self, mock_logger, mock_handler):
         """Test stop when ticker is not running."""

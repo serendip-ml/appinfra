@@ -275,6 +275,16 @@ class Ticker:
                     sync_data()
     """
 
+    @staticmethod
+    def _validate_init_params(mode: TickerMode, secs: float | None) -> None:
+        """Validate ticker initialization parameters."""
+        if not isinstance(mode, TickerMode):
+            raise TickerConfigError(
+                f"mode must be TickerMode enum, got {type(mode).__name__}"
+            )
+        if secs is not None and secs <= 0:
+            raise TickerConfigError(f"secs must be positive, got {secs}")
+
     def __init__(
         self,
         lg: Any,
@@ -298,6 +308,8 @@ class Ticker:
                   interval from tick start without catch-up. STRICT maintains average
                   rate by catching up. SPACED waits full interval from completion.
         """
+        self._validate_init_params(mode, secs)
+
         # Auto-wrap plain callables in a TickerHandler
         if (
             handler is not None
@@ -820,9 +832,9 @@ class Ticker:
         # Execute tick and update timing
         self._execute_tick_handler()
 
-        # For SPACED mode, capture time AFTER handler completes
-        # (but only if user didn't provide their own timestamp)
-        if self._mode == TickerMode.SPACED and not now_provided:
+        # For SPACED mode, ALWAYS capture time AFTER handler completes
+        # to guarantee spacing from completion (regardless of user-provided timestamp)
+        if self._mode == TickerMode.SPACED:
             now = time.monotonic()
 
         self._update_tick_timing(now)
