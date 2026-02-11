@@ -55,7 +55,7 @@ Since DotDict subclasses `dict`, `isinstance(dotdict, dict)` returns `True`.
 
 ```python
 class DotDict(dict):
-    def __init__(self, **kwargs): ...
+    def __init__(self, *args, **kwargs): ...            # Accepts dict as positional arg or kwargs
 
     def get(self, path: str, default=None) -> Any: ...  # Dot-path access, returns None if not found
     def require(self, path: str) -> Any: ...            # Like get(), but raises if path missing
@@ -75,9 +75,12 @@ config = DotDict(
     database={"host": "localhost", "port": 5432}
 )
 
-# Or from existing dict
-data = {"database": {"host": "localhost"}}
-config = DotDict(**data)
+# Or from dict (positional argument - matches built-in dict() API)
+data = {"database": {"host": "localhost", "port": 5432}}
+config = DotDict(data)
+
+# Kwargs override positional dict values
+config = DotDict({"port": 3000}, port=8080)  # port will be 8080
 
 # isinstance check works (DotDict is a dict subclass)
 isinstance(config, dict)  # True

@@ -450,6 +450,153 @@ class TestEnvironmentOverrides:
         overrides = config.get_env_overrides()
         assert overrides == {}
 
+    def test_env_override_hyphenated_key(self, tmp_path, clean_env):
+        """Test environment override for hyphenated YAML keys."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("services:\n  web-server:\n    port: 3000")
+        os.environ["INFRA_SERVICES_WEB_SERVER_PORT"] = "8080"
+        config = Config(str(config_file))
+        assert config.services["web-server"].port == 8080
+
+    def test_env_override_multiple_hyphens(self, tmp_path, clean_env):
+        """Test environment override for keys with multiple hyphens."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("database:\n  primary-db-pool:\n    size: 10")
+        os.environ["INFRA_DATABASE_PRIMARY_DB_POOL_SIZE"] = "50"
+        config = Config(str(config_file))
+        assert config.database["primary-db-pool"].size == 50
+
+    def test_env_override_nested_hyphenated_keys(self, tmp_path, clean_env):
+        """Test environment override for nested hyphenated keys."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("app-config:\n  cache-settings:\n    ttl: 300")
+        os.environ["INFRA_APP_CONFIG_CACHE_SETTINGS_TTL"] = "600"
+        config = Config(str(config_file))
+        assert config["app-config"]["cache-settings"].ttl == 600
+
+    def test_env_override_creates_hyphenated_sections(self, tmp_path, clean_env):
+        """Test that env overrides can create new hyphenated sections."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("app:\n  name: test")
+        os.environ["INFRA_NEW_SECTION_API_SERVER_PORT"] = "9000"
+        config = Config(str(config_file))
+        # Creates with underscores since key doesn't exist
+        assert config.new.section.api.server.port == 9000
+
+    def test_env_override_exact_match_preferred(self, tmp_path, clean_env):
+        """Test that exact matches are preferred over normalized matches."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            "services:\n  web_server:\n    port: 3000\n  web-server:\n    port: 4000"
+        )
+        os.environ["INFRA_SERVICES_WEB_SERVER_PORT"] = "8080"
+        config = Config(str(config_file))
+        # Should match web_server exactly, not web-server
+        assert config.services.web_server.port == 8080
+        # web-server should remain unchanged
+        assert config.services["web-server"].port == 4000
+
+    def test_env_override_mixed_hyphens_underscores(self, tmp_path, clean_env):
+        """Test environment override with mixed hyphens and underscores in keys."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("api:\n  rate-limit_config:\n    max_requests: 100")
+        os.environ["INFRA_API_RATE_LIMIT_CONFIG_MAX_REQUESTS"] = "500"
+        config = Config(str(config_file))
+        assert config.api["rate-limit_config"].max_requests == 500
+
+    def test_env_override_scalar_value_replaced(self, tmp_path, clean_env):
+        """Test that env override replaces scalar values when creating nested path."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text('services:\n  web-server: "http://localhost"\n')
+        os.environ["INFRA_SERVICES_WEB_SERVER_PORT"] = "8080"
+        config = Config(str(config_file))
+        # Scalar is replaced with dict to allow nested value
+        assert isinstance(config.services["web-server"], dict)
+        assert config.services["web-server"].port == 8080
+
+    def test_env_override_scalar_value_direct(self, tmp_path, clean_env):
+        """Test that env override can directly replace a scalar value."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text('services:\n  web-server: "http://localhost"\n')
+        os.environ["INFRA_SERVICES_WEB_SERVER"] = "https://example.com"
+        config = Config(str(config_file))
+        # Direct replacement works
+        assert config.services["web-server"] == "https://example.com"
+
+    def test_env_override_list_value_ignored(self, tmp_path, clean_env):
+        """Test that env override ignores attempts to nest under list values."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("services:\n  web-servers:\n    - host1\n    - host2\n")
+        os.environ["INFRA_SERVICES_WEB_SERVERS_PRIMARY_HOST"] = "host1"
+        config = Config(str(config_file))
+        # List value is unchanged (cannot traverse into lists)
+        assert config.services["web-servers"] == ["host1", "host2"]
+
+    def test_env_override_list_value_direct(self, tmp_path, clean_env):
+        """Test that env override can directly replace a list value."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("services:\n  web-servers:\n    - host1\n    - host2\n")
+        os.environ["INFRA_SERVICES_WEB_SERVERS"] = "host1,host2,host3"
+        config = Config(str(config_file))
+        # Direct list replacement works
+        assert config.services["web-servers"] == ["host1", "host2", "host3"]
+
+    def test_env_override_null_value_replaced(self, tmp_path, clean_env):
+        """Test that env override replaces null values when creating nested path."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("services:\n  web-server: null\n")
+        os.environ["INFRA_SERVICES_WEB_SERVER_PORT"] = "8080"
+        config = Config(str(config_file))
+        # Null is replaced with dict to allow nested value
+        assert isinstance(config.services["web-server"], dict)
+        assert config.services["web-server"].port == 8080
+
+    def test_env_override_null_value_direct(self, tmp_path, clean_env):
+        """Test that env override can directly set a null value to non-null."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("services:\n  web-server: null\n")
+        os.environ["INFRA_SERVICES_WEB_SERVER"] = "enabled"
+        config = Config(str(config_file))
+        # Direct replacement works
+        assert config.services["web-server"] == "enabled"
+
+    def test_env_override_ambiguous_key_exact_match(self, tmp_path, clean_env):
+        """Test that exact matches win in ambiguous scenarios."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            "services:\n  web_server:\n    port: 3000\n  web:\n    server-port: 4000\n"
+        )
+        os.environ["INFRA_SERVICES_WEB_SERVER_PORT"] = "8080"
+        config = Config(str(config_file))
+        # Should match web_server.port exactly
+        assert config.services.web_server.port == 8080
+        # Other keys unchanged
+        assert config.services.web["server-port"] == 4000
+
+    def test_env_override_ambiguous_key_hyphenated(self, tmp_path, clean_env):
+        """Test hyphenated match when exact underscore doesn't exist."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            "services:\n  web-server:\n    port: 3000\n  web:\n    server-port: 4000\n"
+        )
+        os.environ["INFRA_SERVICES_WEB_SERVER_PORT"] = "8080"
+        config = Config(str(config_file))
+        # Should match web-server.port (hyphenated)
+        assert config.services["web-server"].port == 8080
+        # Other keys unchanged
+        assert config.services.web["server-port"] == 4000
+
+    def test_env_override_backward_compat_underscores(self, tmp_path, clean_env):
+        """Test backward compatibility with existing underscore keys."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("db:\n  connection_pool:\n    size: 10\n    timeout: 30")
+        os.environ["INFRA_DB_CONNECTION_POOL_SIZE"] = "50"
+        os.environ["INFRA_DB_CONNECTION_POOL_TIMEOUT"] = "60"
+        config = Config(str(config_file))
+        # Existing underscore keys still work
+        assert config.db.connection_pool.size == 50
+        assert config.db.connection_pool.timeout == 60
+
 
 # =============================================================================
 # Test Path Resolution
@@ -1220,3 +1367,115 @@ class TestConfigReload:
         # Chain reload with get
         host = config.reload().get("database.host")
         assert host == "remotehost"
+
+
+# =============================================================================
+# Test Config Integration with DotDict
+# =============================================================================
+
+
+class TestConfigDotDictIntegration:
+    """Test Config compatibility with DotDict dict subclass changes."""
+
+    def test_config_with_deeply_nested_structure(self, tmp_path):
+        """Test Config initialization with deeply nested YAML structures."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+level1:
+  level2:
+    level3:
+      level4:
+        value: deep
+      sibling: shallow
+"""
+        )
+        config = Config(str(config_file))
+        assert config.level1.level2.level3.level4.value == "deep"
+        assert config.level1.level2.level3.sibling == "shallow"
+
+    def test_config_with_dict_method_name_keys(self, tmp_path):
+        """Test Config with YAML keys that match dict method names."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+data:
+  keys: value1
+  values: value2
+  items: value3
+  copy: value4
+"""
+        )
+        config = Config(str(config_file))
+        # Should access data, not methods
+        assert config.data.keys == "value1"
+        assert config.data.values == "value2"
+        assert config.data.items == "value3"
+        assert config.data.copy == "value4"
+
+    def test_config_reload_with_nested_structure(self, tmp_path):
+        """Test Config reload works correctly with nested structures."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("app:\n  server:\n    port: 3000\n    host: localhost")
+
+        config = Config(str(config_file))
+        assert config.app.server.port == 3000
+
+        config_file.write_text("app:\n  server:\n    port: 8080\n    host: remotehost")
+        config.reload()
+
+        assert config.app.server.port == 8080
+        assert config.app.server.host == "remotehost"
+
+    def test_config_with_mixed_hyphen_underscore_keys(self, tmp_path):
+        """Test Config handles mixed hyphen/underscore keys correctly."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+services:
+  web-server:
+    port: 3000
+  db_pool:
+    size: 10
+  cache-config_v2:
+    ttl: 300
+"""
+        )
+        config = Config(str(config_file))
+        assert config.services["web-server"].port == 3000
+        assert config.services.db_pool.size == 10
+        assert config.services["cache-config_v2"].ttl == 300
+
+    def test_config_reload_preserves_nested_dotdict_structure(self, tmp_path):
+        """Test Config reload correctly rebuilds nested DotDict structures."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+app:
+  server:
+    config:
+      port: 3000
+      host: localhost
+"""
+        )
+
+        config = Config(str(config_file))
+        assert config.app.server.config.port == 3000
+
+        # Change file with different structure
+        config_file.write_text(
+            """
+app:
+  server:
+    config:
+      port: 8080
+      host: remotehost
+      timeout: 30
+"""
+        )
+
+        # Reload should rebuild nested structure correctly
+        config.reload()
+        assert config.app.server.config.port == 8080
+        assert config.app.server.config.host == "remotehost"
+        assert config.app.server.config.timeout == 30

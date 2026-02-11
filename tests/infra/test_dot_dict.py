@@ -33,6 +33,92 @@ class TestDotDictBasicOperations:
         assert dd.name == "John"
         assert dd.age == 30
 
+    def test_init_with_dict(self):
+        """Test creating DotDict from dict positional argument."""
+        dd = DotDict({"name": "John", "age": 30})
+        assert dd.name == "John"
+        assert dd.age == 30
+
+    def test_init_with_dict_and_kwargs(self):
+        """Test creating DotDict with both dict and kwargs (kwargs override)."""
+        dd = DotDict({"name": "John", "age": 30}, age=25, city="NYC")
+        assert dd.name == "John"
+        assert dd.age == 25  # kwargs override
+        assert dd.city == "NYC"
+
+    def test_init_with_nested_dict(self):
+        """Test creating DotDict from nested dict."""
+        dd = DotDict({"user": {"name": "John", "age": 30}})
+        assert dd.user.name == "John"
+        assert dd.user.age == 30
+
+    def test_init_with_multiple_positional_args_raises(self):
+        """Test that multiple positional arguments raise TypeError."""
+        with pytest.raises(TypeError, match="takes at most 1 positional argument"):
+            DotDict({"a": 1}, {"b": 2})
+
+    def test_init_with_non_dict_positional_raises(self):
+        """Test that non-dict positional argument raises TypeError."""
+        with pytest.raises(TypeError, match="argument must be a dict"):
+            DotDict("not a dict")
+
+    def test_init_with_data_keyword(self):
+        """Test that 'data' can still be used as a keyword argument."""
+        dd = DotDict(data="some_value")
+        assert dd.data == "some_value"
+
+    def test_init_with_dict_method_names(self):
+        """Test that dict method names work correctly as data keys."""
+        dd = DotDict({"keys": 1, "values": 2, "items": 3})
+        # Should return data, not methods (via _DATA_PRIORITY_ATTRS)
+        assert dd.keys == 1
+        assert dd.values == 2
+        assert dd.items == 3
+        # Dict-style access should also work
+        assert dd["keys"] == 1
+        assert dd["values"] == 2
+        assert dd["items"] == 3
+
+    def test_init_with_nested_dict_method_names(self):
+        """Test nested DotDict with dict method names."""
+        dd = DotDict({"config": {"keys": "value1", "items": "value2"}})
+        assert dd.config.keys == "value1"
+        assert dd.config.items == "value2"
+
+    def test_init_with_deeply_nested_structure(self):
+        """Test DotDict with deeply nested dict structures."""
+        dd = DotDict(
+            {
+                "level1": {
+                    "level2": {"level3": {"level4": {"value": "deep"}}},
+                    "sibling": "shallow",
+                }
+            }
+        )
+        assert dd.level1.level2.level3.level4.value == "deep"
+        assert dd.level1.sibling == "shallow"
+
+    def test_init_with_mixed_types(self):
+        """Test DotDict with mixed value types."""
+        dd = DotDict(
+            {
+                "string": "text",
+                "number": 42,
+                "float": 3.14,
+                "bool": True,
+                "none": None,
+                "list": [1, 2, 3],
+                "nested": {"key": "value"},
+            }
+        )
+        assert dd.string == "text"
+        assert dd.number == 42
+        assert dd.float == 3.14
+        assert dd.bool is True
+        assert dd.none is None
+        assert dd.list == [1, 2, 3]
+        assert dd.nested.key == "value"
+
     def test_set_method(self):
         """Test set() method."""
         dd = DotDict()

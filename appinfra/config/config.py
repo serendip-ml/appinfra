@@ -110,10 +110,19 @@ class Config(DotDict):
     Environment Variable Override Format:
         INFRA_<SECTION>_<SUBSECTION>_<KEY>=value
 
+    Hyphenated Keys:
+        YAML keys with hyphens are automatically matched to environment variables
+        with underscores. Hyphens and underscores are treated as equivalent during
+        lookup.
+
+        Example:
+            YAML: services.web-server.port
+            Env:  INFRA_SERVICES_WEB_SERVER_PORT=8080
+
     Examples:
         INFRA_LOGGING_LEVEL=debug
         INFRA_PGSERVER_PORT=5432
-        INFRA_TEST_LOGGING_LEVEL=info
+        INFRA_SERVICES_WEB_SERVER_PORT=8080  # Matches 'web-server' key
 
     Include Example:
         # In config.yaml:
@@ -309,28 +318,142 @@ class Config(DotDict):
         """
         Set a nested value in the configuration dictionary.
 
+        Uses context-aware matching for hyphenated keys:
+        - Traverses the YAML structure intelligently
+        - Tries to match existing keys by combining path components with hyphens
+        - Treats hyphens and underscores as equivalent during comparison
+
         Args:
             data: Configuration dictionary to modify
             path: List of keys representing the path to the value
             value: Value to set
         """
-        current = data
-        for part in path[:-1]:
-            if (
-                current is None
-                or part not in current
-                or not isinstance(current.get(part), dict)
-            ):
-                if current is None:
-                    return  # Cannot set value in None
-                current[part] = {}
-            current = current[part]
+        if not path:
+            return
 
-        # Convert value to appropriate type
-        if current is None:
-            return  # Cannot set value in None
         converted_value = self._convert_env_value(value)
-        current[path[-1]] = converted_value
+        current = data
+        i = 0
+
+        while i < len(path):
+            if current is None:
+                return
+
+            # Cannot traverse into non-dict values (scalars, lists, etc.)
+            if not isinstance(current, dict):
+                return
+
+            remaining_components = len(path) - i
+            matched_key, consumed = self._match_key_greedy(current, path, i)
+            is_final = consumed > 0 and consumed == remaining_components
+            is_final = is_final or (consumed == 0 and remaining_components == 1)
+
+            if is_final:
+                self._set_final_value(current, path[i], matched_key, converted_value)
+                return
+
+            i = self._traverse_to_next_level(current, path, i, matched_key, consumed)
+            if i < 0:
+                # Cannot traverse further (e.g., hit a list)
+                return
+            current = current[matched_key] if matched_key else current[path[i - 1]]
+
+    def _set_final_value(
+        self, target: dict, part: str, matched_key: str | None, value: Any
+    ) -> None:
+        """Set the final value in the target dictionary."""
+        target[matched_key if matched_key else part] = value
+
+    def _traverse_to_next_level(
+        self,
+        current: dict,
+        path: list[str],
+        idx: int,
+        matched_key: str | None,
+        consumed: int,
+    ) -> int:
+        """Traverse to next level or create new section, return new index."""
+        if matched_key:
+            matched_val = current.get(matched_key)
+            if isinstance(matched_val, dict):
+                return idx + consumed
+            # Matched key exists but is not a dict
+            # Only replace scalars/None with dicts to allow nesting
+            # Lists are not replaced (cannot traverse into lists)
+            if matched_val is None or isinstance(matched_val, (str, int, float, bool)):
+                current[matched_key] = {}
+                return idx + consumed
+            # For lists or other types, stop traversal (no modification)
+            return -1
+
+        part = path[idx]
+        if part not in current:
+            current[part] = {}
+        return idx + 1
+
+    def _match_key_greedy(
+        self, data: dict, path: list[str], start_idx: int
+    ) -> tuple[str | None, int]:
+        """
+        Try to match a key in the dictionary by greedily combining path components.
+
+        This enables matching hyphenated YAML keys like 'web-server' with
+        environment variable components like ['web', 'server'].
+
+        Matching priority (for each combination length, longest first):
+        1. Exact single-component match
+        2. For multi-component: exact underscore → exact hyphen → normalized
+
+        Args:
+            data: Dictionary to search in
+            path: Full path components list
+            start_idx: Current position in path
+
+        Returns:
+            Tuple of (matched_key, num_components_consumed)
+            Returns (None, 0) if no match found
+        """
+        if not isinstance(data, dict):
+            return (None, 0)
+
+        # Try combining components (greedy: longer combinations first)
+        for end_idx in range(len(path), start_idx, -1):
+            components = path[start_idx:end_idx]
+            num_components = end_idx - start_idx
+
+            if num_components == 1:
+                if components[0] in data:
+                    return (components[0], 1)
+                continue
+
+            # Try multi-component matching strategies
+            matched = self._try_multicomponent_match(data, components, num_components)
+            if matched:
+                return matched
+
+        return (None, 0)
+
+    def _try_multicomponent_match(
+        self, data: dict, components: list[str], num_components: int
+    ) -> tuple[str, int] | None:
+        """Try matching multi-component key with various strategies."""
+        candidate_underscored = "_".join(components)
+        candidate_hyphenated = "-".join(components)
+
+        # Priority 1: Exact underscore match (e.g., web_server)
+        if candidate_underscored in data:
+            return (candidate_underscored, num_components)
+
+        # Priority 2: Exact hyphenated match (e.g., web-server)
+        if candidate_hyphenated in data:
+            return (candidate_hyphenated, num_components)
+
+        # Priority 3: Normalized match (handles mixed hyphens/underscores)
+        for key in data.keys():
+            if key.replace("-", "_") == candidate_underscored:
+                return (key, num_components)
+
+        return None
 
     def _convert_env_value(
         self, value: str

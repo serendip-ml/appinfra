@@ -45,14 +45,36 @@ class DotDict(dict, DictInterface):
         {"keys", "values", "items", "copy", "pop", "popitem", "setdefault", "update"}
     )
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """
         Initialize DotDict with initial key-value pairs.
 
+        Supports both dict positional argument and keyword arguments,
+        matching the built-in dict() API.
+
         Args:
+            *args: Optional dict as first positional argument
             **kwargs: Initial key-value pairs to set
+
+        Raises:
+            TypeError: If more than one positional argument or non-dict positional argument
+
+        Examples:
+            DotDict({"a": 1, "b": 2})  # From dict
+            DotDict(a=1, b=2)           # From kwargs
+            DotDict({"a": 1}, b=2)      # Both (kwargs override)
         """
         super().__init__()
+        if args:
+            if len(args) > 1:
+                raise TypeError(
+                    f"DotDict() takes at most 1 positional argument ({len(args)} given)"
+                )
+            if not isinstance(args[0], dict):
+                raise TypeError(
+                    f"DotDict() argument must be a dict, not {type(args[0]).__name__!r}"
+                )
+            self.set(**args[0])
         self.set(**kwargs)
 
     def __getattribute__(self, name: str) -> Any:
