@@ -10,6 +10,8 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-02-11
+
 ### Added
 - Standard CLI arguments for agent-friendly log output:
   - `--log-json` - Output logs in JSON format (overrides YAML handler `format: text`)
@@ -48,6 +50,8 @@ For API stability guarantees and deprecation policy, see
   - Both actual and target percentages show 1 decimal place (e.g., `89.9% ≥ 90.0%`)
   - Uses pessimistic floor rounding to prevent misleading displays (89.99% shows as 89.9%, not 90.0%)
   - Previously varied between 0-2 decimals depending on pytest output
+- PG config normalization - plain dict configs now converted to DotDict instead of SimpleNamespace,
+  providing consistent dot-notation access across all config types
 
 ## [0.3.4] - 2026-02-03
 
