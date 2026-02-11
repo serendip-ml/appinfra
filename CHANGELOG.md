@@ -10,6 +10,8 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-02-11
+
 ### Added
 - Standard CLI arguments for agent-friendly log output:
   - `--log-json` - Output logs in JSON format (overrides YAML handler `format: text`)
@@ -48,6 +50,8 @@ For API stability guarantees and deprecation policy, see
   - Both actual and target percentages show 1 decimal place (e.g., `89.9% ≥ 90.0%`)
   - Uses pessimistic floor rounding to prevent misleading displays (89.99% shows as 89.9%, not 90.0%)
   - Previously varied between 0-2 decimals depending on pytest output
+- PG config normalization - plain dict configs now converted to DotDict instead of SimpleNamespace,
+  providing consistent dot-notation access across all config types
 
 ## [0.3.4] - 2026-02-03
 
@@ -298,7 +302,11 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/serendip-ml/appinfra/compare/v0.3.4...v0.3.5
+[0.3.4]: https://github.com/serendip-ml/appinfra/compare/v0.3.3...v0.3.4
+[0.3.3]: https://github.com/serendip-ml/appinfra/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/serendip-ml/appinfra/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/serendip-ml/appinfra/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/serendip-ml/appinfra/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/serendip-ml/appinfra/compare/v0.2.0...v0.2.1
