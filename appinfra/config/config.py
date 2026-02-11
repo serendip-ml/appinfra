@@ -339,6 +339,10 @@ class Config(DotDict):
             if current is None:
                 return
 
+            # Cannot traverse into non-dict values (scalars, lists, etc.)
+            if not isinstance(current, dict):
+                return
+
             remaining_components = len(path) - i
             matched_key, consumed = self._match_key_greedy(current, path, i)
             is_final = consumed > 0 and consumed == remaining_components
@@ -349,6 +353,9 @@ class Config(DotDict):
                 return
 
             i = self._traverse_to_next_level(current, path, i, matched_key, consumed)
+            if i < 0:
+                # Cannot traverse further (e.g., hit a list)
+                return
             current = current[matched_key] if matched_key else current[path[i - 1]]
 
     def _set_final_value(
@@ -366,8 +373,18 @@ class Config(DotDict):
         consumed: int,
     ) -> int:
         """Traverse to next level or create new section, return new index."""
-        if matched_key and isinstance(current.get(matched_key), dict):
-            return idx + consumed
+        if matched_key:
+            matched_val = current.get(matched_key)
+            if isinstance(matched_val, dict):
+                return idx + consumed
+            # Matched key exists but is not a dict
+            # Only replace scalars/None with dicts to allow nesting
+            # Lists are not replaced (cannot traverse into lists)
+            if matched_val is None or isinstance(matched_val, (str, int, float, bool)):
+                current[matched_key] = {}
+                return idx + consumed
+            # For lists or other types, stop traversal (no modification)
+            return -1
 
         part = path[idx]
         if part not in current:
@@ -396,36 +413,47 @@ class Config(DotDict):
             Tuple of (matched_key, num_components_consumed)
             Returns (None, 0) if no match found
         """
-        # Try exact match first (single component)
-        if path[start_idx] in data:
-            return (path[start_idx], 1)
+        if not isinstance(data, dict):
+            return (None, 0)
 
         # Try combining components (greedy: longer combinations first)
-        # This ensures we match 'web-server' before trying 'web' separately
         for end_idx in range(len(path), start_idx, -1):
             components = path[start_idx:end_idx]
             num_components = end_idx - start_idx
 
-            if num_components < 2:
+            if num_components == 1:
+                if components[0] in data:
+                    return (components[0], 1)
                 continue
 
-            candidate_underscored = "_".join(components)
-            candidate_hyphenated = "-".join(components)
-
-            # Try exact underscore match
-            if candidate_underscored in data:
-                return (candidate_underscored, num_components)
-
-            # Try exact hyphenated match
-            if candidate_hyphenated in data:
-                return (candidate_hyphenated, num_components)
-
-            # Try normalized match (handles mixed hyphens/underscores)
-            for key in data.keys():
-                if key.replace("-", "_") == candidate_underscored:
-                    return (key, num_components)
+            # Try multi-component matching strategies
+            matched = self._try_multicomponent_match(data, components, num_components)
+            if matched:
+                return matched
 
         return (None, 0)
+
+    def _try_multicomponent_match(
+        self, data: dict, components: list[str], num_components: int
+    ) -> tuple[str, int] | None:
+        """Try matching multi-component key with various strategies."""
+        candidate_underscored = "_".join(components)
+        candidate_hyphenated = "-".join(components)
+
+        # Priority 1: Exact underscore match (e.g., web_server)
+        if candidate_underscored in data:
+            return (candidate_underscored, num_components)
+
+        # Priority 2: Exact hyphenated match (e.g., web-server)
+        if candidate_hyphenated in data:
+            return (candidate_hyphenated, num_components)
+
+        # Priority 3: Normalized match (handles mixed hyphens/underscores)
+        for key in data.keys():
+            if key.replace("-", "_") == candidate_underscored:
+                return (key, num_components)
+
+        return None
 
     def _convert_env_value(
         self, value: str
