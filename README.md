@@ -383,7 +383,7 @@ Falls back to plain logging on non-TTY:
 ```python
 from appinfra.ui import ProgressLogger
 
-with ProgressLogger(logger, "Processing...", total=100) as pl:
+with ProgressLogger(lg, "Processing...", total=100) as pl:
     for item in items:
         result = process(item)
         pl.log(f"Processed {item.name}")     # Pauses spinner, logs, resumes
