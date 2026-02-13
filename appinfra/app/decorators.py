@@ -420,7 +420,7 @@ class ToolFunction:
             Decorator function
         """
 
-        def decorator(func: Callable) -> Self:
+        def decorator(func: Callable) -> ToolFunction:
             subtool_func = ToolFunction(
                 func=func,
                 name=name,
