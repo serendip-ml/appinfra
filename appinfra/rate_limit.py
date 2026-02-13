@@ -96,6 +96,30 @@ class RateLimiter:
             return True
         return False
 
+    def can_proceed(self) -> bool:
+        """
+        Check if rate limit allows an operation (non-consuming).
+
+        Unlike try_next(), this does NOT update last_t or consume a slot.
+        Use this for informational checks in event loops where you need to
+        know availability without committing to an operation.
+
+        Returns:
+            bool: True if a call would be allowed, False if rate limited.
+
+        Example:
+            while True:
+                if limiter.can_proceed():
+                    limiter.try_next()  # Actually consume the slot
+                    do_operation()
+                else:
+                    handle_other_work()
+        """
+        if self.last_t is None:
+            return True
+        delay = 60.0 / self.per_minute
+        return time.monotonic() - self.last_t >= delay
+
 
 class Backoff:
     """
