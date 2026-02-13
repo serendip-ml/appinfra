@@ -240,6 +240,127 @@ class TestRateLimiterTryNext:
 
 
 # =============================================================================
+# Test RateLimiter can_proceed() Method
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestRateLimiterCanProceed:
+    """Test RateLimiter can_proceed() method."""
+
+    def test_first_call_returns_true(self):
+        """Test can_proceed() returns True when last_t is None."""
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)
+        assert limiter.can_proceed() is True
+
+    def test_does_not_modify_last_t_on_true(self):
+        """Test can_proceed() does NOT update last_t when returning True."""
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)
+
+        # Before any call, last_t should be None
+        assert limiter.last_t is None
+        assert limiter.can_proceed() is True
+        # Still None - not consumed
+        assert limiter.last_t is None
+
+    def test_does_not_modify_last_t_on_false(self):
+        """Test can_proceed() does NOT update last_t when returning False."""
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)
+
+        # Consume a slot first
+        limiter.try_next()
+        original_last_t = limiter.last_t
+
+        # can_proceed() should return False and not modify last_t
+        assert limiter.can_proceed() is False
+        assert limiter.last_t == original_last_t
+
+    def test_rapid_call_returns_false(self):
+        """Test can_proceed() returns False immediately after try_next()."""
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)  # 1 per second
+
+        # Consume a slot
+        limiter.try_next()
+
+        # Immediate can_proceed() should return False
+        assert limiter.can_proceed() is False
+
+    def test_after_delay_returns_true(self):
+        """Test can_proceed() returns True after sufficient delay."""
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=120)  # 0.5 second delay
+
+        limiter.try_next()
+
+        # Wait for the rate limit delay
+        time.sleep(0.55)
+
+        # Should return True now
+        assert limiter.can_proceed() is True
+
+    def test_multiple_calls_return_same_value(self):
+        """Test calling can_proceed() multiple times returns consistent value."""
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)
+
+        # Before any consumption - all should return True
+        assert limiter.can_proceed() is True
+        assert limiter.can_proceed() is True
+        assert limiter.can_proceed() is True
+        # Still not consumed
+        assert limiter.last_t is None
+
+        # Consume a slot
+        limiter.try_next()
+
+        # After consumption - all should return False
+        assert limiter.can_proceed() is False
+        assert limiter.can_proceed() is False
+        assert limiter.can_proceed() is False
+
+    def test_non_blocking_behavior(self):
+        """Test can_proceed() never blocks regardless of rate limit."""
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=1)  # Very slow: 60 second delay
+
+        limiter.try_next()
+
+        # Even with 60-second delay, can_proceed should return immediately
+        start = time.monotonic()
+        result = limiter.can_proceed()
+        elapsed = time.monotonic() - start
+
+        assert result is False
+        assert elapsed < 0.01  # Should be near-instant
+
+    def test_consistent_with_try_next(self):
+        """Test can_proceed() returns True exactly when try_next() would succeed."""
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=120)  # 0.5 second delay
+
+        # Initially both would succeed
+        assert limiter.can_proceed() is True
+
+        # Consume slot
+        limiter.try_next()
+
+        # Both would fail now
+        assert limiter.can_proceed() is False
+
+        # Wait for delay
+        time.sleep(0.55)
+
+        # Both would succeed now
+        assert limiter.can_proceed() is True
+        # Actually consume it to verify
+        assert limiter.try_next() is True
+
+
+# =============================================================================
 # Test Rate Limiting Calculations
 # =============================================================================
 

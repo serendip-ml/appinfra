@@ -22,6 +22,11 @@ For API stability guarantees and deprecation policy, see
   - Does not modify state when returning `False` (safe to call repeatedly)
   - Mirrors `Ticker.try_tick()` semantics: "attempt if ready, skip if not"
   - Use case: Rate-limit retries in message-processing loops without blocking signal handling
+- Non-consuming `RateLimiter.can_proceed()` method for availability checks:
+  - Returns `True` if rate limit would allow an operation, `False` if rate limited
+  - Does NOT consume a rate limit slot (never modifies `last_t`)
+  - Safe to call repeatedly - multiple calls return the same value
+  - Use case: Event loops that need to check availability without committing to an operation
 - Non-blocking Ticker API for mixed event sources (`time_until_next_tick()` and `try_tick()`):
   - `time_until_next_tick(now=None)` returns seconds until next tick (use as timeout for event loops)
   - `try_tick(now=None)` executes tick if ready, returns `bool` (works with or without handler)
