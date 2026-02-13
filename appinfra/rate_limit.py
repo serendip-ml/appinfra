@@ -120,7 +120,16 @@ class Backoff:
             max_delay: Maximum delay cap in seconds (default: 60.0)
             factor: Multiplier applied per attempt (default: 2.0)
             jitter: Whether to randomize delays to avoid thundering herd (default: True)
+
+        Raises:
+            ValueError: If base, max_delay, or factor have invalid values.
         """
+        if base <= 0:
+            raise ValueError("base must be positive")
+        if max_delay <= 0:
+            raise ValueError("max_delay must be positive")
+        if factor < 1:
+            raise ValueError("factor must be >= 1")
         self._lg = lg
         self.base = base
         self.max_delay = max_delay

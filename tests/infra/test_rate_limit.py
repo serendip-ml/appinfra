@@ -338,6 +338,39 @@ class TestBackoffInitialization:
         backoff = Backoff(mock_logger)
         assert backoff._lg is mock_logger
 
+    def test_init_rejects_non_positive_base(self):
+        """Test that base must be positive."""
+        mock_logger = Mock()
+        with pytest.raises(ValueError, match="base must be positive"):
+            Backoff(mock_logger, base=0)
+        with pytest.raises(ValueError, match="base must be positive"):
+            Backoff(mock_logger, base=-1.0)
+
+    def test_init_rejects_non_positive_max_delay(self):
+        """Test that max_delay must be positive."""
+        mock_logger = Mock()
+        with pytest.raises(ValueError, match="max_delay must be positive"):
+            Backoff(mock_logger, max_delay=0)
+        with pytest.raises(ValueError, match="max_delay must be positive"):
+            Backoff(mock_logger, max_delay=-10.0)
+
+    def test_init_rejects_factor_less_than_one(self):
+        """Test that factor must be >= 1."""
+        mock_logger = Mock()
+        with pytest.raises(ValueError, match="factor must be >= 1"):
+            Backoff(mock_logger, factor=0.5)
+        with pytest.raises(ValueError, match="factor must be >= 1"):
+            Backoff(mock_logger, factor=0)
+
+    def test_init_accepts_factor_of_one(self):
+        """Test that factor=1 is allowed (constant delay)."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, factor=1.0, jitter=False)
+        assert backoff.factor == 1.0
+        # All delays should be the same
+        delays = [backoff.next_delay() for _ in range(3)]
+        assert delays == [1.0, 1.0, 1.0]
+
 
 # =============================================================================
 # Test Backoff next_delay() Method

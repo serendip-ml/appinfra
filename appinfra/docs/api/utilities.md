@@ -172,9 +172,9 @@ class Backoff:
     def __init__(
         self,
         lg: Logger,               # Logger (required, first parameter)
-        base: float = 1.0,        # Initial delay (seconds)
-        max_delay: float = 60.0,  # Maximum delay cap
-        factor: float = 2.0,      # Multiplier per attempt
+        base: float = 1.0,        # Initial delay (seconds, must be > 0)
+        max_delay: float = 60.0,  # Maximum delay cap (must be > 0)
+        factor: float = 2.0,      # Multiplier per attempt (must be >= 1)
         jitter: bool = True,      # Randomize to avoid thundering herd
     ): ...
 

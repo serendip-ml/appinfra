@@ -31,7 +31,7 @@ from .exceptions import (
     ToolError,
     ValidationError,
 )
-from .rate_limit import RateLimiter
+from .rate_limit import Backoff, RateLimiter
 from .regex_utils import (
     RegexComplexityError,
     RegexTimeoutError,
@@ -58,6 +58,7 @@ __all__ = [
     "db",
     "net",
     # Core classes
+    "Backoff",
     "DictInterface",
     "DotDict",
     "EWMA",
