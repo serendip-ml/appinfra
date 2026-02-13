@@ -16,16 +16,18 @@ Example:
         return 0
 """
 
+from __future__ import annotations
+
 import warnings
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Self
 
 from .tools.base import Tool, ToolConfig
 
 # Helper functions for tool class generation
 
 
-def _build_tool_config(tool_func: "ToolFunction") -> ToolConfig:
+def _build_tool_config(tool_func: ToolFunction) -> ToolConfig:
     """
     Create tool configuration from ToolFunction metadata.
 
@@ -43,7 +45,7 @@ def _build_tool_config(tool_func: "ToolFunction") -> ToolConfig:
     )
 
 
-def _register_tool_arguments(tool_func: "ToolFunction", parser) -> None:
+def _register_tool_arguments(tool_func: ToolFunction, parser) -> None:
     """
     Register all command-line arguments from @argument decorators.
 
@@ -55,7 +57,7 @@ def _register_tool_arguments(tool_func: "ToolFunction", parser) -> None:
         parser.add_argument(*args, **kwargs)
 
 
-def _run_setup_hook(tool_func: "ToolFunction", tool_instance, kwargs: dict) -> None:
+def _run_setup_hook(tool_func: ToolFunction, tool_instance, kwargs: dict) -> None:
     """
     Execute custom setup hook if provided.
 
@@ -68,7 +70,7 @@ def _run_setup_hook(tool_func: "ToolFunction", tool_instance, kwargs: dict) -> N
         tool_func.setup_hook(tool_instance, **kwargs)
 
 
-def _run_configure_hook(tool_func: "ToolFunction", tool_instance) -> None:
+def _run_configure_hook(tool_func: ToolFunction, tool_instance) -> None:
     """
     Execute custom configure hook if provided.
 
@@ -80,9 +82,7 @@ def _run_configure_hook(tool_func: "ToolFunction", tool_instance) -> None:
         tool_func.configure_hook(tool_instance)
 
 
-def _execute_tool_function(
-    tool_func: "ToolFunction", tool_instance, kwargs: dict
-) -> int:
+def _execute_tool_function(tool_func: ToolFunction, tool_instance, kwargs: dict) -> int:
     """
     Execute the tool function with proper handling of subtools and return values.
 
@@ -105,7 +105,7 @@ def _execute_tool_function(
     return _normalize_return_value(result, tool_func.name)
 
 
-def _setup_subtools(tool_func: "ToolFunction", tool_instance) -> None:
+def _setup_subtools(tool_func: ToolFunction, tool_instance) -> None:
     """
     Set up subtool hierarchy during tool initialization.
 
@@ -126,7 +126,7 @@ def _setup_subtools(tool_func: "ToolFunction", tool_instance) -> None:
         tool_instance.add_tool(subtool)
 
 
-def _handle_subtools(tool_func: "ToolFunction", tool_instance, kwargs: dict) -> int:
+def _handle_subtools(tool_func: ToolFunction, tool_instance, kwargs: dict) -> int:
     """
     Execute subtool hierarchy.
 
@@ -172,7 +172,7 @@ def _normalize_return_value(result: Any, tool_name: str) -> int:
     return 0
 
 
-def _create_decorated_tool_class(tool_func: "ToolFunction") -> type:
+def _create_decorated_tool_class(tool_func: ToolFunction) -> type:
     """Create a Tool subclass from a ToolFunction."""
 
     class DecoratedTool(Tool):
@@ -204,7 +204,7 @@ def _create_decorated_tool_class(tool_func: "ToolFunction") -> type:
     return DecoratedTool
 
 
-def _set_decorated_tool_metadata(tool_class: type, tool_func: "ToolFunction") -> None:
+def _set_decorated_tool_metadata(tool_class: type, tool_func: ToolFunction) -> None:
     """
     Set proper class metadata for generated Tool subclass.
 
@@ -222,7 +222,7 @@ def _set_decorated_tool_metadata(tool_class: type, tool_func: "ToolFunction") ->
 # Helper functions for DecoratorAPI.tool()
 
 
-def _apply_pending_arguments(tool_func: "ToolFunction", func: Callable) -> None:
+def _apply_pending_arguments(tool_func: ToolFunction, func: Callable) -> None:
     """
     Apply @argument decorators that were applied before @tool decorator.
 
@@ -236,7 +236,7 @@ def _apply_pending_arguments(tool_func: "ToolFunction", func: Callable) -> None:
             tool_func.argument(*arg_args, **arg_kwargs)
 
 
-def _create_tool_instance_from_func(tool_func: "ToolFunction") -> Tool:
+def _create_tool_instance_from_func(tool_func: ToolFunction) -> Tool:
     """
     Convert ToolFunction to Tool class and instantiate.
 
@@ -332,7 +332,7 @@ class ToolFunction:
                 return stripped
         return ""
 
-    def argument(self, *args, **kwargs) -> "ToolFunction":
+    def argument(self, *args, **kwargs) -> Self:
         """
         Add a command-line argument to this tool.
 
@@ -348,7 +348,7 @@ class ToolFunction:
         self.arguments.append((args, kwargs))
         return self
 
-    def on_setup(self, func: Callable) -> "ToolFunction":
+    def on_setup(self, func: Callable) -> Self:
         """
         Register a setup lifecycle hook.
 
@@ -374,7 +374,7 @@ class ToolFunction:
         self.setup_hook = func
         return self
 
-    def on_configure(self, func: Callable) -> "ToolFunction":
+    def on_configure(self, func: Callable) -> Self:
         """
         Register a configure lifecycle hook.
 
@@ -420,7 +420,7 @@ class ToolFunction:
             Decorator function
         """
 
-        def decorator(func: Callable) -> "ToolFunction":
+        def decorator(func: Callable) -> Self:
             subtool_func = ToolFunction(
                 func=func,
                 name=name,

@@ -5,8 +5,10 @@ This module provides focused builder for advanced features like hooks,
 validation, and custom arguments.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 from ..hook import HookBuilder
 from ..validation import ValidationBuilder, ValidationRule
@@ -23,7 +25,7 @@ class AdvancedConfigurer:
     following the Single Responsibility Principle.
     """
 
-    def __init__(self, app_builder: "AppBuilder"):
+    def __init__(self, app_builder: AppBuilder):
         """
         Initialize the advanced configurer.
 
@@ -32,7 +34,7 @@ class AdvancedConfigurer:
         """
         self._app_builder = app_builder
 
-    def with_hook(self, event: str, callback: Callable) -> "AdvancedConfigurer":
+    def with_hook(self, event: str, callback: Callable) -> Self:
         """
         Add a lifecycle hook.
 
@@ -46,7 +48,7 @@ class AdvancedConfigurer:
         self._app_builder._hooks.register_hook(event, callback)
         return self
 
-    def with_hook_builder(self, builder: HookBuilder) -> "AdvancedConfigurer":
+    def with_hook_builder(self, builder: HookBuilder) -> Self:
         """
         Add hooks using a hook builder.
 
@@ -63,7 +65,7 @@ class AdvancedConfigurer:
                 self._app_builder._hooks.register_hook(event, callback)
         return self
 
-    def with_validation_rule(self, rule: ValidationRule) -> "AdvancedConfigurer":
+    def with_validation_rule(self, rule: ValidationRule) -> Self:
         """
         Add a validation rule.
 
@@ -76,9 +78,7 @@ class AdvancedConfigurer:
         self._app_builder._validation_rules.append(rule)
         return self
 
-    def with_validation_builder(
-        self, builder: ValidationBuilder
-    ) -> "AdvancedConfigurer":
+    def with_validation_builder(self, builder: ValidationBuilder) -> Self:
         """
         Add validation rules using a validation builder.
 
@@ -91,7 +91,7 @@ class AdvancedConfigurer:
         self._app_builder._validation_rules.extend(builder.build())
         return self
 
-    def with_argument(self, *args: Any, **kwargs: Any) -> "AdvancedConfigurer":
+    def with_argument(self, *args: Any, **kwargs: Any) -> Self:
         """
         Add a custom command-line argument.
 
@@ -105,7 +105,7 @@ class AdvancedConfigurer:
         self._app_builder._custom_args.append((args, kwargs))
         return self
 
-    def done(self) -> "AppBuilder":
+    def done(self) -> AppBuilder:
         """
         Finish advanced configuration and return to main builder.
 

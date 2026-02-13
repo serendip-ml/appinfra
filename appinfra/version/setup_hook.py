@@ -27,8 +27,6 @@ Both approaches write to the build directory (not source), keeping the repo clea
 Source should contain a stub _build_info.py with empty values.
 """
 
-from __future__ import annotations
-
 import subprocess
 import sys
 from datetime import UTC, datetime

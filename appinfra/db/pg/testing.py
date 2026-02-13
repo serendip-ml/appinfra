@@ -33,6 +33,8 @@ If these fixtures are not provided, default implementations will be used that
 read from environment variables (APPINFRA_TEST_PG_URL) or skip the tests.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
@@ -98,7 +100,7 @@ def pg_test_config() -> dict[str, Any]:
 
 
 @pytest.fixture(scope="session")
-def pg_test_logger() -> "Logger":
+def pg_test_logger() -> Logger:
     """
     Provide a logger for testing.
 
@@ -122,9 +124,9 @@ def pg_test_logger() -> "Logger":
 @pytest.fixture(scope="session")
 def pg_isolated(
     pg_test_config: dict[str, Any],
-    pg_test_logger: "Logger",
+    pg_test_logger: Logger,
     pg_test_schema: str,
-) -> Generator["PG", None, None]:
+) -> Generator[PG, None, None]:
     """
     Create a PG instance with schema isolation for the test session.
 
@@ -156,7 +158,7 @@ def pg_isolated(
 
 
 @pytest.fixture
-def pg_session_isolated(pg_isolated: "PG") -> Generator[Any, None, None]:
+def pg_session_isolated(pg_isolated: PG) -> Generator[Any, None, None]:
     """
     Create a database session with automatic commit/rollback.
 
@@ -181,7 +183,7 @@ def pg_session_isolated(pg_isolated: "PG") -> Generator[Any, None, None]:
 
 
 @pytest.fixture
-def pg_clean_schema(pg_isolated: "PG") -> Generator["PG", None, None]:
+def pg_clean_schema(pg_isolated: PG) -> Generator[PG, None, None]:
     """
     Ensure a completely fresh schema for each test.
 
@@ -207,7 +209,7 @@ def pg_clean_schema(pg_isolated: "PG") -> Generator["PG", None, None]:
 @pytest.fixture(scope="session")
 def pg_migrate_factory(
     pg_test_config: dict[str, Any],
-    pg_test_logger: "Logger",
+    pg_test_logger: Logger,
     pg_test_schema: str,
 ) -> Callable[..., Any]:
     """
@@ -242,8 +244,8 @@ def pg_migrate_factory(
 
     @contextmanager
     def _factory(
-        base: "DeclarativeBase", extensions: list[str] | None = None
-    ) -> Generator["PG", None, None]:
+        base: DeclarativeBase, extensions: list[str] | None = None
+    ) -> Generator[PG, None, None]:
         from .pg import PG
 
         # Merge extensions into config if provided
@@ -270,9 +272,9 @@ def pg_migrate_factory(
 
 
 def make_migrate_fixture(
-    base: "DeclarativeBase",
+    base: DeclarativeBase,
     extensions: list[str] | None = None,
-) -> Callable[..., Generator["PG", None, None]]:
+) -> Callable[..., Generator[PG, None, None]]:
     """
     Create a fixture that runs migrations before tests.
 
@@ -312,9 +314,9 @@ def make_migrate_fixture(
     @pytest.fixture(scope="session")
     def _migrate_fixture(
         pg_test_config: dict[str, Any],
-        pg_test_logger: "Logger",
+        pg_test_logger: Logger,
         pg_test_schema: str,
-    ) -> Generator["PG", None, None]:
+    ) -> Generator[PG, None, None]:
         from .pg import PG
 
         # Merge extensions into config if provided (use None check so empty list clears extensions)
@@ -346,7 +348,7 @@ def make_migrate_fixture(
 
 
 @pytest.fixture(scope="session")
-def pg_schema_info(pg_isolated: "PG") -> dict[str, Any]:
+def pg_schema_info(pg_isolated: PG) -> dict[str, Any]:
     """
     Get information about the current schema configuration.
 
@@ -368,7 +370,7 @@ def pg_schema_info(pg_isolated: "PG") -> dict[str, Any]:
 
 
 @pytest.fixture
-def assert_table_in_schema(pg_isolated: "PG") -> Callable[[str], None]:
+def assert_table_in_schema(pg_isolated: PG) -> Callable[[str], None]:
     """
     Provide an assertion helper to verify tables are in the correct schema.
 

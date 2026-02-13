@@ -373,9 +373,7 @@ class LoggingBuilder(LoggingBuilderInterface):
         }
 
     @classmethod
-    def from_dict(
-        cls, config: dict[str, Any], name: str | None = None
-    ) -> "LoggingBuilder":
+    def from_dict(cls, config: dict[str, Any], name: str | None = None) -> Self:
         """
         Create a builder from a serialized configuration dictionary.
 

@@ -5,11 +5,9 @@ This module provides immutable configuration classes for loggers and formatters,
 ensuring consistent configuration across the logging system.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
 
 @dataclass(frozen=True)
@@ -68,7 +66,7 @@ class LogConfig:
         micros: bool = False,
         colors: bool = True,
         location_color: str | None = None,
-    ) -> LogConfig:
+    ) -> Self:
         """
         Create LogConfig from individual parameters.
 
@@ -126,7 +124,7 @@ class LogConfig:
         return location_color
 
     @classmethod
-    def from_config(cls, config_dict: dict, section: str = "logging") -> LogConfig:
+    def from_config(cls, config_dict: dict, section: str = "logging") -> Self:
         """
         Create LogConfig from a configuration dictionary.
 
@@ -187,7 +185,7 @@ class LogConfig:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> LogConfig:
+    def from_dict(cls, d: dict[str, Any]) -> Self:
         """
         Create LogConfig from a dictionary.
 

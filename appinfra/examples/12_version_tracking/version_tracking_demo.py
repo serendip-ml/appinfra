@@ -17,8 +17,6 @@ Run with:
     python version_tracking_demo.py list
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

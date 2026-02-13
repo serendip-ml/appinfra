@@ -4,7 +4,9 @@ Server configuration builder for AppBuilder.
 This module provides focused builder for configuring server and middleware.
 """
 
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Self
 
 from ...server.handlers import Middleware
 from ..middleware import MiddlewareBuilder
@@ -21,7 +23,7 @@ class ServerConfigurer:
     following the Single Responsibility Principle.
     """
 
-    def __init__(self, app_builder: "AppBuilder"):
+    def __init__(self, app_builder: AppBuilder):
         """
         Initialize the server configurer.
 
@@ -30,7 +32,7 @@ class ServerConfigurer:
         """
         self._app_builder = app_builder
 
-    def with_config(self, config: "ServerConfig") -> "ServerConfigurer":
+    def with_config(self, config: ServerConfig) -> Self:
         """
         Set the server configuration.
 
@@ -43,7 +45,7 @@ class ServerConfigurer:
         self._app_builder._server_config = config
         return self
 
-    def with_port(self, port: int) -> "ServerConfigurer":
+    def with_port(self, port: int) -> Self:
         """
         Set the server port.
 
@@ -60,7 +62,7 @@ class ServerConfigurer:
         self._app_builder._server_config.port = port
         return self
 
-    def with_host(self, host: str) -> "ServerConfigurer":
+    def with_host(self, host: str) -> Self:
         """
         Set the server host.
 
@@ -77,7 +79,7 @@ class ServerConfigurer:
         self._app_builder._server_config.host = host
         return self
 
-    def with_ssl(self, enabled: bool = True) -> "ServerConfigurer":
+    def with_ssl(self, enabled: bool = True) -> Self:
         """
         Enable or disable SSL.
 
@@ -94,7 +96,7 @@ class ServerConfigurer:
         self._app_builder._server_config.ssl_enabled = enabled
         return self
 
-    def with_cors_origins(self, *origins: str) -> "ServerConfigurer":
+    def with_cors_origins(self, *origins: str) -> Self:
         """
         Set CORS allowed origins.
 
@@ -111,7 +113,7 @@ class ServerConfigurer:
         self._app_builder._server_config.cors_origins = list(origins)
         return self
 
-    def with_timeout(self, timeout: int) -> "ServerConfigurer":
+    def with_timeout(self, timeout: int) -> Self:
         """
         Set request timeout.
 
@@ -128,7 +130,7 @@ class ServerConfigurer:
         self._app_builder._server_config.timeout = timeout
         return self
 
-    def with_middleware(self, middleware: Middleware) -> "ServerConfigurer":
+    def with_middleware(self, middleware: Middleware) -> Self:
         """
         Add middleware to the application.
 
@@ -141,7 +143,7 @@ class ServerConfigurer:
         self._app_builder._middleware.append(middleware)
         return self
 
-    def with_middleware_builder(self, builder: MiddlewareBuilder) -> "ServerConfigurer":
+    def with_middleware_builder(self, builder: MiddlewareBuilder) -> Self:
         """
         Add middleware using a middleware builder.
 
@@ -154,7 +156,7 @@ class ServerConfigurer:
         self._app_builder._middleware.append(builder.build())
         return self
 
-    def done(self) -> "AppBuilder":
+    def done(self) -> AppBuilder:
         """
         Finish server configuration and return to main builder.
 

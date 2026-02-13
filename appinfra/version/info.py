@@ -5,11 +5,10 @@ This module defines the data structure for storing version and commit
 information about installed packages.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Self
 
 
 @dataclass
@@ -85,7 +84,7 @@ class BuildInfo:
         return None
 
     @classmethod
-    def from_path(cls, path: Path) -> BuildInfo | None:
+    def from_path(cls, path: Path) -> Self | None:
         """
         Read build info from a _build_info.py file.
 
@@ -140,7 +139,7 @@ class BuildInfo:
     @classmethod
     def _create_from_namespace(
         cls, namespace: dict[str, object], commit_full: str, source_path: Path
-    ) -> BuildInfo:
+    ) -> Self:
         """Create BuildInfo from parsed namespace."""
         commit_short = str(namespace.get("COMMIT_SHORT", ""))
         commit_message = str(namespace.get("COMMIT_MESSAGE", ""))
@@ -164,7 +163,7 @@ class BuildInfo:
         )
 
     @classmethod
-    def _from_git_runtime(cls, directory: Path) -> BuildInfo | None:
+    def _from_git_runtime(cls, directory: Path) -> Self | None:
         """
         Create BuildInfo by running git commands at runtime.
 

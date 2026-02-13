@@ -8,7 +8,7 @@ dot-notation path traversal.
 
 import builtins
 import datetime
-from typing import Any
+from typing import Any, Self
 
 from . import time as timeutils
 from .dict import DictInterface
@@ -123,7 +123,7 @@ class DotDict(dict, DictInterface):
         """
         self._set_item(key, value)
 
-    def set(self, **kwargs: Any) -> "DotDict":
+    def set(self, **kwargs: Any) -> Self:
         """
         Set multiple key-value pairs, with automatic nested object creation.
 

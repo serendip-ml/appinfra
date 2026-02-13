@@ -8,7 +8,7 @@ ensuring consistent API across different builder implementations.
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 from ..config import LogConfig
 from ..logger import Logger
@@ -52,7 +52,7 @@ class LoggingBuilderInterface(ABC):
     """
 
     @abstractmethod
-    def with_level(self, level: str | int) -> "LoggingBuilderInterface":
+    def with_level(self, level: str | int) -> Self:
         """
         Set the log level.
 
@@ -65,7 +65,7 @@ class LoggingBuilderInterface(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def with_location(self, location: bool | int) -> "LoggingBuilderInterface":
+    def with_location(self, location: bool | int) -> Self:
         """
         Set the location display level.
 
@@ -78,7 +78,7 @@ class LoggingBuilderInterface(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def with_micros(self, micros: bool = True) -> "LoggingBuilderInterface":
+    def with_micros(self, micros: bool = True) -> Self:
         """
         Enable or disable microsecond precision.
 
@@ -91,7 +91,7 @@ class LoggingBuilderInterface(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def with_colors(self, enabled: bool = True) -> "LoggingBuilderInterface":
+    def with_colors(self, enabled: bool = True) -> Self:
         """
         Enable or disable colored output.
 
@@ -104,7 +104,7 @@ class LoggingBuilderInterface(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def with_config(self, config: dict[str, Any]) -> "LoggingBuilderInterface":
+    def with_config(self, config: dict[str, Any]) -> Self:
         """
         Set multiple configuration parameters at once.
 
@@ -121,7 +121,7 @@ class LoggingBuilderInterface(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def with_extra(self, **kwargs: Any) -> "LoggingBuilderInterface":
+    def with_extra(self, **kwargs: Any) -> Self:
         """
         Add extra fields to pre-populate in log records.
 
@@ -137,9 +137,7 @@ class LoggingBuilderInterface(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def with_handler(
-        self, handler_config: "HandlerConfig"
-    ) -> "LoggingBuilderInterface":
+    def with_handler(self, handler_config: HandlerConfig) -> Self:
         """
         Add a handler configuration.
 
@@ -154,7 +152,7 @@ class LoggingBuilderInterface(ABC):
     @abstractmethod
     def with_console_handler(
         self, stream: Any = None, level: str | int | None = None
-    ) -> "LoggingBuilderInterface":
+    ) -> Self:
         """
         Add a console handler.
 
@@ -173,7 +171,7 @@ class LoggingBuilderInterface(ABC):
         file_path: str | Path,
         level: str | int | None = None,
         **kwargs: Any,
-    ) -> "LoggingBuilderInterface":
+    ) -> Self:
         """
         Add a file handler.
 
@@ -195,7 +193,7 @@ class LoggingBuilderInterface(ABC):
         backup_count: int = 0,
         level: str | int | None = None,
         **kwargs: Any,
-    ) -> "LoggingBuilderInterface":
+    ) -> Self:
         """
         Add a rotating file handler.
 
@@ -220,7 +218,7 @@ class LoggingBuilderInterface(ABC):
         backup_count: int = 0,
         level: str | int | None = None,
         **kwargs: Any,
-    ) -> "LoggingBuilderInterface":
+    ) -> Self:
         """
         Add a timed rotating file handler.
 

@@ -6,6 +6,8 @@ Each PG instance can be configured to use a specific schema, with all queries au
 routed to that schema via search_path.
 """
 
+from __future__ import annotations
+
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -48,7 +50,7 @@ class SchemaManager:
         >>> # All queries now use schema test_gw0
     """
 
-    def __init__(self, engine: Engine, schema: str, logger: "Logger") -> None:
+    def __init__(self, engine: Engine, schema: str, logger: Logger) -> None:
         """
         Initialize the schema manager.
 
@@ -156,7 +158,7 @@ class SchemaManager:
         self._lg.debug("reset schema", extra={"schema": self._schema})
 
 
-def create_all_in_schema(base: "DeclarativeBase", engine: Engine, schema: str) -> None:
+def create_all_in_schema(base: DeclarativeBase, engine: Engine, schema: str) -> None:
     """
     Create tables in a specific schema.
 

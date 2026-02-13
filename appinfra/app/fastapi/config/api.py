@@ -1,7 +1,5 @@
 """HTTP API server configuration."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 
 from .ipc import IPCConfig

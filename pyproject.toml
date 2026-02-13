@@ -73,12 +73,13 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "N",   # pep8-naming
-    "UP",  # pyupgrade
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "UP037", # Remove quotes from annotations (explicit for policy enforcement)
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
@@ -108,21 +109,12 @@ known-first-party = ["appinfra"]
 "appinfra/log/formatters.py" = ["N802"]  # formatTime overrides logging.Formatter
 "appinfra/log/logger.py" = ["N802"]  # _makeRecord, findCaller override logging.Logger
 "appinfra/log/__init__.py" = ["E402"]  # ColorManager import after level definitions
-"appinfra/log/config.py" = ["F821"]  # Forward reference to logging module
-"appinfra/log/callback.py" = ["F821"]  # Forward reference to Logger
 "appinfra/app/server/base.py" = ["N802"]  # server_do_GET/POST/PUT/DELETE (HTTP methods)
-"appinfra/app/factory.py" = ["N805", "F821"]  # Static method + forward references
 "appinfra/log/factory.py" = ["N805"]  # Static method with non-self first param
-"appinfra/app/builder/plugin.py" = ["F821"]  # Forward reference to AppBuilder
-"appinfra/app/tools/base.py" = ["F821"]  # Forward references to Tool/ToolGroup
-"appinfra/app/tools/group.py" = ["F821"]  # Forward reference to Tool
-"appinfra/app/tools/registry.py" = ["F821"]  # Forward reference to Tool
 "appinfra/config/schemas.py" = ["N815"]  # Pydantic fields match logging.handlers naming
 "appinfra/db/db.py" = ["N818"]  # Exception naming convention (historical)
 "appinfra/cli/cli.py" = ["E402"]  # sys.path modification before imports (script mode)
 "appinfra/examples/06_advanced/tcp_server.py" = ["N802"]  # do_GET HTTP method
-"appinfra/app/fastapi/**/*.py" = ["F821"]  # Forward references for TYPE_CHECKING imports
-"appinfra/app/fastapi/plugin.py" = ["F821"]  # Forward reference to AppBuilder, App
 
 [tool.ruff.format]
 quote-style = "double"

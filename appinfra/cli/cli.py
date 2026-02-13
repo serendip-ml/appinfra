@@ -44,7 +44,7 @@ _TOOLS = [
 ]
 
 
-def _build_app() -> "App":
+def _build_app() -> App:
     """Build the CLI application with all tools registered."""
     builder = (
         AppBuilder("appinfra")

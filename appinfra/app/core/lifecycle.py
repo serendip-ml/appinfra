@@ -4,6 +4,8 @@ Application lifecycle management.
 This module provides lifecycle management for the application framework.
 """
 
+from __future__ import annotations
+
 import os
 import sys
 from collections.abc import Callable
@@ -469,11 +471,11 @@ class LifecycleManager:
         pass
 
     @property
-    def logger(self) -> "Logger | None":
+    def logger(self) -> Logger | None:
         """Get the root logger (for user tools)."""
         return self._logger
 
     @property
-    def infra_logger(self) -> "Logger | None":
+    def infra_logger(self) -> Logger | None:
         """Get the infra framework logger (for framework components)."""
         return self._infra_logger
