@@ -14,7 +14,7 @@ import sqlalchemy_utils
 from sqlalchemy import text
 
 from ...dot_dict import DotDict
-from ...log import LoggerFactory
+from ...log import Logger, LoggerFactory
 from .connection import ConnectionManager
 from .core import (
     ConfigValidator,
@@ -85,7 +85,7 @@ class PG(Interface):
 
     def __init__(
         self,
-        lg: Any,
+        lg: Logger,
         cfg: Any,
         query_lg_level: Any | None = None,
         schema: str | None = None,

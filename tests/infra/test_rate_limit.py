@@ -26,20 +26,28 @@ class TestRateLimiterInitialization:
 
     def test_init_with_per_minute(self):
         """Test initialization with per_minute parameter."""
-        limiter = RateLimiter(per_minute=60)
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)
         assert limiter.per_minute == 60
         assert limiter.last_t is None
 
     def test_init_with_logger(self):
         """Test initialization with logger."""
         mock_logger = Mock()
-        limiter = RateLimiter(per_minute=60, lg=mock_logger)
+        limiter = RateLimiter(mock_logger, per_minute=60)
         assert limiter._lg is mock_logger
 
-    def test_init_without_logger(self):
-        """Test initialization without logger."""
-        limiter = RateLimiter(per_minute=60)
-        assert limiter._lg is None
+    def test_init_with_zero_per_minute_raises(self):
+        """Test initialization with zero per_minute raises ValueError."""
+        mock_logger = Mock()
+        with pytest.raises(ValueError, match="per_minute must be positive"):
+            RateLimiter(mock_logger, per_minute=0)
+
+    def test_init_with_negative_per_minute_raises(self):
+        """Test initialization with negative per_minute raises ValueError."""
+        mock_logger = Mock()
+        with pytest.raises(ValueError, match="per_minute must be positive"):
+            RateLimiter(mock_logger, per_minute=-10)
 
 
 # =============================================================================
@@ -53,14 +61,16 @@ class TestRateLimiterNext:
 
     def test_first_call_no_wait(self):
         """Test first call to next() doesn't wait."""
-        limiter = RateLimiter(per_minute=60)
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)
         wait = limiter.next()
         assert wait == 0
         assert limiter.last_t is not None
 
     def test_rapid_calls_cause_waiting(self):
         """Test rapid calls cause waiting."""
-        limiter = RateLimiter(per_minute=120)  # 2 per second
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=120)  # 2 per second
 
         # First call
         limiter.next()
@@ -76,7 +86,8 @@ class TestRateLimiterNext:
 
     def test_respect_max_ticks_false_no_sleep(self):
         """Test respect_max_ticks=False doesn't sleep."""
-        limiter = RateLimiter(per_minute=120)
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=120)
 
         # First call
         limiter.next()
@@ -92,7 +103,8 @@ class TestRateLimiterNext:
 
     def test_sufficient_delay_no_wait(self):
         """Test sufficient delay between calls doesn't cause waiting."""
-        limiter = RateLimiter(per_minute=60)
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)
 
         # First call
         limiter.next()
@@ -107,7 +119,7 @@ class TestRateLimiterNext:
     def test_logger_called_when_waiting(self):
         """Test logger is called when waiting."""
         mock_logger = Mock()
-        limiter = RateLimiter(per_minute=120, lg=mock_logger)
+        limiter = RateLimiter(mock_logger, per_minute=120)
 
         # First call
         limiter.next()
@@ -125,7 +137,7 @@ class TestRateLimiterNext:
     def test_logger_not_called_without_wait(self):
         """Test logger not called when not waiting."""
         mock_logger = Mock()
-        limiter = RateLimiter(per_minute=60, lg=mock_logger)
+        limiter = RateLimiter(mock_logger, per_minute=60)
 
         # First call - no wait
         limiter.next()
@@ -145,13 +157,15 @@ class TestRateLimiterTryNext:
 
     def test_first_call_returns_true(self):
         """Test first call to try_next() returns True."""
-        limiter = RateLimiter(per_minute=60)
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)
         assert limiter.try_next() is True
         assert limiter.last_t is not None
 
     def test_rapid_call_returns_false(self):
         """Test rapid second call returns False without blocking."""
-        limiter = RateLimiter(per_minute=60)  # 1 per second
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)  # 1 per second
 
         # First call should succeed
         assert limiter.try_next() is True
@@ -169,7 +183,8 @@ class TestRateLimiterTryNext:
 
     def test_after_delay_returns_true(self):
         """Test try_next() returns True after sufficient delay."""
-        limiter = RateLimiter(per_minute=120)  # 0.5 second delay
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=120)  # 0.5 second delay
 
         assert limiter.try_next() is True
 
@@ -181,7 +196,8 @@ class TestRateLimiterTryNext:
 
     def test_does_not_modify_state_on_false(self):
         """Test try_next() doesn't modify last_t when returning False."""
-        limiter = RateLimiter(per_minute=60)
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)
 
         limiter.try_next()
         original_last_t = limiter.last_t
@@ -194,7 +210,8 @@ class TestRateLimiterTryNext:
 
     def test_updates_state_on_true(self):
         """Test try_next() updates last_t when returning True."""
-        limiter = RateLimiter(per_minute=120)
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=120)
 
         limiter.try_next()
         first_t = limiter.last_t
@@ -208,7 +225,8 @@ class TestRateLimiterTryNext:
 
     def test_non_blocking_behavior(self):
         """Test try_next() never blocks regardless of rate limit."""
-        limiter = RateLimiter(per_minute=1)  # Very slow: 60 second delay
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=1)  # Very slow: 60 second delay
 
         limiter.try_next()
 
@@ -232,19 +250,22 @@ class TestRateLimitingCalculations:
 
     def test_60_per_minute_delay(self):
         """Test 60 per minute gives 1 second delay."""
-        limiter = RateLimiter(per_minute=60)
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=60)
         delay = 60.0 / limiter.per_minute
         assert delay == 1.0
 
     def test_120_per_minute_delay(self):
         """Test 120 per minute gives 0.5 second delay."""
-        limiter = RateLimiter(per_minute=120)
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=120)
         delay = 60.0 / limiter.per_minute
         assert delay == 0.5
 
     def test_30_per_minute_delay(self):
         """Test 30 per minute gives 2 second delay."""
-        limiter = RateLimiter(per_minute=30)
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=30)
         delay = 60.0 / limiter.per_minute
         assert delay == 2.0
 
@@ -260,7 +281,8 @@ class TestRateLimiterIntegration:
 
     def test_rate_limiter_workflow(self):
         """Test complete rate limiter workflow."""
-        limiter = RateLimiter(per_minute=120)  # Fast rate for testing
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=120)  # Fast rate for testing
 
         # First operation - no wait
         wait1 = limiter.next()
@@ -276,7 +298,8 @@ class TestRateLimiterIntegration:
 
     def test_rate_limiter_with_variable_delays(self):
         """Test rate limiter with variable delays between calls."""
-        limiter = RateLimiter(per_minute=120)
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=120)
 
         limiter.next()
         time.sleep(0.3)  # Partial delay
@@ -287,7 +310,8 @@ class TestRateLimiterIntegration:
 
     def test_multiple_operations_stay_within_rate(self):
         """Test multiple operations stay within rate limit."""
-        limiter = RateLimiter(per_minute=120)  # 2 per second
+        mock_logger = Mock()
+        limiter = RateLimiter(mock_logger, per_minute=120)  # 2 per second
 
         start = time.monotonic()
 

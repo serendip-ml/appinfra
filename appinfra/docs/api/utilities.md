@@ -124,7 +124,11 @@ Control operation frequency with blocking or non-blocking modes.
 
 ```python
 class RateLimiter:
-    def __init__(self, per_minute: int, lg: Logger | None = None): ...
+    def __init__(
+        self,
+        lg: Logger,               # Logger (required, first parameter)
+        per_minute: float,        # Operations per minute (e.g., 1/60 for hourly)
+    ): ...
 
     def next(self, respect_max_ticks: bool = True) -> float: ...  # Blocking: wait and return delay
     def try_next(self) -> bool: ...                               # Non-blocking: return True if allowed
@@ -134,8 +138,10 @@ class RateLimiter:
 
 ```python
 from appinfra.rate_limit import RateLimiter
+from appinfra.log import Logger
 
-limiter = RateLimiter(per_minute=60)  # 1 operation per second
+lg = Logger("my_app")
+limiter = RateLimiter(lg, per_minute=60)  # 1 operation per second
 
 for i in range(10):
     limiter.next()  # Blocks/sleeps if rate limit exceeded
@@ -147,7 +153,7 @@ for i in range(10):
 For event loops that cannot block (e.g., message-processing loops):
 
 ```python
-limiter = RateLimiter(per_minute=60)
+limiter = RateLimiter(lg, per_minute=60)
 
 while running:
     process_messages()  # Handle SHUTDOWN signals, etc.
