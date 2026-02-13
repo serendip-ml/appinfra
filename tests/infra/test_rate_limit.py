@@ -5,14 +5,15 @@ Tests key rate limiter features including:
 - Rate limiter initialization
 - Rate limiting behavior
 - Waiting between operations
+- Exponential backoff
 """
 
 import time
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
-from appinfra.rate_limit import RateLimiter
+from appinfra.rate_limit import Backoff, RateLimiter
 
 # =============================================================================
 # Test RateLimiter Initialization
@@ -298,3 +299,344 @@ class TestRateLimiterIntegration:
 
         # Should take at least 4.5 seconds (10 ops / 2 per sec = 5 sec, minus first op)
         assert elapsed >= 4.0  # Allow some tolerance
+
+
+# =============================================================================
+# Test Backoff Initialization
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestBackoffInitialization:
+    """Test Backoff initialization."""
+
+    def test_init_default_values(self):
+        """Test initialization with default values."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger)
+        assert backoff.base == 1.0
+        assert backoff.max_delay == 60.0
+        assert backoff.factor == 2.0
+        assert backoff.jitter is True
+        assert backoff._lg is mock_logger
+        assert backoff.attempts == 0
+
+    def test_init_custom_values(self):
+        """Test initialization with custom values."""
+        mock_logger = Mock()
+        backoff = Backoff(
+            mock_logger, base=0.5, max_delay=30.0, factor=3.0, jitter=False
+        )
+        assert backoff.base == 0.5
+        assert backoff.max_delay == 30.0
+        assert backoff.factor == 3.0
+        assert backoff.jitter is False
+
+    def test_init_logger_is_required(self):
+        """Test logger is required as first parameter."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger)
+        assert backoff._lg is mock_logger
+
+    def test_init_rejects_non_positive_base(self):
+        """Test that base must be positive."""
+        mock_logger = Mock()
+        with pytest.raises(ValueError, match="base must be positive"):
+            Backoff(mock_logger, base=0)
+        with pytest.raises(ValueError, match="base must be positive"):
+            Backoff(mock_logger, base=-1.0)
+
+    def test_init_rejects_non_positive_max_delay(self):
+        """Test that max_delay must be positive."""
+        mock_logger = Mock()
+        with pytest.raises(ValueError, match="max_delay must be positive"):
+            Backoff(mock_logger, max_delay=0)
+        with pytest.raises(ValueError, match="max_delay must be positive"):
+            Backoff(mock_logger, max_delay=-10.0)
+
+    def test_init_rejects_factor_less_than_one(self):
+        """Test that factor must be >= 1."""
+        mock_logger = Mock()
+        with pytest.raises(ValueError, match="factor must be >= 1"):
+            Backoff(mock_logger, factor=0.5)
+        with pytest.raises(ValueError, match="factor must be >= 1"):
+            Backoff(mock_logger, factor=0)
+
+    def test_init_accepts_factor_of_one(self):
+        """Test that factor=1 is allowed (constant delay)."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, factor=1.0, jitter=False)
+        assert backoff.factor == 1.0
+        # All delays should be the same
+        delays = [backoff.next_delay() for _ in range(3)]
+        assert delays == [1.0, 1.0, 1.0]
+
+
+# =============================================================================
+# Test Backoff next_delay() Method
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestBackoffNextDelay:
+    """Test Backoff next_delay() method."""
+
+    def test_exponential_growth_without_jitter(self):
+        """Test delay grows exponentially without jitter."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=1.0, factor=2.0, jitter=False)
+
+        delays = [backoff.next_delay() for _ in range(5)]
+
+        assert delays == [1.0, 2.0, 4.0, 8.0, 16.0]
+
+    def test_attempts_increment(self):
+        """Test attempts counter increments with each call."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, jitter=False)
+
+        assert backoff.attempts == 0
+        backoff.next_delay()
+        assert backoff.attempts == 1
+        backoff.next_delay()
+        assert backoff.attempts == 2
+        backoff.next_delay()
+        assert backoff.attempts == 3
+
+    def test_max_delay_cap(self):
+        """Test delay is capped at max_delay."""
+        mock_logger = Mock()
+        backoff = Backoff(
+            mock_logger, base=1.0, max_delay=10.0, factor=2.0, jitter=False
+        )
+
+        # 1, 2, 4, 8, 10 (capped), 10 (capped)
+        delays = [backoff.next_delay() for _ in range(6)]
+
+        assert delays == [1.0, 2.0, 4.0, 8.0, 10.0, 10.0]
+
+    def test_jitter_reduces_delay(self):
+        """Test jitter reduces delay (multiplies by 0.0-1.0)."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=10.0, factor=1.0, jitter=True)
+
+        # With full jitter, delay should be between 0.0 and 10.0
+        delays = [backoff.next_delay() for _ in range(100)]
+
+        for delay in delays:
+            assert 0.0 <= delay <= 10.0
+
+    def test_jitter_provides_randomness(self):
+        """Test jitter produces different values."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=10.0, factor=1.0, jitter=True)
+
+        delays = [backoff.next_delay() for _ in range(10)]
+        backoff.reset()
+
+        # Not all delays should be the same (statistical test)
+        unique_delays = set(delays)
+        assert len(unique_delays) > 1
+
+    def test_custom_factor(self):
+        """Test custom growth factor."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=1.0, factor=3.0, jitter=False)
+
+        delays = [backoff.next_delay() for _ in range(4)]
+
+        assert delays == [1.0, 3.0, 9.0, 27.0]
+
+
+# =============================================================================
+# Test Backoff wait() Method
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestBackoffWait:
+    """Test Backoff wait() method."""
+
+    def test_wait_blocks_for_delay(self):
+        """Test wait() actually sleeps for the delay."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=0.1, jitter=False)
+
+        start = time.monotonic()
+        delay = backoff.wait()
+        elapsed = time.monotonic() - start
+
+        assert delay == 0.1
+        assert elapsed >= 0.09  # Allow small tolerance
+
+    def test_wait_returns_delay(self):
+        """Test wait() returns the delay value."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=0.05, jitter=False)
+
+        delay = backoff.wait()
+        assert delay == 0.05
+
+    def test_wait_increments_attempts(self):
+        """Test wait() increments attempt counter."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=0.01, jitter=False)
+
+        assert backoff.attempts == 0
+        backoff.wait()
+        assert backoff.attempts == 1
+
+    def test_wait_logs(self):
+        """Test wait() logs the backoff."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=0.01, jitter=False)
+
+        backoff.wait()
+
+        mock_logger.trace.assert_called_once()
+        args, kwargs = mock_logger.trace.call_args
+        assert "backoff wait" in args
+        assert "extra" in kwargs
+        assert "delay" in kwargs["extra"]
+        assert "attempt" in kwargs["extra"]
+        assert kwargs["extra"]["attempt"] == 1
+
+
+# =============================================================================
+# Test Backoff reset() Method
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestBackoffReset:
+    """Test Backoff reset() method."""
+
+    def test_reset_clears_attempts(self):
+        """Test reset() sets attempts to 0."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, jitter=False)
+
+        backoff.next_delay()
+        backoff.next_delay()
+        backoff.next_delay()
+        assert backoff.attempts == 3
+
+        backoff.reset()
+        assert backoff.attempts == 0
+
+    def test_reset_restarts_delay_sequence(self):
+        """Test reset() restarts the delay sequence."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=1.0, factor=2.0, jitter=False)
+
+        # Progress through sequence
+        backoff.next_delay()  # 1
+        backoff.next_delay()  # 2
+        backoff.next_delay()  # 4
+
+        backoff.reset()
+
+        # Should start fresh
+        assert backoff.next_delay() == 1.0
+        assert backoff.next_delay() == 2.0
+
+
+# =============================================================================
+# Test Backoff Integration Scenarios
+# =============================================================================
+
+
+@pytest.mark.integration
+class TestBackoffIntegration:
+    """Test real-world backoff scenarios."""
+
+    def test_retry_loop_pattern(self):
+        """Test typical retry loop usage pattern."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=0.01, max_delay=0.1, jitter=False)
+        attempts = 0
+        max_attempts = 5
+
+        # Simulate retry loop
+        while attempts < max_attempts:
+            attempts += 1
+            # Simulate failure
+            if attempts < 3:
+                backoff.wait()
+            else:
+                # Success on attempt 3
+                backoff.reset()
+                break
+
+        assert attempts == 3
+        assert backoff.attempts == 0  # Reset after success
+
+    def test_success_reset_pattern(self):
+        """Test backoff reset after successful operation."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=0.01, jitter=False)
+
+        # Fail twice
+        backoff.wait()
+        backoff.wait()
+        assert backoff.attempts == 2
+
+        # Success - reset
+        backoff.reset()
+        assert backoff.attempts == 0
+
+        # Next failure starts fresh
+        delay = backoff.next_delay()
+        assert delay == 0.01  # Back to base delay
+
+    def test_delay_progression_with_jitter(self):
+        """Test delay progression with jitter stays within bounds."""
+        mock_logger = Mock()
+        backoff = Backoff(
+            mock_logger, base=1.0, max_delay=10.0, factor=2.0, jitter=True
+        )
+
+        # Expected base delays: 1, 2, 4, 8, 10, 10
+        # With full jitter (0.0-1.0 multiplier), bounds are:
+        expected_bounds = [
+            (0.0, 1.0),  # attempt 0: base=1
+            (0.0, 2.0),  # attempt 1: base=2
+            (0.0, 4.0),  # attempt 2: base=4
+            (0.0, 8.0),  # attempt 3: base=8
+            (0.0, 10.0),  # attempt 4: base=10 (capped)
+            (0.0, 10.0),  # attempt 5: base=10 (capped)
+        ]
+
+        for min_bound, max_bound in expected_bounds:
+            delay = backoff.next_delay()
+            assert min_bound <= delay <= max_bound, (
+                f"Delay {delay} not in [{min_bound}, {max_bound}]"
+            )
+
+    def test_multiple_backoff_instances_independent(self):
+        """Test multiple backoff instances don't share state."""
+        mock_logger = Mock()
+        backoff1 = Backoff(mock_logger, base=1.0, jitter=False)
+        backoff2 = Backoff(mock_logger, base=2.0, jitter=False)
+
+        backoff1.next_delay()
+        backoff1.next_delay()
+
+        assert backoff1.attempts == 2
+        assert backoff2.attempts == 0
+
+        delay2 = backoff2.next_delay()
+        assert delay2 == 2.0  # Uses its own base
+
+    @patch("appinfra.rate_limit.time.sleep")
+    def test_wait_uses_calculated_delay(self, mock_sleep):
+        """Test wait() sleeps for the calculated delay."""
+        mock_logger = Mock()
+        backoff = Backoff(mock_logger, base=5.0, factor=2.0, jitter=False)
+
+        backoff.wait()
+        mock_sleep.assert_called_once_with(5.0)
+
+        mock_sleep.reset_mock()
+        backoff.wait()
+        mock_sleep.assert_called_once_with(10.0)

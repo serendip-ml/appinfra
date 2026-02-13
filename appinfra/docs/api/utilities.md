@@ -163,6 +163,73 @@ while running:
 limiter.next(respect_max_ticks=False)  # Returns delay but doesn't sleep
 ```
 
+## Backoff
+
+Exponential backoff for retry logic with configurable delays and jitter.
+
+```python
+class Backoff:
+    def __init__(
+        self,
+        lg: Logger,               # Logger (required, first parameter)
+        base: float = 1.0,        # Initial delay (seconds, must be > 0)
+        max_delay: float = 60.0,  # Maximum delay cap (must be > 0)
+        factor: float = 2.0,      # Multiplier per attempt (must be >= 1)
+        jitter: bool = True,      # Randomize to avoid thundering herd
+    ): ...
+
+    def wait(self) -> float: ...       # Blocking: sleep and return actual delay
+    def next_delay(self) -> float: ... # Non-blocking: return delay, increment attempt
+    def reset(self) -> None: ...       # Reset after success
+
+    @property
+    def attempts(self) -> int: ...     # Current attempt count
+```
+
+**Usage:**
+
+```python
+from appinfra.rate_limit import Backoff
+
+backoff = Backoff(logger)
+
+while True:
+    try:
+        response = call_endpoint()
+        backoff.reset()  # Success - reset for next time
+        return response
+    except ConnectionError:
+        backoff.wait()  # Exponential backoff: 1s, 2s, 4s, 8s... capped at 60s
+```
+
+**Algorithm:**
+
+```text
+delay = min(base * (factor ** attempts), max_delay)
+if jitter:
+    delay = delay * random.uniform(0.0, 1.0)  # Full jitter
+```
+
+**Non-Blocking Mode:**
+
+```python
+backoff = Backoff(logger, base=1.0, max_delay=30.0)
+
+delay = backoff.next_delay()  # Get delay without sleeping
+# ... do something else ...
+time.sleep(delay)             # Sleep manually when ready
+```
+
+**Custom Configuration:**
+
+```python
+# Aggressive backoff for critical services
+backoff = Backoff(logger, base=0.1, max_delay=5.0, factor=1.5, jitter=True)
+
+# Conservative backoff for batch jobs
+backoff = Backoff(logger, base=5.0, max_delay=300.0, factor=2.0, jitter=False)
+```
+
 ## EWMA
 
 Exponentially Weighted Moving Average for streaming values.
