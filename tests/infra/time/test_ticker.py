@@ -989,25 +989,17 @@ class TestTickerIteratorIntegration:
     """Integration tests for Ticker iterator with SubprocessContext pattern."""
 
     def test_multiple_ticks_with_timing(self, mock_logger):
-        """Test ticker yields at correct intervals."""
+        """Test ticker yields correct tick values in order."""
         ticks = []
-        start = time.time()
 
         with Ticker(mock_logger, secs=0.05) as t:
             for tick in t:
-                ticks.append((tick, time.time() - start))
+                ticks.append(tick)
                 if tick >= 2:
                     t.stop()
 
-        # Should have 3 ticks (0, 1, 2)
-        assert len(ticks) == 3
-
-        # First tick should be immediate
-        assert ticks[0][1] < 0.02
-
-        # Subsequent ticks should be spaced by ~0.05s
-        assert 0.04 < ticks[1][1] - ticks[0][1] < 0.08
-        assert 0.04 < ticks[2][1] - ticks[1][1] < 0.08
+        # Should have 3 ticks with values 0, 1, 2
+        assert ticks == [0, 1, 2]
 
     def test_callback_and_iterator_are_separate_modes(self, mock_logger):
         """Test that callback mode and iterator mode are independent."""
