@@ -43,7 +43,7 @@ import re
 import time
 from collections.abc import Generator
 from enum import Enum
-from typing import Any
+from typing import Any, Self
 
 from ..log import LoggerFactory
 from .delta import delta_str
@@ -596,7 +596,7 @@ class Sched:
             "weekday": self._weekday if self._period == Period.WEEKLY else None,
         }
 
-    def __enter__(self) -> "Sched":
+    def __enter__(self) -> Self:
         """Context manager entry."""
         return self
 

@@ -23,9 +23,14 @@ Key Concepts:
 """
 
 # Add the project root to the path
+from __future__ import annotations
+
 import pathlib
 import sys
 from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from appinfra.dot_dict import DotDict
 
 project_root = str(pathlib.Path(__file__).resolve().parents[3])
 if project_root not in sys.path:
@@ -141,7 +146,7 @@ class StatusTool(Tool):
         return 0
 
 
-def _create_sample_config() -> "DotDict":
+def _create_sample_config() -> DotDict:
     """Create sample YAML config (normally loaded from etc/infra.yaml)."""
     from appinfra.dot_dict import DotDict
 

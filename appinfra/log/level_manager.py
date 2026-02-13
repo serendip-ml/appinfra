@@ -10,11 +10,12 @@ based on topic patterns (e.g., '/infra/db/*', '/infra/**'). It supports:
 - Thread-safe operation
 """
 
+from __future__ import annotations
+
 import fnmatch
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -53,7 +54,7 @@ class LogLevelManager:
         >>> manager.get_effective_level("/infra/db/queries")  # Returns DEBUG
     """
 
-    _instance: Optional["LogLevelManager"] = None
+    _instance: LogLevelManager | None = None
     _lock_class = threading.Lock()  # Class-level lock for singleton
 
     def __init__(self) -> None:
@@ -64,7 +65,7 @@ class LogLevelManager:
         self._default_level: int | str = logging.INFO
 
     @classmethod
-    def get_instance(cls) -> "LogLevelManager":
+    def get_instance(cls) -> LogLevelManager:
         """
         Get the singleton instance of LogLevelManager.
 

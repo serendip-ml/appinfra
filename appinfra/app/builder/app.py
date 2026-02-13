@@ -9,10 +9,12 @@ maintainability and testability. Use .tools(), .server(), .logging(),
 and .advanced() to access specialized configuration builders.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 from ...config import Config
 from ...dot_dict import DotDict
@@ -176,7 +178,7 @@ def _register_lifecycle_managers(app: App, hooks: Any, plugins: Any) -> None:
         lifecycle.register_db_manager(app.db)
 
 
-def _initialize_foundation(app: App, builder: "AppBuilder") -> None:
+def _initialize_foundation(app: App, builder: AppBuilder) -> None:
     """Initialize app foundation: flags and metadata."""
     app._config_path = builder._config_path  # type: ignore[attr-defined, assignment]
     app._config_from_etc_dir = builder._config_from_etc_dir  # type: ignore[attr-defined]
@@ -189,7 +191,7 @@ def _initialize_foundation(app: App, builder: "AppBuilder") -> None:
     _set_app_metadata(app, builder._name, builder._description, builder._version)
 
 
-def _register_components(app: App, builder: "AppBuilder") -> None:
+def _register_components(app: App, builder: AppBuilder) -> None:
     """Register all app components: tools, plugins, lifecycle."""
     _register_tools_and_commands(app, builder._tools, builder._commands)
     if builder._main_tool:
@@ -201,7 +203,7 @@ def _register_components(app: App, builder: "AppBuilder") -> None:
     )
 
 
-def _configure_external_services(app: App, builder: "AppBuilder") -> None:
+def _configure_external_services(app: App, builder: AppBuilder) -> None:
     """Configure external services: server, logging, middleware, hooks."""
     _configure_middleware(app, builder._middleware, builder._server_config)
     _configure_hooks(app, builder._hooks)
@@ -325,24 +327,24 @@ class AppBuilder:
         self._version_tracker: Any | None = None
         self._build_info: Any | None = None
 
-    def with_name(self, name: str) -> "AppBuilder":
+    def with_name(self, name: str) -> Self:
         """Set the application name."""
         self._name = name
         return self
 
-    def with_description(self, description: str) -> "AppBuilder":
+    def with_description(self, description: str) -> Self:
         """Set the application description."""
         self._description = description
         return self
 
-    def with_version(self, version: str) -> "AppBuilder":
+    def with_version(self, version: str) -> Self:
         """Set the application version."""
         self._version = version
         return self
 
     def with_config_file(
         self, path: str | None = None, from_etc_dir: bool = True
-    ) -> "AppBuilder":
+    ) -> Self:
         """
         Load configuration from a YAML file.
 
@@ -404,7 +406,7 @@ class AppBuilder:
 
         return self
 
-    def with_config(self, config: Config | DotDict) -> "AppBuilder":
+    def with_config(self, config: Config | DotDict) -> Self:
         """Set the application configuration."""
         self._config = config
         # Track path if Config has it
@@ -412,12 +414,12 @@ class AppBuilder:
             self._config_path = config._config_path
         return self
 
-    def with_main_cls(self, cls: type) -> "AppBuilder":
+    def with_main_cls(self, cls: type) -> Self:
         """Set the main application class."""
         self._main_cls = cls
         return self
 
-    def with_main_tool(self, tool: str | Tool) -> "AppBuilder":
+    def with_main_tool(self, tool: str | Tool) -> Self:
         """
         Set the main tool that runs when no subcommand is specified.
 
@@ -458,7 +460,7 @@ class AppBuilder:
                 f"Valid names are: {', '.join(sorted(valid_args))}"
             )
 
-    def with_standard_args(self, **kwargs: bool) -> "AppBuilder":
+    def with_standard_args(self, **kwargs: bool) -> Self:
         """
         Control which standard CLI arguments are enabled.
 
@@ -501,7 +503,7 @@ class AppBuilder:
 
         return self
 
-    def without_standard_args(self) -> "AppBuilder":
+    def without_standard_args(self) -> Self:
         """
         Disable all standard CLI arguments.
 

@@ -5,7 +5,9 @@ This module provides the Traceable base class that enables hierarchical
 attribute lookup through parent-child relationships.
 """
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import Any
 
 from ..constants import MAX_TRACE_DEPTH
 from ..errors import AttrNotFoundError
@@ -19,7 +21,7 @@ class Traceable:
     allowing for inheritance-like behavior in composition patterns.
     """
 
-    def __init__(self, parent: Optional["Traceable"] = None):
+    def __init__(self, parent: Traceable | None = None):
         """
         Initialize the traceable object.
 
@@ -29,7 +31,7 @@ class Traceable:
         self._parent = parent
 
     @property
-    def parent(self) -> Optional["Traceable"]:
+    def parent(self) -> Traceable | None:
         """
         Get the parent object.
 
@@ -38,7 +40,7 @@ class Traceable:
         """
         return self._parent
 
-    def set_parent(self, parent: Optional["Traceable"]) -> None:
+    def set_parent(self, parent: Traceable | None) -> None:
         """
         Set the parent object.
 
@@ -132,7 +134,7 @@ class Traceable:
 
         return self.parent.trace_attr(name, _visited, _depth + 1)
 
-    def trace_root(self) -> "Traceable":
+    def trace_root(self) -> Traceable:
         """
         Find the root object in the hierarchy.
 

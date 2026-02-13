@@ -10,6 +10,8 @@ This module provides the Loader class that extends yaml.SafeLoader to:
 6. Resolve paths via !path tag
 """
 
+from __future__ import annotations
+
 import datetime
 import warnings
 from collections.abc import Hashable
@@ -307,7 +309,7 @@ class Loader(yaml.SafeLoader):
                     f"'{ctx.project_root}'. This could be a path traversal attack. ({location})"
                 )
 
-    def _store_include_source_map(self, data: Any, loader: "Loader") -> None:
+    def _store_include_source_map(self, data: Any, loader: Loader) -> None:
         """Store source map from included file for later merging (complex types only)."""
         if not self.track_sources or not hasattr(loader, "source_map"):
             return

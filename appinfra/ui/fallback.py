@@ -5,9 +5,7 @@ Provides basic plain-text alternatives for Table, Panel, and Progress
 so code using the UI module doesn't break when rich is unavailable.
 """
 
-from __future__ import annotations
-
-from typing import Any
+from typing import Any, Self
 
 
 class Table:
@@ -168,7 +166,7 @@ class Progress:
         self.tasks: dict[int, dict[str, Any]] = {}
         self._next_id = 0
 
-    def __enter__(self) -> Progress:
+    def __enter__(self) -> Self:
         """Enter context."""
         return self
 

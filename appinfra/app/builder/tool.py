@@ -5,8 +5,10 @@ This module provides a fluent API for building tools with subcommands,
 arguments, and custom functionality.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, Self, cast
 
 from ..tools.base import Tool, ToolConfig
 from ..tracing.traceable import Traceable
@@ -33,52 +35,52 @@ class ToolBuilder:
         self._parent: Traceable | None = None
         self._group_default: str | None = None
 
-    def with_alias(self, alias: str) -> "ToolBuilder":
+    def with_alias(self, alias: str) -> Self:
         """Add an alias for the tool."""
         self._aliases.append(alias)
         return self
 
-    def with_aliases(self, *aliases: str) -> "ToolBuilder":
+    def with_aliases(self, *aliases: str) -> Self:
         """Add multiple aliases for the tool."""
         self._aliases.extend(aliases)
         return self
 
-    def with_help(self, text: str) -> "ToolBuilder":
+    def with_help(self, text: str) -> Self:
         """Set the help text for the tool."""
         self._help_text = text
         return self
 
-    def with_description(self, desc: str) -> "ToolBuilder":
+    def with_description(self, desc: str) -> Self:
         """Set the description for the tool."""
         self._description = desc
         return self
 
-    def with_argument(self, *args: Any, **kwargs: Any) -> "ToolBuilder":
+    def with_argument(self, *args: Any, **kwargs: Any) -> Self:
         """Add a command-line argument to the tool."""
         self._args.append((args, kwargs))
         return self
 
-    def with_subcommand(self, name: str, builder: "ToolBuilder") -> "ToolBuilder":
+    def with_subcommand(self, name: str, builder: ToolBuilder) -> Self:
         """Add a subcommand to the tool."""
         self._subcommands.append((name, builder))
         return self
 
-    def with_run_function(self, func: Callable) -> "ToolBuilder":
+    def with_run_function(self, func: Callable) -> Self:
         """Set the run function for the tool."""
         self._run_func = func
         return self
 
-    def with_setup_function(self, func: Callable) -> "ToolBuilder":
+    def with_setup_function(self, func: Callable) -> Self:
         """Set the setup function for the tool."""
         self._setup_func = func
         return self
 
-    def with_parent(self, parent: Traceable) -> "ToolBuilder":
+    def with_parent(self, parent: Traceable) -> Self:
         """Set the parent for the tool."""
         self._parent = parent
         return self
 
-    def with_group_default(self, default: str) -> "ToolBuilder":
+    def with_group_default(self, default: str) -> Self:
         """Set the default subcommand for tool groups."""
         self._group_default = default
         return self

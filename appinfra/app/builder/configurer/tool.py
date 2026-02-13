@@ -4,8 +4,10 @@ Tool configuration builder for AppBuilder.
 This module provides focused builder for configuring tools, commands, and plugins.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 from ...tools.base import Tool
 from ..plugin import Plugin
@@ -23,7 +25,7 @@ class ToolConfigurer:
     following the Single Responsibility Principle.
     """
 
-    def __init__(self, app_builder: "AppBuilder"):
+    def __init__(self, app_builder: AppBuilder):
         """
         Initialize the tool configurer.
 
@@ -32,7 +34,7 @@ class ToolConfigurer:
         """
         self._app_builder = app_builder
 
-    def with_tool(self, tool: Tool) -> "ToolConfigurer":
+    def with_tool(self, tool: Tool) -> Self:
         """
         Add a single tool to the application.
 
@@ -45,7 +47,7 @@ class ToolConfigurer:
         self._app_builder._tools.append(tool)
         return self
 
-    def with_tools(self, *tools: Tool) -> "ToolConfigurer":
+    def with_tools(self, *tools: Tool) -> Self:
         """
         Add multiple tools to the application.
 
@@ -58,7 +60,7 @@ class ToolConfigurer:
         self._app_builder._tools.extend(tools)
         return self
 
-    def with_tool_builder(self, builder: ToolBuilder) -> "ToolConfigurer":
+    def with_tool_builder(self, builder: ToolBuilder) -> Self:
         """
         Add a tool using a tool builder.
 
@@ -77,7 +79,7 @@ class ToolConfigurer:
         run_func: Callable,
         aliases: list[str] | None = None,
         help_text: str = "",
-    ) -> "ToolConfigurer":
+    ) -> Self:
         """
         Add a command with a run function.
 
@@ -98,7 +100,7 @@ class ToolConfigurer:
         self._app_builder._commands.append(command)
         return self
 
-    def with_plugin(self, plugin: Plugin) -> "ToolConfigurer":
+    def with_plugin(self, plugin: Plugin) -> Self:
         """
         Add a plugin to the application.
 
@@ -111,7 +113,7 @@ class ToolConfigurer:
         self._app_builder._plugins.register_plugin(plugin)
         return self
 
-    def with_plugins(self, *plugins: Plugin) -> "ToolConfigurer":
+    def with_plugins(self, *plugins: Plugin) -> Self:
         """
         Add multiple plugins to the application.
 
@@ -125,7 +127,7 @@ class ToolConfigurer:
             self._app_builder._plugins.register_plugin(plugin)
         return self
 
-    def done(self) -> "AppBuilder":
+    def done(self) -> AppBuilder:
         """
         Finish tool configuration and return to main builder.
 

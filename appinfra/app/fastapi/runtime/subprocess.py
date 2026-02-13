@@ -1,7 +1,5 @@
 """Subprocess management with auto-restart."""
 
-from __future__ import annotations
-
 import logging
 import multiprocessing as mp
 import threading

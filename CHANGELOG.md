@@ -39,6 +39,11 @@ For API stability guarantees and deprecation policy, see
   - Works correctly with Python's `sched.scheduler`
 
 ### Changed
+- Type annotation cleanup (internal):
+  - Replaced string-quoted self-returns with `typing.Self` across builder classes
+  - Removed unnecessary `from __future__ import annotations` from ~20 files
+  - Enabled ruff rule UP037 to enforce unquoted type annotations
+  - Standardized forward reference handling via future annotations only where needed
 - Ticker timing is now drift-free by capturing `time.monotonic()` once per tick
   - Accurate: 3600 ticks in exactly 3600 seconds (for `secs=1`)
   - No accumulated drift from multiple time queries per tick

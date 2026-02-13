@@ -68,7 +68,7 @@ import time
 from collections.abc import Callable, Iterator
 from enum import Enum
 from types import FrameType
-from typing import Any
+from typing import Any, Self
 
 from appinfra.exceptions import TickerAPIError, TickerConfigError, TickerStateError
 from appinfra.log import Logger
@@ -909,7 +909,7 @@ class Ticker:
 
     # Context manager and iterator support
 
-    def __enter__(self) -> "Ticker":
+    def __enter__(self) -> Self:
         """
         Install signal handlers for graceful shutdown.
 

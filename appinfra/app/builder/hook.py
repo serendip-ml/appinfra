@@ -8,7 +8,7 @@ and event handling.
 import logging
 from collections import defaultdict
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Self
 
 
 class HookManager:
@@ -121,63 +121,63 @@ class HookBuilder:
 
     def on_startup(
         self, func: Callable, priority: int = 0, condition: Callable | None = None
-    ) -> "HookBuilder":
+    ) -> Self:
         """Register a startup hook."""
         self._hooks["startup"].append((func, priority, False, condition))
         return self
 
     def on_shutdown(
         self, func: Callable, priority: int = 0, condition: Callable | None = None
-    ) -> "HookBuilder":
+    ) -> Self:
         """Register a shutdown hook."""
         self._hooks["shutdown"].append((func, priority, False, condition))
         return self
 
     def on_tool_start(
         self, func: Callable, priority: int = 0, condition: Callable | None = None
-    ) -> "HookBuilder":
+    ) -> Self:
         """Register a tool start hook."""
         self._hooks["tool_start"].append((func, priority, False, condition))
         return self
 
     def on_tool_end(
         self, func: Callable, priority: int = 0, condition: Callable | None = None
-    ) -> "HookBuilder":
+    ) -> Self:
         """Register a tool end hook."""
         self._hooks["tool_end"].append((func, priority, False, condition))
         return self
 
     def on_error(
         self, func: Callable, priority: int = 0, condition: Callable | None = None
-    ) -> "HookBuilder":
+    ) -> Self:
         """Register an error hook."""
         self._hooks["error"].append((func, priority, False, condition))
         return self
 
     def on_before_parse(
         self, func: Callable, priority: int = 0, condition: Callable | None = None
-    ) -> "HookBuilder":
+    ) -> Self:
         """Register a before argument parsing hook."""
         self._hooks["before_parse"].append((func, priority, False, condition))
         return self
 
     def on_after_parse(
         self, func: Callable, priority: int = 0, condition: Callable | None = None
-    ) -> "HookBuilder":
+    ) -> Self:
         """Register an after argument parsing hook."""
         self._hooks["after_parse"].append((func, priority, False, condition))
         return self
 
     def on_before_setup(
         self, func: Callable, priority: int = 0, condition: Callable | None = None
-    ) -> "HookBuilder":
+    ) -> Self:
         """Register a before setup hook."""
         self._hooks["before_setup"].append((func, priority, False, condition))
         return self
 
     def on_after_setup(
         self, func: Callable, priority: int = 0, condition: Callable | None = None
-    ) -> "HookBuilder":
+    ) -> Self:
         """Register an after setup hook."""
         self._hooks["after_setup"].append((func, priority, False, condition))
         return self
@@ -188,7 +188,7 @@ class HookBuilder:
         func: Callable,
         priority: int = 0,
         condition: Callable | None = None,
-    ) -> "HookBuilder":
+    ) -> Self:
         """Register a custom event hook."""
         self._hooks[event].append((func, priority, False, condition))
         return self
@@ -199,7 +199,7 @@ class HookBuilder:
         func: Callable,
         priority: int = 0,
         condition: Callable | None = None,
-    ) -> "HookBuilder":
+    ) -> Self:
         """Register a hook that runs only once."""
         self._hooks[event].append((func, priority, True, condition))
         return self
