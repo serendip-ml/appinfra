@@ -37,6 +37,18 @@ class TestRateLimiterInitialization:
         limiter = RateLimiter(mock_logger, per_minute=60)
         assert limiter._lg is mock_logger
 
+    def test_init_with_zero_per_minute_raises(self):
+        """Test initialization with zero per_minute raises ValueError."""
+        mock_logger = Mock()
+        with pytest.raises(ValueError, match="per_minute must be positive"):
+            RateLimiter(mock_logger, per_minute=0)
+
+    def test_init_with_negative_per_minute_raises(self):
+        """Test initialization with negative per_minute raises ValueError."""
+        mock_logger = Mock()
+        with pytest.raises(ValueError, match="per_minute must be positive"):
+            RateLimiter(mock_logger, per_minute=-10)
+
 
 # =============================================================================
 # Test RateLimiter next() Method

@@ -28,7 +28,12 @@ class RateLimiter:
         Args:
             lg: Logger instance for rate limiting operations
             per_minute: Maximum number of operations per minute (e.g., 1/60 for once per hour)
+
+        Raises:
+            ValueError: If per_minute is not positive.
         """
+        if per_minute <= 0:
+            raise ValueError("per_minute must be positive")
         self._lg = lg
         self.per_minute = per_minute
         self.last_t: float | None = None
