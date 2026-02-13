@@ -60,3 +60,32 @@ class RateLimiter:
                     time.sleep(wait)
         self.last_t = time.monotonic()
         return wait
+
+    def try_next(self) -> bool:
+        """
+        Non-blocking rate limit check.
+
+        Checks if the rate limit allows an operation without blocking.
+        If allowed, updates the last operation time and returns True.
+        If rate limited, returns False without modifying state.
+
+        This method is useful for event loops that cannot block, such as
+        message-processing loops that need to handle signals while rate-limiting
+        operations.
+
+        Returns:
+            bool: True if operation is allowed (updates last_t), False if rate limited.
+
+        Example:
+            if limiter.try_next():
+                do_operation()
+            else:
+                # Skip this cycle, will retry on next loop iteration
+                pass
+        """
+        delay = 60.0 / self.per_minute
+        now = time.monotonic()
+        if self.last_t is None or (now - self.last_t) >= delay:
+            self.last_t = now
+            return True
+        return False

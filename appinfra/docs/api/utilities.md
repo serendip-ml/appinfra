@@ -120,34 +120,47 @@ data = config.to_dict()    # Recursive conversion
 
 ## RateLimiter
 
-Control operation frequency.
+Control operation frequency with blocking or non-blocking modes.
 
 ```python
 class RateLimiter:
-    def __init__(
-        self,
-        max_calls: int,      # Maximum calls allowed
-        period: float        # Time period in seconds
-    ): ...
+    def __init__(self, per_minute: int, lg: Logger | None = None): ...
 
-    def __enter__(self): ...
-    def __exit__(self, ...): ...
-    def acquire(self) -> None: ...
+    def next(self, respect_max_ticks: bool = True) -> float: ...  # Blocking: wait and return delay
+    def try_next(self) -> bool: ...                               # Non-blocking: return True if allowed
 ```
 
-**Usage:**
+**Blocking Mode (`next()`):**
 
 ```python
 from appinfra.rate_limit import RateLimiter
-import time
 
-# Allow 5 calls per 10 seconds
-limiter = RateLimiter(max_calls=5, period=10.0)
+limiter = RateLimiter(per_minute=60)  # 1 operation per second
 
 for i in range(10):
-    with limiter:
-        print(f"Call {i}")
-        # Blocks after 5 calls until period resets
+    limiter.next()  # Blocks/sleeps if rate limit exceeded
+    do_operation()
+```
+
+**Non-Blocking Mode (`try_next()`):**
+
+For event loops that cannot block (e.g., message-processing loops):
+
+```python
+limiter = RateLimiter(per_minute=60)
+
+while running:
+    process_messages()  # Handle SHUTDOWN signals, etc.
+
+    if limiter.try_next():
+        do_rate_limited_operation()
+    # If rate limited, skip this cycle and retry on next iteration
+```
+
+**Bypass Mode:**
+
+```python
+limiter.next(respect_max_ticks=False)  # Returns delay but doesn't sleep
 ```
 
 ## EWMA
