@@ -148,14 +148,14 @@ class Backoff:
 
         The delay is calculated as: min(base * (factor ** attempts), max_delay)
         If jitter is enabled, the delay is multiplied by a random factor
-        between 0.5 and 1.0 (full jitter pattern).
+        between 0.0 and 1.0 (full jitter pattern).
 
         Returns:
             float: The calculated delay in seconds.
         """
         delay = min(self.base * (self.factor**self._attempts), self.max_delay)
         if self.jitter:
-            delay = delay * random.uniform(0.5, 1.0)
+            delay = delay * random.uniform(0.0, 1.0)
         self._attempts += 1
         return delay
 

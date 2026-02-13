@@ -416,15 +416,15 @@ class TestBackoffNextDelay:
         assert delays == [1.0, 2.0, 4.0, 8.0, 10.0, 10.0]
 
     def test_jitter_reduces_delay(self):
-        """Test jitter reduces delay (multiplies by 0.5-1.0)."""
+        """Test jitter reduces delay (multiplies by 0.0-1.0)."""
         mock_logger = Mock()
         backoff = Backoff(mock_logger, base=10.0, factor=1.0, jitter=True)
 
-        # With jitter, delay should be between 5.0 and 10.0
+        # With full jitter, delay should be between 0.0 and 10.0
         delays = [backoff.next_delay() for _ in range(100)]
 
         for delay in delays:
-            assert 5.0 <= delay <= 10.0
+            assert 0.0 <= delay <= 10.0
 
     def test_jitter_provides_randomness(self):
         """Test jitter produces different values."""
@@ -597,14 +597,14 @@ class TestBackoffIntegration:
         )
 
         # Expected base delays: 1, 2, 4, 8, 10, 10
-        # With jitter (0.5-1.0 multiplier), bounds are:
+        # With full jitter (0.0-1.0 multiplier), bounds are:
         expected_bounds = [
-            (0.5, 1.0),  # attempt 0: base=1
-            (1.0, 2.0),  # attempt 1: base=2
-            (2.0, 4.0),  # attempt 2: base=4
-            (4.0, 8.0),  # attempt 3: base=8
-            (5.0, 10.0),  # attempt 4: base=10 (capped)
-            (5.0, 10.0),  # attempt 5: base=10 (capped)
+            (0.0, 1.0),  # attempt 0: base=1
+            (0.0, 2.0),  # attempt 1: base=2
+            (0.0, 4.0),  # attempt 2: base=4
+            (0.0, 8.0),  # attempt 3: base=8
+            (0.0, 10.0),  # attempt 4: base=10 (capped)
+            (0.0, 10.0),  # attempt 5: base=10 (capped)
         ]
 
         for min_bound, max_bound in expected_bounds:

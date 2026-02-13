@@ -204,10 +204,10 @@ while True:
 
 **Algorithm:**
 
-```
+```text
 delay = min(base * (factor ** attempts), max_delay)
 if jitter:
-    delay = delay * random.uniform(0.5, 1.0)  # Full jitter
+    delay = delay * random.uniform(0.0, 1.0)  # Full jitter
 ```
 
 **Non-Blocking Mode:**
