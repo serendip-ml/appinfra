@@ -2,13 +2,16 @@
 Rate limiting functionality for controlling request frequency.
 
 This module provides a RateLimiter class for implementing rate limiting
-to control the frequency of operations or API calls.
+to control the frequency of operations or API calls, and a Backoff class
+for implementing exponential backoff retry logic.
 """
 
+import random
 import time
 from typing import Any
 
 from . import time as t
+from .log import Logger
 
 
 class RateLimiter:
@@ -89,3 +92,85 @@ class RateLimiter:
             self.last_t = now
             return True
         return False
+
+
+class Backoff:
+    """
+    Exponential backoff for retry logic.
+
+    Provides functionality to implement exponential backoff when retrying
+    failed operations, with configurable base delay, maximum delay, growth
+    factor, and optional jitter to avoid thundering herd problems.
+    """
+
+    def __init__(
+        self,
+        lg: Logger,
+        base: float = 1.0,
+        max_delay: float = 60.0,
+        factor: float = 2.0,
+        jitter: bool = True,
+    ) -> None:
+        """
+        Initialize the backoff controller.
+
+        Args:
+            lg: Logger instance for backoff operations
+            base: Initial delay in seconds (default: 1.0)
+            max_delay: Maximum delay cap in seconds (default: 60.0)
+            factor: Multiplier applied per attempt (default: 2.0)
+            jitter: Whether to randomize delays to avoid thundering herd (default: True)
+        """
+        self._lg = lg
+        self.base = base
+        self.max_delay = max_delay
+        self.factor = factor
+        self.jitter = jitter
+        self._attempts = 0
+
+    @property
+    def attempts(self) -> int:
+        """Return the current attempt count."""
+        return self._attempts
+
+    def next_delay(self) -> float:
+        """
+        Calculate the next backoff delay and increment attempt count.
+
+        The delay is calculated as: min(base * (factor ** attempts), max_delay)
+        If jitter is enabled, the delay is multiplied by a random factor
+        between 0.5 and 1.0 (full jitter pattern).
+
+        Returns:
+            float: The calculated delay in seconds.
+        """
+        delay = min(self.base * (self.factor**self._attempts), self.max_delay)
+        if self.jitter:
+            delay = delay * random.uniform(0.5, 1.0)
+        self._attempts += 1
+        return delay
+
+    def wait(self) -> float:
+        """
+        Wait for the calculated backoff delay.
+
+        Calculates the next delay using next_delay(), sleeps for that duration,
+        and returns the actual delay.
+
+        Returns:
+            float: The actual delay waited in seconds.
+        """
+        delay = self.next_delay()
+        self._lg.trace(
+            "backoff wait",
+            extra={
+                "delay": t.delta.delta_str(delay, precise=False),
+                "attempt": self._attempts,
+            },
+        )
+        time.sleep(delay)
+        return delay
+
+    def reset(self) -> None:
+        """Reset the attempt counter after a successful operation."""
+        self._attempts = 0

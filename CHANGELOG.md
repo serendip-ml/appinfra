@@ -11,6 +11,12 @@ For API stability guarantees and deprecation policy, see
 ## [Unreleased]
 
 ### Added
+- `Backoff` class for exponential backoff retry logic:
+  - Configurable base delay, max delay, growth factor, and jitter
+  - `wait()` method for blocking backoff (sleeps and returns delay)
+  - `next_delay()` method for non-blocking usage (returns delay, increments attempt)
+  - `reset()` method to reset attempt counter after successful operations
+  - Full jitter pattern (delay * 0.5-1.0) to avoid thundering herd problems
 - Non-blocking `RateLimiter.try_next()` method for event loops that cannot block:
   - Returns `True` if operation is allowed (updates `last_t`), `False` if rate limited
   - Does not modify state when returning `False` (safe to call repeatedly)
