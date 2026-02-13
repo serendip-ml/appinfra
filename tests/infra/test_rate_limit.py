@@ -134,6 +134,93 @@ class TestRateLimiterNext:
 
 
 # =============================================================================
+# Test RateLimiter try_next() Method
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestRateLimiterTryNext:
+    """Test RateLimiter try_next() method."""
+
+    def test_first_call_returns_true(self):
+        """Test first call to try_next() returns True."""
+        limiter = RateLimiter(per_minute=60)
+        assert limiter.try_next() is True
+        assert limiter.last_t is not None
+
+    def test_rapid_call_returns_false(self):
+        """Test rapid second call returns False without blocking."""
+        limiter = RateLimiter(per_minute=60)  # 1 per second
+
+        # First call should succeed
+        assert limiter.try_next() is True
+        first_t = limiter.last_t
+
+        # Immediate second call should fail (non-blocking)
+        start = time.monotonic()
+        assert limiter.try_next() is False
+        elapsed = time.monotonic() - start
+
+        # Should be non-blocking (very fast)
+        assert elapsed < 0.01
+        # last_t should not have changed
+        assert limiter.last_t == first_t
+
+    def test_after_delay_returns_true(self):
+        """Test try_next() returns True after sufficient delay."""
+        limiter = RateLimiter(per_minute=120)  # 0.5 second delay
+
+        assert limiter.try_next() is True
+
+        # Wait for the rate limit delay
+        time.sleep(0.55)
+
+        # Should succeed now
+        assert limiter.try_next() is True
+
+    def test_does_not_modify_state_on_false(self):
+        """Test try_next() doesn't modify last_t when returning False."""
+        limiter = RateLimiter(per_minute=60)
+
+        limiter.try_next()
+        original_last_t = limiter.last_t
+
+        # Multiple rapid calls should not change last_t
+        for _ in range(5):
+            limiter.try_next()
+
+        assert limiter.last_t == original_last_t
+
+    def test_updates_state_on_true(self):
+        """Test try_next() updates last_t when returning True."""
+        limiter = RateLimiter(per_minute=120)
+
+        limiter.try_next()
+        first_t = limiter.last_t
+
+        time.sleep(0.55)
+
+        limiter.try_next()
+        second_t = limiter.last_t
+
+        assert second_t > first_t
+
+    def test_non_blocking_behavior(self):
+        """Test try_next() never blocks regardless of rate limit."""
+        limiter = RateLimiter(per_minute=1)  # Very slow: 60 second delay
+
+        limiter.try_next()
+
+        # Even with 60-second delay, try_next should return immediately
+        start = time.monotonic()
+        result = limiter.try_next()
+        elapsed = time.monotonic() - start
+
+        assert result is False
+        assert elapsed < 0.01  # Should be near-instant
+
+
+# =============================================================================
 # Test Rate Limiting Calculations
 # =============================================================================
 

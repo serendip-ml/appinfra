@@ -11,6 +11,11 @@ For API stability guarantees and deprecation policy, see
 ## [Unreleased]
 
 ### Added
+- Non-blocking `RateLimiter.try_next()` method for event loops that cannot block:
+  - Returns `True` if operation is allowed (updates `last_t`), `False` if rate limited
+  - Does not modify state when returning `False` (safe to call repeatedly)
+  - Mirrors `Ticker.try_tick()` semantics: "attempt if ready, skip if not"
+  - Use case: Rate-limit retries in message-processing loops without blocking signal handling
 - Non-blocking Ticker API for mixed event sources (`time_until_next_tick()` and `try_tick()`):
   - `time_until_next_tick(now=None)` returns seconds until next tick (use as timeout for event loops)
   - `try_tick(now=None)` executes tick if ready, returns `bool` (works with or without handler)
@@ -33,6 +38,8 @@ For API stability guarantees and deprecation policy, see
   - No accumulated drift from multiple time queries per tick
 
 ### Fixed
+- RateLimiter API docs corrected to match actual implementation (`per_minute`/`next()` instead of
+  incorrect `max_calls`/`period`/`acquire()`)
 - Ticker API mode mixing protection: `try_tick()` and `run()` cannot be mixed on the same instance
   - Prevents state corruption from shared `_first` flag between different API modes
   - Clear error message: "Cannot call run() after using try_tick()"
