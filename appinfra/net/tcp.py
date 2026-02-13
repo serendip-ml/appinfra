@@ -54,6 +54,7 @@ import multiprocessing
 import socketserver
 from typing import Any
 
+from ..log import Logger
 from ..time import Ticker, TickerHandler
 from .exceptions import (
     ServerShutdownError,
@@ -75,7 +76,7 @@ class _Server(socketserver.TCPServer):
     restarts and provides hooks for periodic service actions.
     """
 
-    def __init__(self, lg: Any, handler: Any, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, lg: Logger, handler: Any, *args: Any, **kwargs: Any) -> None:
         """
         Initialize the TCP server.
 
@@ -205,7 +206,7 @@ class Server:
     """
 
     def __init__(
-        self, lg: Any, port: int, handler: Any, ticker: Any | None = None
+        self, lg: Logger, port: int, handler: Any, ticker: Any | None = None
     ) -> None:
         """
         Initialize the TCP server.

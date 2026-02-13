@@ -8,7 +8,6 @@ for implementing exponential backoff retry logic.
 
 import random
 import time
-from typing import Any
 
 from . import time as t
 from .log import Logger
@@ -22,17 +21,17 @@ class RateLimiter:
     number per minute, with automatic waiting when the rate limit is exceeded.
     """
 
-    def __init__(self, per_minute: int, lg: Any | None = None) -> None:
+    def __init__(self, lg: Logger, per_minute: float) -> None:
         """
         Initialize the rate limiter.
 
         Args:
-            per_minute (int): Maximum number of operations per minute
-            lg: Logger instance for rate limiting operations (optional)
+            lg: Logger instance for rate limiting operations
+            per_minute: Maximum number of operations per minute (e.g., 1/60 for once per hour)
         """
+        self._lg = lg
         self.per_minute = per_minute
         self.last_t: float | None = None
-        self._lg = lg
 
     def next(self, respect_max_ticks: bool = True) -> float:
         """
@@ -55,11 +54,10 @@ class RateLimiter:
             if delta < delay:
                 wait = delay - delta
                 if respect_max_ticks:
-                    if self._lg:
-                        self._lg.trace(
-                            "rate limiter wait",
-                            extra={"wait": t.delta.delta_str(wait, precise=False)},
-                        )
+                    self._lg.trace(
+                        "rate limiter wait",
+                        extra={"wait": t.delta.delta_str(wait, precise=False)},
+                    )
                     time.sleep(wait)
         self.last_t = time.monotonic()
         return wait

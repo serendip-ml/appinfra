@@ -8,10 +8,13 @@ It handles common setup tasks like configuration loading, database connection, a
 import logging
 import unittest
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from appinfra.config import Config
 from appinfra.db.pg import PG
+
+if TYPE_CHECKING:
+    from appinfra.log import Logger
 
 from .helper_core import PGTestHelperCore
 
@@ -94,7 +97,7 @@ class PGTestCaseHelper(unittest.TestCase):
     _skip_reason: str
     config: Config
     test_config: Any
-    lg: logging.Logger
+    lg: "Logger"
     pg: PG
 
     @classmethod
@@ -178,16 +181,14 @@ class PGTestCaseHelper(unittest.TestCase):
             return False
 
     @classmethod
-    def _setup_logger(cls) -> logging.Logger:
+    def _setup_logger(cls) -> "Logger":
         """Set up logger with fallback to mock logger."""
         try:
             from tests.test_helpers import create_test_logger_with_fallback
 
-            return cast(
-                logging.Logger, create_test_logger_with_fallback("pg_test_helper")
-            )
+            return cast("Logger", create_test_logger_with_fallback("pg_test_helper"))
         except ImportError:
-            return cls._create_mock_logger()
+            return cast("Logger", cls._create_mock_logger())
 
     @classmethod
     def _create_mock_logger(cls) -> logging.Logger:

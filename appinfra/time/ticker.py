@@ -71,6 +71,7 @@ from types import FrameType
 from typing import Any
 
 from appinfra.exceptions import TickerAPIError, TickerConfigError, TickerStateError
+from appinfra.log import Logger
 
 
 class TickerMode(Enum):
@@ -287,7 +288,7 @@ class Ticker:
 
     def __init__(
         self,
-        lg: Any,
+        lg: Logger,
         handler: TickerHandler | Callable[[], None] | None = None,
         secs: float | None = None,
         initial: bool = True,

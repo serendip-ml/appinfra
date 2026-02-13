@@ -17,6 +17,7 @@ from ...dot_dict import DotDict
 
 if TYPE_CHECKING:
     from ...config import ConfigWatcher
+    from ...log import Logger
     from ...subprocess import SubprocessContext
 
 from ... import time
@@ -648,11 +649,11 @@ class App(Traceable):
         return self._parsed_args
 
     @property
-    def lg(self) -> logging.Logger:
+    def lg(self) -> "Logger":
         """Get the application logger."""
         from typing import cast
 
-        return cast(logging.Logger, self.lifecycle.logger)
+        return cast("Logger", self.lifecycle.logger)
 
     def subprocess_context(self, handle_signals: bool = True) -> "SubprocessContext":
         """
