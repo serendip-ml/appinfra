@@ -14,8 +14,7 @@ from appinfra.ui.progress_logger import ProgressLogger, _is_interactive
 @pytest.fixture
 def mock_logger():
     """Create a mock logger for testing."""
-    logger = MagicMock(spec=logging.Logger)
-    return logger
+    return MagicMock()
 
 
 class TestIsInteractive:
@@ -60,7 +59,7 @@ class TestProgressLoggerInit:
     def test_init_defaults(self, mock_logger):
         """Test ProgressLogger initializes with defaults."""
         pl = ProgressLogger(mock_logger)
-        assert pl._logger is mock_logger
+        assert pl._lg is mock_logger
         assert pl._message == "Working..."
         assert pl._total is None
         assert pl._spinner == "dots"
