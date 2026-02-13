@@ -49,6 +49,9 @@ For API stability guarantees and deprecation policy, see
   - No accumulated drift from multiple time queries per tick
 
 ### Fixed
+- `@builder.tool` decorator now compatible with `with_main_tool()`:
+  - `DecoratedTool.set_args()` now accepts `skip_positional` parameter matching base `Tool` class
+  - Previously raised `TypeError: got an unexpected keyword argument 'skip_positional'`
 - RateLimiter API docs corrected to match actual implementation (`per_minute`/`next()` instead of
   incorrect `max_calls`/`period`/`acquire()`)
 - Ticker API mode mixing protection: `try_tick()` and `run()` cannot be mixed on the same instance

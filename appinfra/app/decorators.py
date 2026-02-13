@@ -182,9 +182,9 @@ def _create_decorated_tool_class(tool_func: ToolFunction) -> type:
         def _create_config(self) -> ToolConfig:
             return _build_tool_config(tool_func)
 
-        def set_args(self, parser) -> None:
+        def set_args(self, parser, skip_positional: bool = False) -> None:
             _setup_subtools(tool_func, self)
-            super().set_args(parser)
+            super().set_args(parser, skip_positional=skip_positional)
 
         def add_args(self, parser) -> None:
             _register_tool_arguments(tool_func, parser)
