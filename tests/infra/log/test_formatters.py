@@ -949,3 +949,37 @@ class TestMissingCoverage:
         # The exception message should appear in output
         assert "user_id" in result
         assert "ValueError" in result
+
+    def test_format_extra_field_with_percent_placeholders_no_colors(self):
+        """Test formatting extra field with %-style placeholders doesn't crash.
+
+        Regression test: Extra field values containing %(name)s patterns
+        were being interpreted as format placeholders, causing ValueError
+        during formatting.
+        """
+        config = LogConfig(location=0, micros=False, colors=False)
+        formatter = LogFormatter(config)
+
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.WARNING,
+            pathname="/test.py",
+            lineno=42,
+            msg="test message",
+            args=(),
+            exc_info=None,
+        )
+
+        # Extra field with %-style placeholder in value
+        setattr(
+            record,
+            "__infra__extra",
+            {"query": "SELECT * FROM users WHERE id = %(user_id)s"},
+        )
+
+        # This should NOT raise ValueError: 'Formatting field not found'
+        result = formatter.format(record)
+
+        # The extra field value should appear in output
+        assert "user_id" in result
+        assert "query" in result

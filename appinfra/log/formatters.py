@@ -118,7 +118,7 @@ def _format_extra_without_colors(record: logging.LogRecord) -> str:
         if key in special_keys:
             continue
         value = extra[key]
-        extra_parts.append(f"[{key}:{value}]")
+        extra_parts.append(f"[{key}:{_escape_percent(str(value))}]")
 
     result = " " + " ".join(extra_parts) if extra_parts else ""
 
