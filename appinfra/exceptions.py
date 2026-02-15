@@ -220,6 +220,34 @@ class TickerConfigError(TickerError):
     pass
 
 
+class DependencyError(InfraError):
+    """
+    Missing optional dependency error.
+
+    Raised when an optional feature requires a dependency that is not installed.
+    Provides clear instructions on how to install the missing dependency.
+
+    Examples:
+        - sqlalchemy not installed for database features
+        - pydantic not installed for validation features
+    """
+
+    def __init__(self, package: str, extra: str, feature: str) -> None:
+        """
+        Initialize the dependency error.
+
+        Args:
+            package: The missing package name (e.g., "sqlalchemy")
+            extra: The pip extra to install (e.g., "sql")
+            feature: Description of the feature requiring this dependency
+        """
+        message = (
+            f"{feature} requires '{package}' which is not installed. "
+            f"Install it with: pip install appinfra[{extra}]"
+        )
+        super().__init__(message, package=package, extra=extra)
+
+
 # Maintain backward compatibility with existing exception classes
 # by keeping them importable from their original locations while
 # also making them inherit from the new hierarchy

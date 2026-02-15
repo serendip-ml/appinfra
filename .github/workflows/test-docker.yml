@@ -131,7 +131,7 @@ jobs:
                         build
 
       - name: Create coverage output directory
-        run: mkdir -p appinfra/scripts/cicd/.coverage && chmod 777 appinfra/scripts/cicd/.coverage
+        run: mkdir -p appinfra/scripts/cicd/.cover && chmod 777 appinfra/scripts/cicd/.cover
 
       - name: Create test database
         working-directory: appinfra/scripts/cicd
@@ -154,7 +154,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: appinfra/scripts/cicd/.coverage/coverage.xml
+          files: appinfra/scripts/cicd/.cover/coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
           verbose: true

@@ -24,6 +24,7 @@ from .ewma import EWMA
 from .exceptions import (
     ConfigError,
     DatabaseError,
+    DependencyError,
     InfraError,
     LoggingError,
     ObservabilityError,
@@ -82,6 +83,7 @@ __all__ = [
     "InfraError",
     "ConfigError",
     "DatabaseError",
+    "DependencyError",
     "LoggingError",
     "ValidationError",
     "ToolError",

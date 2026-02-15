@@ -11,6 +11,18 @@ For API stability guarantees and deprecation policy, see
 ## [Unreleased]
 
 ### Added
+- `appinfra.py` top-level entry point for running CLI during development:
+  - Ensures local source takes precedence over installed package
+  - Run with `./appinfra.py` instead of `python ./appinfra/cli/cli.py`
+- `DependencyError` exception for clear error messages when optional dependencies are missing:
+  - Shows which package is missing and how to install it
+  - Example: `Database logging requires 'sqlalchemy' which is not installed. Install it with: pip install appinfra[sql]`
+- `[sql]` optional extra for database features (sqlalchemy, sqlalchemy-utils, psycopg2-binary):
+  - Core appinfra no longer requires sqlalchemy - install only if using database features
+  - Enables faster CLI startup and smaller install footprint for non-database use cases
+  - Database logging (`log.builder.database`) and database module (`db`) require this extra
+- `[all]` optional extra that includes all other extras (dev, docs, sql, ui, fastapi, validation, hotreload):
+  - Single install command for full development environment: `pip install appinfra[all]`
 - `Backoff` class for exponential backoff retry logic:
   - Configurable base delay, max delay, growth factor, and jitter
   - `wait()` method for blocking backoff (sleeps and returns delay)
@@ -44,6 +56,15 @@ For API stability guarantees and deprecation policy, see
   - Works correctly with Python's `sched.scheduler`
 
 ### Changed
+- Coverage output directory renamed from `.coverage/` to `.cover/`:
+  - Avoids conflict with pytest-cov's `.coverage` SQLite database file
+  - Updated in Makefile.pytest, docker-compose.yml, and GitHub workflows
+- Code quality checker (`appinfra cq cf`) now excludes hidden directories by default:
+  - Skips `.build/`, `.cover/`, `.venv/`, and other dotfile directories
+  - Skips `__pycache__/` directories
+  - Prevents false positives from build artifacts
+- Linter configuration (ruff, mypy) now excludes build artifact directories:
+  - `.build`, `.dist`, `.cover`, `.htmlcov`, `.site`
 - Type annotation cleanup (internal):
   - Replaced string-quoted self-returns with `typing.Self` across builder classes
   - Removed unnecessary `from __future__ import annotations` from ~20 files

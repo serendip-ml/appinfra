@@ -29,6 +29,12 @@ CQ_DIRECTIVE_PATTERN = re.compile(
     r"#\s*cq:\s*(?:max-lines=(\d+)|exempt)", re.IGNORECASE
 )
 
+# Default directories to exclude (build artifacts, caches, virtual envs)
+# These are matched against individual path components
+DEFAULT_EXCLUDE_DIRS = [
+    "__pycache__",
+]
+
 
 @dataclass
 class FunctionInfo:
@@ -797,6 +803,12 @@ class CheckFunctionsTool(Tool):
             True if file should be excluded
         """
         file_str = str(file_path)
+
+        # Exclude hidden directories and default exclude dirs
+        # Note: skip "." (current dir) to allow "./file.py" paths
+        for part in file_path.parts:
+            if (part != "." and part.startswith(".")) or part in DEFAULT_EXCLUDE_DIRS:
+                return True
 
         # Exclude test files by default
         if not include_tests:

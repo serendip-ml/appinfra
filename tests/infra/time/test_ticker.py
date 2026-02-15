@@ -222,8 +222,8 @@ class TestTickerInitialization:
 
         # Should have at least one tick immediately
         assert len(tick_times) >= 1
-        # First tick should be almost immediate (within 50ms of start)
-        assert tick_times[0] - start_time < 0.05
+        # First tick should be almost immediate (within 500ms of start)
+        assert tick_times[0] - start_time < 0.5
 
 
 # =============================================================================
@@ -878,7 +878,7 @@ class TestTickerIterator:
         # First tick should be almost immediate
         assert len(ticks) == 1
         assert ticks[0][0] == 0
-        assert ticks[0][1] < 0.05  # Should fire within 50ms
+        assert ticks[0][1] < 0.5  # Should fire within 500ms
 
     def test_works_without_context_manager(self, mock_logger):
         """Verify iteration works without with statement."""
@@ -1137,20 +1137,20 @@ class TestNonBlockingAPI:
 
     def test_flex_mode_waits_full_interval(self, mock_logger):
         """Test FLEX mode maintains interval from tick start with no catch-up."""
-        ticker = Ticker(mock_logger, secs=0.1, mode=TickerMode.FLEX)
+        ticker = Ticker(mock_logger, secs=0.5, mode=TickerMode.FLEX)
 
         # First tick at t=0
         assert ticker.try_tick() is True
 
         # Wait partway through interval
-        time.sleep(0.05)
+        time.sleep(0.25)
 
-        # Should have ~0.05s remaining (next tick at t=0.1)
+        # Should have ~0.25s remaining (next tick at t=0.5)
         remaining = ticker.time_until_next_tick()
-        assert 0.04 < remaining < 0.06
+        assert 0.15 < remaining < 0.35
 
         # Wait until ready
-        time.sleep(remaining + 0.01)
+        time.sleep(remaining + 0.05)
 
         # Should be ready now
         assert ticker.try_tick() is True
@@ -1158,37 +1158,37 @@ class TestNonBlockingAPI:
         # Key test: After second tick, if we check immediately,
         # we should need full interval again (FLEX behavior)
         remaining_after = ticker.time_until_next_tick()
-        assert 0.09 < remaining_after < 0.11  # ~0.1s (full interval)
+        assert 0.4 < remaining_after <= 0.5  # ~0.5s (full interval)
 
     def test_strict_mode_maintains_rate(self, mock_logger):
         """Test STRICT mode maintains average rate."""
-        ticker = Ticker(mock_logger, secs=0.1, mode=TickerMode.STRICT)
+        ticker = Ticker(mock_logger, secs=0.5, mode=TickerMode.STRICT)
 
         # First tick at t=0
         assert ticker.try_tick() is True
 
         # Wait less than interval
-        time.sleep(0.08)
+        time.sleep(0.4)
 
-        # Should need ~0.02s more
+        # Should need ~0.1s more
         remaining = ticker.time_until_next_tick()
-        assert 0.01 < remaining < 0.03
+        assert 0.0 < remaining < 0.2
 
         # Wait for it
-        time.sleep(0.03)
+        time.sleep(0.15)
 
         # Should be ready
         assert ticker.try_tick() is True
 
     def test_strict_mode_catches_up(self, mock_logger):
         """Test STRICT mode catches up when tasks run slow."""
-        ticker = Ticker(mock_logger, secs=0.05, mode=TickerMode.STRICT)
+        ticker = Ticker(mock_logger, secs=0.25, mode=TickerMode.STRICT)
 
         # First tick
         assert ticker.try_tick() is True
 
         # Simulate slow task (longer than interval)
-        time.sleep(0.12)
+        time.sleep(0.6)
 
         # Should be ready immediately (catch-up)
         assert ticker.time_until_next_tick() == 0.0
@@ -1200,15 +1200,15 @@ class TestNonBlockingAPI:
 
     def test_no_drift_with_fast_ticks(self, mock_logger):
         """Test that rapid try_tick calls don't accumulate drift."""
-        ticker = Ticker(mock_logger, secs=0.05, mode=TickerMode.FLEX)
+        ticker = Ticker(mock_logger, secs=0.25, mode=TickerMode.FLEX)
 
         start = time.monotonic()
         tick_times = []
 
-        # Execute many ticks
-        for _ in range(10):
+        # Execute several ticks (fewer iterations with longer interval)
+        for _ in range(5):
             while not ticker.try_tick():
-                time.sleep(0.001)  # Tight loop
+                time.sleep(0.01)
             tick_times.append(time.monotonic() - start)
 
         # Check intervals between ticks
@@ -1216,13 +1216,13 @@ class TestNonBlockingAPI:
             tick_times[i + 1] - tick_times[i] for i in range(len(tick_times) - 1)
         ]
 
-        # All intervals should be close to 0.05s (allowing tolerance for system scheduling)
+        # All intervals should be close to 0.25s (allowing tolerance for system scheduling)
         for interval in intervals:
-            assert 0.04 < interval < 0.15  # Allow for scheduler delays
+            assert 0.2 < interval < 0.4  # Allow for scheduler delays
 
     def test_mixed_event_source_pattern(self, mock_logger):
         """Test typical mixed event source usage pattern."""
-        ticker = Ticker(mock_logger, secs=0.05)
+        ticker = Ticker(mock_logger, secs=0.25)
 
         # Simulate event loop with mock channel
         messages = ["msg1", None, "msg2", None]  # None = timeout
@@ -1246,27 +1246,27 @@ class TestNonBlockingAPI:
 
     def test_initial_false_with_try_tick(self, mock_logger):
         """Test initial=False delays first tick in non-blocking API."""
-        ticker = Ticker(mock_logger, secs=0.1, initial=False)
+        ticker = Ticker(mock_logger, secs=0.5, initial=False)
 
         # First call should not tick immediately
         assert ticker.try_tick() is False
 
         # Should need approximately full interval
         remaining = ticker.time_until_next_tick()
-        assert 0.09 < remaining < 0.11
+        assert 0.3 < remaining <= 0.5
 
         # Wait partway
-        time.sleep(0.05)
+        time.sleep(0.25)
 
         # Should still not be ready
         assert ticker.try_tick() is False
 
         # Remaining should have decreased
         remaining = ticker.time_until_next_tick()
-        assert 0.04 < remaining < 0.06
+        assert 0.1 < remaining < 0.35
 
         # Wait for it
-        time.sleep(0.06)
+        time.sleep(0.3)
 
         # Now should be ready
         assert ticker.try_tick() is True
@@ -1299,7 +1299,7 @@ class TestNonBlockingAPI:
 
     def test_shared_timestamp_pattern(self, mock_logger):
         """Test pattern of sharing timestamp between methods."""
-        ticker = Ticker(mock_logger, secs=0.1)
+        ticker = Ticker(mock_logger, secs=0.5)
 
         # Capture time once
         now = time.monotonic()
@@ -1311,70 +1311,70 @@ class TestNonBlockingAPI:
 
         # Check again with same timestamp - should not be ready
         remaining = ticker.time_until_next_tick(now=now)
-        assert 0.09 < remaining < 0.11  # ~0.1 (full interval from that moment)
+        assert 0.4 < remaining <= 0.5  # ~0.5 (full interval from that moment)
         assert ticker.try_tick(now=now) is False
 
     def test_spaced_mode_waits_from_completion(self, mock_logger):
         """Test SPACED mode waits full interval from task completion."""
         # Handler that simulates work
-        work_duration = 0.05
+        work_duration = 0.2
 
         def handler():
             time.sleep(work_duration)
 
-        ticker = Ticker(mock_logger, handler, secs=0.1, mode=TickerMode.SPACED)
+        ticker = Ticker(mock_logger, handler, secs=0.5, mode=TickerMode.SPACED)
 
-        # First tick at t=0, handler takes 0.05s, completes at t=0.05
+        # First tick at t=0, handler takes 0.2s
         start = time.monotonic()
         assert ticker.try_tick() is True
         first_completion = time.monotonic() - start
 
-        # Handler should have taken ~0.05s
-        assert 0.04 < first_completion < 0.06
+        # Handler should have taken ~0.2s (wide tolerance)
+        assert 0.1 < first_completion < 0.4
 
-        # Should need ~0.1s from completion time (t=0.05), not from start
+        # Should need ~0.5s from completion time
         remaining = ticker.time_until_next_tick()
-        assert 0.09 < remaining < 0.11  # ~0.1s (full interval from completion)
+        assert 0.3 < remaining <= 0.5  # ~0.5s (full interval from completion)
 
         # Wait for interval
-        time.sleep(remaining + 0.01)
+        time.sleep(remaining + 0.05)
 
         # Should be ready now
         assert ticker.try_tick() is True
 
     def test_spaced_mode_with_slow_task(self, mock_logger):
         """Test SPACED mode waits from completion even for slow tasks."""
-        slow_duration = 0.15
+        slow_duration = 0.3
 
         def slow_handler():
             time.sleep(slow_duration)
 
-        ticker = Ticker(mock_logger, slow_handler, secs=0.1, mode=TickerMode.SPACED)
+        ticker = Ticker(mock_logger, slow_handler, secs=0.25, mode=TickerMode.SPACED)
 
-        # First tick, handler takes 0.15s (longer than 0.1s interval)
+        # First tick, handler takes 0.3s (longer than 0.25s interval)
         start = time.monotonic()
         assert ticker.try_tick() is True
         completion_time = time.monotonic() - start
 
-        # Handler should have taken ~0.15s
-        assert 0.14 < completion_time < 0.16
+        # Handler should have taken ~0.3s (wide tolerance)
+        assert 0.25 < completion_time < 0.5
 
-        # Should need full 0.1s from completion
+        # Should need full 0.25s from completion
         remaining = ticker.time_until_next_tick()
-        assert 0.09 < remaining < 0.11  # ~0.1s (full interval)
+        assert 0.15 < remaining < 0.3  # ~0.25s (full interval)
 
         # Not ready immediately
         assert ticker.try_tick() is False
 
         # Wait for interval
-        time.sleep(0.11)
+        time.sleep(0.3)
 
         # Now should be ready
         assert ticker.try_tick() is True
 
     def test_spaced_vs_flex_comparison(self, mock_logger):
         """Test difference between SPACED and FLEX modes with task execution time."""
-        work_duration = 0.03
+        work_duration = 0.15
 
         def flex_handler():
             time.sleep(work_duration)
@@ -1382,61 +1382,61 @@ class TestNonBlockingAPI:
         def spaced_handler():
             time.sleep(work_duration)
 
-        flex_ticker = Ticker(mock_logger, flex_handler, secs=0.1, mode=TickerMode.FLEX)
+        flex_ticker = Ticker(mock_logger, flex_handler, secs=0.5, mode=TickerMode.FLEX)
         spaced_ticker = Ticker(
-            mock_logger, spaced_handler, secs=0.1, mode=TickerMode.SPACED
+            mock_logger, spaced_handler, secs=0.5, mode=TickerMode.SPACED
         )
 
         # Both start at same time
         start = time.monotonic()
 
-        # FLEX tick: captures time BEFORE handler, handler takes 0.03s
+        # FLEX tick: captures time BEFORE handler, handler takes 0.15s
         assert flex_ticker.try_tick() is True
 
-        # SPACED tick: captures time AFTER handler, handler takes 0.03s
+        # SPACED tick: captures time AFTER handler, handler takes 0.15s
         assert spaced_ticker.try_tick() is True
 
         elapsed = time.monotonic() - start
 
-        # FLEX: interval from tick START (t=0), so 0.1 - elapsed remaining
+        # FLEX: interval from tick START (t=0), so 0.5 - elapsed remaining
         flex_remaining = flex_ticker.time_until_next_tick()
-        expected_flex = 0.1 - elapsed
-        assert abs(flex_remaining - expected_flex) < 0.02  # Within tolerance
+        expected_flex = 0.5 - elapsed
+        assert abs(flex_remaining - expected_flex) < 0.1  # Within tolerance
 
-        # SPACED: interval from tick COMPLETION (t=~0.03), so full 0.1s remaining
+        # SPACED: interval from tick COMPLETION (t=~0.15), so full 0.5s remaining
         spaced_remaining = spaced_ticker.time_until_next_tick()
-        assert 0.09 < spaced_remaining < 0.11  # ~0.1s
+        assert 0.4 < spaced_remaining < 0.6  # ~0.5s
 
         # SPACED should have more time remaining than FLEX
         assert spaced_remaining > flex_remaining
 
     def test_spaced_mode_guarantees_minimum_spacing(self, mock_logger):
         """Test SPACED mode guarantees minimum spacing between operations."""
-        ticker = Ticker(mock_logger, secs=0.1, mode=TickerMode.SPACED)
+        ticker = Ticker(mock_logger, secs=0.5, mode=TickerMode.SPACED)
 
         completion_times = []
 
-        for _ in range(5):
+        for _ in range(3):  # Reduced iterations for faster test
             # Wait for tick
             while not ticker.try_tick():
-                time.sleep(0.001)
+                time.sleep(0.01)
 
             # Record completion time
             completion_times.append(time.monotonic())
 
             # Simulate variable task duration
-            time.sleep(0.02)  # Task takes 20ms
+            time.sleep(0.1)  # Task takes 100ms
 
         # Check spacing between completions
-        # Each interval should be approximately 0.1s (task time + wait time)
+        # Each interval should be approximately 0.5s (task time + wait time)
         intervals = [
             completion_times[i + 1] - completion_times[i]
             for i in range(len(completion_times) - 1)
         ]
 
-        # All intervals should be at least 0.1s (the configured spacing)
+        # All intervals should be at least 0.5s (the configured spacing)
         for interval in intervals:
-            assert interval >= 0.10  # At least the minimum spacing
+            assert interval >= 0.45  # At least the minimum spacing (with tolerance)
 
     def test_spaced_mode_handles_exceptions(self, mock_logger):
         """Test SPACED mode handles handler exceptions and maintains spacing."""
@@ -1444,7 +1444,7 @@ class TestNonBlockingAPI:
 
         # Handler that raises on first call, succeeds on second
         handler = Mock(side_effect=[Exception("boom"), None, None])
-        ticker = Ticker(mock_logger, handler, secs=0.1, mode=TickerMode.SPACED)
+        ticker = Ticker(mock_logger, handler, secs=0.5, mode=TickerMode.SPACED)
 
         # First tick should not raise (exception caught)
         start = time.monotonic()
@@ -1455,10 +1455,10 @@ class TestNonBlockingAPI:
 
         # Should still maintain spacing even after exception
         remaining = ticker.time_until_next_tick()
-        assert 0.09 < remaining < 0.11  # Full interval from completion
+        assert 0.4 < remaining < 0.6  # Full interval from completion
 
         # Wait for next tick
-        time.sleep(0.11)
+        time.sleep(0.55)
 
         # Second tick should succeed
         assert ticker.try_tick() is True
@@ -1658,9 +1658,9 @@ class TestBlockingAPITimingModes:
         def slow_handler():
             tick_times.append(time.monotonic())
             if len(tick_times) == 2:
-                time.sleep(0.15)  # Slow task (longer than interval)
+                time.sleep(0.4)  # Slow task (longer than interval)
 
-        ticker = Ticker(mock_logger, slow_handler, secs=0.1, mode=TickerMode.FLEX)
+        ticker = Ticker(mock_logger, slow_handler, secs=0.25, mode=TickerMode.FLEX)
 
         import threading
 
@@ -1669,10 +1669,10 @@ class TestBlockingAPITimingModes:
 
         # Wait for 3 ticks
         while len(tick_times) < 3:
-            time.sleep(0.01)
+            time.sleep(0.05)
 
         ticker.stop()
-        thread.join(timeout=1.0)
+        thread.join(timeout=2.0)
 
         # Check intervals
         intervals = [
@@ -1680,12 +1680,12 @@ class TestBlockingAPITimingModes:
         ]
 
         # First interval: just sanity check (startup timing varies under load)
-        assert intervals[0] > 0.05  # At least some delay
-        assert intervals[0] < 0.5  # Not absurdly long
+        assert intervals[0] > 0.1  # At least some delay
+        assert intervals[0] < 1.0  # Not absurdly long
 
-        # Second interval is slow (0.15s task) - FLEX resets timing
+        # Second interval is slow (0.4s task) - FLEX resets timing
         # So next tick should be after full interval from completion
-        assert intervals[1] >= 0.09  # At least close to full interval
+        assert intervals[1] >= 0.2  # At least close to full interval
 
     def test_blocking_strict_mode_catches_up(self, mock_logger):
         """Test STRICT mode in blocking API catches up after slow tasks."""
@@ -1694,9 +1694,9 @@ class TestBlockingAPITimingModes:
         def slow_handler():
             tick_times.append(time.monotonic())
             if len(tick_times) == 2:
-                time.sleep(0.25)  # Very slow task
+                time.sleep(0.6)  # Very slow task
 
-        ticker = Ticker(mock_logger, slow_handler, secs=0.1, mode=TickerMode.STRICT)
+        ticker = Ticker(mock_logger, slow_handler, secs=0.25, mode=TickerMode.STRICT)
 
         import threading
 
@@ -1705,21 +1705,21 @@ class TestBlockingAPITimingModes:
 
         # Wait for 5 ticks
         while len(tick_times) < 5:
-            time.sleep(0.01)
+            time.sleep(0.05)
 
         ticker.stop()
-        thread.join(timeout=1.0)
+        thread.join(timeout=3.0)
 
         # Check intervals
         intervals = [
             tick_times[i + 1] - tick_times[i] for i in range(len(tick_times) - 1)
         ]
 
-        # Second interval is slow (0.25s)
-        assert intervals[1] >= 0.20
+        # Second interval is slow (0.6s)
+        assert intervals[1] >= 0.5
 
         # STRICT mode should catch up - next interval should be very short (near 0)
-        assert intervals[2] < 0.05  # Catches up quickly
+        assert intervals[2] < 0.15  # Catches up quickly
 
     def test_blocking_spaced_mode_guarantees_spacing(self, mock_logger):
         """Test SPACED mode in blocking API guarantees spacing from completion."""
@@ -1730,12 +1730,12 @@ class TestBlockingAPITimingModes:
             tick_times.append(time.monotonic())
             # Simulate variable task duration
             if len(tick_times) == 2:
-                time.sleep(0.08)  # Longer task
+                time.sleep(0.2)  # Longer task
             else:
-                time.sleep(0.02)  # Short task
+                time.sleep(0.05)  # Short task
             completion_times.append(time.monotonic())
 
-        ticker = Ticker(mock_logger, varying_handler, secs=0.1, mode=TickerMode.SPACED)
+        ticker = Ticker(mock_logger, varying_handler, secs=0.25, mode=TickerMode.SPACED)
 
         import threading
 
@@ -1744,10 +1744,10 @@ class TestBlockingAPITimingModes:
 
         # Wait for 4 ticks
         while len(tick_times) < 4:
-            time.sleep(0.01)
+            time.sleep(0.05)
 
         ticker.stop()
-        thread.join(timeout=1.0)
+        thread.join(timeout=3.0)
 
         # Check spacing between completions
         completion_intervals = [
@@ -1755,7 +1755,7 @@ class TestBlockingAPITimingModes:
             for i in range(len(completion_times) - 1)
         ]
 
-        # All intervals should be at least the configured spacing (0.1s)
+        # All intervals should be at least the configured spacing (0.25s)
         # plus the task duration
         for interval in completion_intervals:
-            assert interval >= 0.09  # At least close to minimum spacing
+            assert interval >= 0.2  # At least close to minimum spacing

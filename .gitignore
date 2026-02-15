@@ -3,7 +3,7 @@ __pycache__
 .archives
 .installed_packages
 .coverage
-.coverage/
+.cover/
 .coverage.json
 .htmlcov
 *,cover

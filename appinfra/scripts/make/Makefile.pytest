@@ -17,7 +17,7 @@ INFRA_PYTEST_TESTS_DIR ?= tests
 INFRA_PYTEST_ARGS ?=
 
 # Coverage output directory (under project root)
-_COVERAGE_DIR := $(INFRA_DEV_PROJECT_ROOT)/.coverage
+_COVERAGE_DIR := $(INFRA_DEV_PROJECT_ROOT)/.cover
 
 # Build marker argument for coverage tests (empty if no markers specified)
 _COVERAGE_MARKER_ARG := $(if $(INFRA_PYTEST_COVERAGE_MARKERS),-m "$(INFRA_PYTEST_COVERAGE_MARKERS)",)
