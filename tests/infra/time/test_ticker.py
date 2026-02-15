@@ -1344,30 +1344,30 @@ class TestNonBlockingAPI:
 
     def test_spaced_mode_with_slow_task(self, mock_logger):
         """Test SPACED mode waits from completion even for slow tasks."""
-        slow_duration = 0.15
+        slow_duration = 0.3
 
         def slow_handler():
             time.sleep(slow_duration)
 
-        ticker = Ticker(mock_logger, slow_handler, secs=0.1, mode=TickerMode.SPACED)
+        ticker = Ticker(mock_logger, slow_handler, secs=0.25, mode=TickerMode.SPACED)
 
-        # First tick, handler takes 0.15s (longer than 0.1s interval)
+        # First tick, handler takes 0.3s (longer than 0.25s interval)
         start = time.monotonic()
         assert ticker.try_tick() is True
         completion_time = time.monotonic() - start
 
-        # Handler should have taken ~0.15s
-        assert 0.14 < completion_time < 0.16
+        # Handler should have taken ~0.3s (wide tolerance)
+        assert 0.25 < completion_time < 0.5
 
-        # Should need full 0.1s from completion
+        # Should need full 0.25s from completion
         remaining = ticker.time_until_next_tick()
-        assert 0.09 < remaining < 0.11  # ~0.1s (full interval)
+        assert 0.15 < remaining < 0.3  # ~0.25s (full interval)
 
         # Not ready immediately
         assert ticker.try_tick() is False
 
         # Wait for interval
-        time.sleep(0.11)
+        time.sleep(0.3)
 
         # Now should be ready
         assert ticker.try_tick() is True

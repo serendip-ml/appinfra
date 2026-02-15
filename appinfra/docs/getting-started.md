@@ -52,7 +52,7 @@ make install.e INFRA_DEV_INSTALL_EXTRAS=ui,dev     # Editable with extras
 make uninstall
 ```
 
-**Available extras:** `dev`, `sql`, `validation`, `docs`, `fastapi`, `hotreload`, `ui`
+**Available extras:** `all`, `dev`, `sql`, `validation`, `docs`, `fastapi`, `hotreload`, `ui`
 
 Alternatively, install directly with pip:
 
@@ -61,7 +61,7 @@ pip install .                  # Base package
 pip install ".[sql]"           # Database support (sqlalchemy, psycopg2)
 pip install ".[dev]"           # Development tools
 pip install ".[ui]"            # Rich terminal UI
-pip install -e ".[dev,sql,ui]" # Editable with multiple extras
+pip install ".[all]"           # Everything (dev + all optional features)
 ```
 
 ## Quick Examples

@@ -21,6 +21,8 @@ For API stability guarantees and deprecation policy, see
   - Core appinfra no longer requires sqlalchemy - install only if using database features
   - Enables faster CLI startup and smaller install footprint for non-database use cases
   - Database logging (`log.builder.database`) and database module (`db`) require this extra
+- `[all]` optional extra that includes all other extras (dev, docs, sql, ui, fastapi, validation, hotreload):
+  - Single install command for full development environment: `pip install appinfra[all]`
 - `Backoff` class for exponential backoff retry logic:
   - Configurable base delay, max delay, growth factor, and jitter
   - `wait()` method for blocking backoff (sleeps and returns delay)

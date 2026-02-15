@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ".[dev]"
+          pip install ".[all]"
 
       - name: Run unit tests (no PostgreSQL)
         run: make test.unit

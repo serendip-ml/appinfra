@@ -46,6 +46,7 @@ pip install appinfra[ui]         # Rich console, interactive prompts
 pip install appinfra[fastapi]    # FastAPI integration
 pip install appinfra[validation] # Pydantic config validation
 pip install appinfra[hotreload]  # Config file watching
+pip install appinfra[all]        # All extras (dev, docs, and all above)
 ```
 
 ## Documentation
