@@ -52,15 +52,16 @@ make install.e INFRA_DEV_INSTALL_EXTRAS=ui,dev     # Editable with extras
 make uninstall
 ```
 
-**Available extras:** `dev`, `validation`, `docs`, `fastapi`, `hotreload`, `ui`
+**Available extras:** `dev`, `sql`, `validation`, `docs`, `fastapi`, `hotreload`, `ui`
 
 Alternatively, install directly with pip:
 
 ```bash
 pip install .                  # Base package
+pip install ".[sql]"           # Database support (sqlalchemy, psycopg2)
 pip install ".[dev]"           # Development tools
 pip install ".[ui]"            # Rich terminal UI
-pip install -e ".[dev,ui]"     # Editable with multiple extras
+pip install -e ".[dev,sql,ui]" # Editable with multiple extras
 ```
 
 ## Quick Examples
@@ -234,6 +235,8 @@ See the [Application Framework API](api/app.md) for more details.
 ### 4. Database
 
 Connect to PostgreSQL with connection pooling and query logging.
+
+> **Note:** Requires `pip install appinfra[sql]`
 
 **Basic database connection:**
 

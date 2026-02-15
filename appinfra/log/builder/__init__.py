@@ -3,7 +3,11 @@ Logging builder module for creating and configuring loggers with a fluent API.
 
 This module provides various builder classes and factory functions for creating
 loggers with different configurations and output formats.
+
+Note: Database logging requires the [sql] extra: pip install appinfra[sql]
 """
+
+from typing import TYPE_CHECKING
 
 from .builder import (
     LoggingBuilder,
@@ -14,12 +18,16 @@ from .console import (
     ConsoleLoggingBuilder,
     create_console_logger,
 )
-from .database import (
-    DatabaseHandler,
-    DatabaseHandlerConfig,
-    DatabaseLoggingBuilder,
-    create_database_logger,
-)
+
+# Lazy imports for database module (requires sqlalchemy - optional [sql] extra)
+if TYPE_CHECKING:
+    from .database import (
+        DatabaseHandler,
+        DatabaseHandlerConfig,
+        DatabaseLoggingBuilder,
+        create_database_logger,
+    )
+
 from .file import (
     FileHandlerConfig,
     FileLoggingBuilder,
@@ -89,3 +97,20 @@ __all__ = [
     "quick_error_logger",
     "quick_custom_database_logger",
 ]
+
+# Lazy loading for database module (requires sqlalchemy)
+_DATABASE_EXPORTS = {
+    "DatabaseHandler",
+    "DatabaseHandlerConfig",
+    "DatabaseLoggingBuilder",
+    "create_database_logger",
+}
+
+
+def __getattr__(name: str) -> object:
+    """Lazy import for database module (requires sqlalchemy - optional [sql] extra)."""
+    if name in _DATABASE_EXPORTS:
+        from . import database
+
+        return getattr(database, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

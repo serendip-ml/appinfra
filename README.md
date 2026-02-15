@@ -41,6 +41,7 @@ pip install appinfra
 Optional features:
 
 ```bash
+pip install appinfra[sql]        # Database support (PostgreSQL, SQLite)
 pip install appinfra[ui]         # Rich console, interactive prompts
 pip install appinfra[fastapi]    # FastAPI integration
 pip install appinfra[validation] # Pydantic config validation

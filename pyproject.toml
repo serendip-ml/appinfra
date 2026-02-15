@@ -12,9 +12,6 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "sqlalchemy>=2.0.0,<3.0.0",
-    "sqlalchemy-utils>=0.42.0,<1.0.0",
-    "psycopg2-binary>=2.9.0,<3.0.0",
     "PyYAML>=6.0,<7.0",
     "requests>=2.32.0,<3.0.0",
     "urllib3>=2.6.0,<3.0.0",
@@ -60,6 +57,11 @@ ui = [
     "questionary>=2.0.0,<3.0.0",
     "InquirerPy>=0.3.0,<1.0.0",
 ]
+sql = [
+    "sqlalchemy>=2.0.0,<3.0.0",
+    "sqlalchemy-utils>=0.42.0,<1.0.0",
+    "psycopg2-binary>=2.9.0,<3.0.0",
+]
 
 [project.scripts]
 appinfra = "appinfra.cli.cli:main"
@@ -70,6 +72,7 @@ appinfra_build_info = "appinfra.version.setuptools_hook:finalize_hook"
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+exclude = [".build", ".dist", ".cover", ".htmlcov", ".site"]
 
 [tool.ruff.lint]
 select = [
@@ -127,7 +130,7 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
-exclude = ["tests/", "scripts/"]
+exclude = ["tests/", "scripts/", ".build/", ".dist/", ".cover/", ".htmlcov/", ".site/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -32,6 +32,14 @@ aliases:
 
 PostgreSQL interface with connection pooling, query monitoring, and session management.
 
+**Installation:**
+
+```bash
+pip install appinfra[sql]
+```
+
+This installs sqlalchemy, sqlalchemy-utils, and psycopg2-binary.
+
 ## PG (PostgreSQL)
 
 Main PostgreSQL database interface.
