@@ -805,8 +805,9 @@ class CheckFunctionsTool(Tool):
         file_str = str(file_path)
 
         # Exclude hidden directories and default exclude dirs
+        # Note: skip "." (current dir) to allow "./file.py" paths
         for part in file_path.parts:
-            if part.startswith(".") or part in DEFAULT_EXCLUDE_DIRS:
+            if (part != "." and part.startswith(".")) or part in DEFAULT_EXCLUDE_DIRS:
                 return True
 
         # Exclude test files by default
