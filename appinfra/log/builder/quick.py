@@ -10,7 +10,6 @@ from typing import Any
 from ..logger import Logger
 from .builder import LoggingBuilder
 from .console import ConsoleLoggingBuilder
-from .database import DatabaseLoggingBuilder
 from .file import FileLoggingBuilder
 from .json import JSONLoggingBuilder
 
@@ -250,6 +249,7 @@ def quick_console_and_file(
 
 
 # Database quick functions from database.py
+# Note: These functions require the [sql] extra: pip install appinfra[sql]
 def quick_audit_logger(
     name: str, db_interface: Any, config: dict[str, Any] | None = None
 ) -> Logger:
@@ -267,7 +267,12 @@ def quick_audit_logger(
 
     Returns:
         Logger instance
+
+    Raises:
+        DependencyError: If sqlalchemy is not installed
     """
+    from .database import DatabaseLoggingBuilder
+
     if config is None:
         config = {"level": "info"}
 
@@ -296,7 +301,12 @@ def quick_error_logger(
 
     Returns:
         Logger instance
+
+    Raises:
+        DependencyError: If sqlalchemy is not installed
     """
+    from .database import DatabaseLoggingBuilder
+
     if config is None:
         config = {"level": "error"}
 
@@ -331,7 +341,12 @@ def quick_custom_database_logger(
 
     Returns:
         Logger instance
+
+    Raises:
+        DependencyError: If sqlalchemy is not installed
     """
+    from .database import DatabaseLoggingBuilder
+
     if config is None:
         config = {"level": "info"}
 

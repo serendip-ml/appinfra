@@ -13,7 +13,12 @@ try:
     from .sqlite import SQLite
     from .utils import detach, detach_all
 except ImportError as e:
-    if "sqlalchemy" in str(e):
+    # Use ModuleNotFoundError.name for reliable detection of missing sqlalchemy
+    if (
+        isinstance(e, ModuleNotFoundError)
+        and e.name
+        and e.name.startswith("sqlalchemy")
+    ):
         from ..exceptions import DependencyError
 
         raise DependencyError("sqlalchemy", "sql", "Database module") from e
