@@ -83,6 +83,9 @@ For API stability guarantees and deprecation policy, see
 - Ticker API mode mixing protection: `try_tick()` and `run()` cannot be mixed on the same instance
   - Prevents state corruption from shared `_first` flag between different API modes
   - Clear error message: "Cannot call run() after using try_tick()"
+- `make type` now explicitly passes `--config-file pyproject.toml` to mypy:
+  - Ensures mypy uses consistent cache directory, reducing type check time from ~60s to ~6s
+  - Flag only added when `pyproject.toml` exists (backward compatible)
 
 ## [0.3.5] - 2026-02-11
 
