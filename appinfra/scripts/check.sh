@@ -64,6 +64,8 @@ PKG_NAME="${INFRA_DEV_PKG_NAME:-appinfra}"
 CQ_STRICT="${INFRA_DEV_CQ_STRICT:-false}"
 COVERAGE_MARKERS="${INFRA_PYTEST_COVERAGE_MARKERS:-unit}"
 MYPY_FLAGS="${INFRA_DEV_MYPY_FLAGS:-}"
+MYPY_CONFIG_FLAG=""
+[ -f "pyproject.toml" ] && MYPY_CONFIG_FLAG="--config-file pyproject.toml"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${INFRA_DEV_PROJECT_ROOT:-$(dirname "$SCRIPT_DIR")}"
 
@@ -84,7 +86,7 @@ DOCSTRING_THRESHOLD="${INFRA_DEV_DOCSTRING_THRESHOLD:-80}"
 declare -a CHECKS=(
     "Formatting check|fmt.check|${PYTHON} -m ruff format --check .|fmt"
     "Linting|lint|${PYTHON} -m ruff check .|lint.fix"
-    "Type checking|type|${PYTHON} -m mypy ${PKG_NAME}/ --exclude 'examples/' ${MYPY_FLAGS}|"
+    "Type checking|type|${PYTHON} -m mypy ${PKG_NAME}/ --exclude 'examples/' ${MYPY_CONFIG_FLAG} ${MYPY_FLAGS}|"
 )
 
 # Add examples type check only if directory exists (top-level or inside package)
@@ -95,7 +97,7 @@ elif [ -d "${PKG_NAME}/examples" ]; then
     EXAMPLES_DIR="${PKG_NAME}/examples"
 fi
 if [ -n "$EXAMPLES_DIR" ]; then
-    CHECKS+=("Type checking (examples)|type|${PYTHON} -m mypy ${EXAMPLES_DIR}/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports ${MYPY_FLAGS}|")
+    CHECKS+=("Type checking (examples)|type|${PYTHON} -m mypy ${EXAMPLES_DIR}/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports ${MYPY_CONFIG_FLAG} ${MYPY_FLAGS}|")
 fi
 
 # Build exclude flags from INFRA_DEV_CQ_EXCLUDE (subshell contains set -f scope)
