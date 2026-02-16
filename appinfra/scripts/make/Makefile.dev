@@ -45,6 +45,9 @@ export INFRA_PYTEST_COVERAGE_THRESHOLD
 # Expand CQ_EXCLUDE patterns to --exclude flags (empty if no exclusions)
 _CQ_EXCLUDE_FLAGS := $(if $(INFRA_DEV_CQ_EXCLUDE),$(foreach pat,$(INFRA_DEV_CQ_EXCLUDE),--exclude "$(pat)"))
 
+# Mypy config flag (only if pyproject.toml exists)
+_MYPY_CONFIG_FLAG := $(if $(wildcard pyproject.toml),--config-file pyproject.toml)
+
 # Python test wrapper with warning suppression
 PYTHON_TEST = PYTHONWARNINGS="ignore::ResourceWarning,ignore::RuntimeWarning" ${PYTHON}
 
@@ -136,9 +139,9 @@ ifeq ($(INFRA_DRY_RUN),1)
 	@echo "[DRY RUN] Would run: mypy $(INFRA_DEV_PKG_NAME)/"
 else
 	@echo "* running type checker..."
-	@${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/ --exclude 'examples/' $(INFRA_DEV_MYPY_FLAGS)
-	@if [ -d "examples" ]; then ${PYTHON} -m mypy examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports $(INFRA_DEV_MYPY_FLAGS); \
-	elif [ -d "$(INFRA_DEV_PKG_NAME)/examples" ]; then ${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports $(INFRA_DEV_MYPY_FLAGS); fi
+	@${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/ --exclude 'examples/' $(_MYPY_CONFIG_FLAG) $(INFRA_DEV_MYPY_FLAGS)
+	@if [ -d "examples" ]; then ${PYTHON} -m mypy examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports $(_MYPY_CONFIG_FLAG) $(INFRA_DEV_MYPY_FLAGS); \
+	elif [ -d "$(INFRA_DEV_PKG_NAME)/examples" ]; then ${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports $(_MYPY_CONFIG_FLAG) $(INFRA_DEV_MYPY_FLAGS); fi
 	@echo "* type checking done"
 endif
 endif # skip type
