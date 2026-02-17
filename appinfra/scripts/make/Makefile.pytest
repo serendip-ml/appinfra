@@ -11,6 +11,8 @@
 #                                     Set to 0 to disable coverage checking entirely
 #   INFRA_PYTEST_TESTS_DIR          - Tests directory (default: tests)
 #   INFRA_PYTEST_ARGS               - Additional pytest arguments (default: empty)
+#   INFRA_DEV_SKIP_TARGETS          - Space-separated list of targets to skip (project provides own)
+#                                     Supported: test.unit test.integration test.e2e test.perf test.security
 
 # Configuration (defaults set in Makefile.config)
 INFRA_PYTEST_TESTS_DIR ?= tests
@@ -44,65 +46,70 @@ endef
 
 ##@ Testing
 
+ifeq ($(filter test.unit,$(INFRA_DEV_SKIP_TARGETS)),)
 test.unit:: ## runs unit tests (fast, isolated, mocked dependencies)
 	@echo "* running unit tests..."
 	@$(call run_pytest,tests/ -m unit -qq --tb=short)
 	@echo "* unit tests done"
-.PHONY: test.unit
 
 test.unit.v:: ## runs unit tests (verbose)
 	@echo "* running unit tests... (verbose)"
 	@$(call run_pytest,tests/ -m unit -v)
 	@echo "* unit tests done"
-.PHONY: test.unit.v
+endif # skip test.unit
+.PHONY: test.unit test.unit.v
 
+ifeq ($(filter test.integration,$(INFRA_DEV_SKIP_TARGETS)),)
 test.integration:: ## runs integration tests (real dependencies)
 	@echo "* running integration tests..."
 	@$(call run_pytest,tests/ -m integration -qq --tb=short)
 	@echo "* integration tests done"
-.PHONY: test.integration
 
 test.integration.v:: ## runs integration tests (verbose)
 	@echo "* running integration tests... (verbose)"
 	@$(call run_pytest,tests/ -m integration -v)
 	@echo "* integration tests done"
-.PHONY: test.integration.v
+endif # skip test.integration
+.PHONY: test.integration test.integration.v
 
+ifeq ($(filter test.perf,$(INFRA_DEV_SKIP_TARGETS)),)
 test.perf:: ## runs performance tests (benchmarks, load tests)
 	@echo "* running performance tests..."
 	@$(call run_pytest,tests/ -m performance -qq --tb=short)
 	@echo "* performance tests done"
-.PHONY: test.perf
 
 test.perf.v:: ## runs performance tests (verbose)
 	@echo "* running performance tests... (verbose)"
 	@$(call run_pytest,tests/ -m performance -v -s)
 	@echo "* performance tests done"
-.PHONY: test.perf.v
+endif # skip test.perf
+.PHONY: test.perf test.perf.v
 
+ifeq ($(filter test.security,$(INFRA_DEV_SKIP_TARGETS)),)
 test.security:: ## runs security tests (injection, validation, XSS)
 	@echo "* running security tests..."
 	@$(call run_pytest,tests/ -m security -qq --tb=short)
 	@echo "* security tests done"
-.PHONY: test.security
 
 test.security.v:: ## runs security tests (verbose)
 	@echo "* running security tests... (verbose)"
 	@$(call run_pytest,tests/ -m security -v)
 	@echo "* security tests done"
-.PHONY: test.security.v
+endif # skip test.security
+.PHONY: test.security test.security.v
 
+ifeq ($(filter test.e2e,$(INFRA_DEV_SKIP_TARGETS)),)
 test.e2e:: ## runs end-to-end tests (full system workflows)
 	@echo "* running end-to-end tests..."
 	@$(call run_pytest,tests/ -m e2e -qq --tb=short)
 	@echo "* end-to-end tests done"
-.PHONY: test.e2e
 
 test.e2e.v:: ## runs end-to-end tests (verbose)
 	@echo "* running end-to-end tests... (verbose)"
 	@$(call run_pytest,tests/ -m e2e -v)
 	@echo "* end-to-end tests done"
-.PHONY: test.e2e.v
+endif # skip test.e2e
+.PHONY: test.e2e test.e2e.v
 
 test.all:: test.unit test.integration test.e2e test.perf test.security ## runs all test types
 	@echo "* all tests completed"
