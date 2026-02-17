@@ -10,6 +10,12 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Fixed
+- `INFRA_DEV_SKIP_TARGETS` now works for pytest targets in `Makefile.pytest`:
+  - Supported targets: `test.unit`, `test.integration`, `test.e2e`, `test.perf`, `test.security`
+  - Skipping a target also skips its verbose variant (e.g., `test.e2e` skips `test.e2e.v`)
+  - Use case: Projects needing custom test configurations (e.g., GPU tests with `-n 0`)
+
 ### Added
 - `appinfra.py` top-level entry point for running CLI during development:
   - Ensures local source takes precedence over installed package

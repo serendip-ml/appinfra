@@ -248,12 +248,15 @@ Some targets can be completely replaced by your project using `INFRA_DEV_SKIP_TA
 useful when a project needs fundamentally different behavior (e.g., different mypy flags for
 different directories).
 
-**Supported targets:** `fmt`, `lint`, `type`, `cq`
+**Supported targets:**
+- Code quality: `fmt`, `lint`, `type`, `cq`
+- Testing: `test.unit`, `test.integration`, `test.e2e`, `test.perf`, `test.security`
 
-> **Note:** Skipping a target also skips its helper variants:
+> **Note:** Skipping a target also skips its helper/verbose variants:
 > - `fmt` → also skips `fmt.check`
 > - `lint` → also skips `lint.fix`, `lint.unsafe`
 > - `cq` → also skips `cq.strict`
+> - `test.*` → also skips `test.*.v` (verbose variant)
 
 ### Example: Custom Type Checking
 
@@ -289,6 +292,29 @@ type::
 lint::
 	@echo "* custom linting..."
 	# ... your implementation
+```
+
+### Example: Custom Test Configuration
+
+Projects with special test requirements (e.g., GPU tests that OOM when run in parallel) can skip
+framework test targets and provide their own:
+
+```makefile
+# Skip the built-in test.e2e target
+INFRA_DEV_SKIP_TARGETS := test.e2e
+
+include $(infra)/make/Makefile.pytest
+
+# Define custom e2e target with sequential execution (-n 0)
+test.e2e:: ## runs e2e tests (sequential for GPU)
+	@echo "* running e2e tests (sequential)..."
+	@$(call run_pytest,tests/ -m e2e -n 0 -qq --tb=short)
+	@echo "* e2e tests done"
+
+test.e2e.v:: ## runs e2e tests (verbose, sequential)
+	@echo "* running e2e tests (verbose, sequential)..."
+	@$(call run_pytest,tests/ -m e2e -n 0 -v)
+	@echo "* e2e tests done"
 ```
 
 > **Note:** `INFRA_DEV_SKIP_TARGETS` must be set **before** the include statement.
@@ -399,7 +425,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 | `INFRA_DEV_PROJECT_ROOT` | `$(CURDIR)` | Project root for check.sh |
 | `INFRA_DEV_INSTALL_EXTRAS` | (empty) | Optional extras for install (e.g., `ui,fastapi`) |
 | `INFRA_DEV_MYPY_FLAGS` | (empty) | Extra mypy flags (e.g., `--follow-imports=skip` for large deps) |
-| `INFRA_DEV_SKIP_TARGETS` | (empty) | Targets to skip so project can override (e.g., `type` or `fmt lint`) |
+| `INFRA_DEV_SKIP_TARGETS` | (empty) | Targets to skip so project can override (e.g., `type`, `test.e2e`) |
 | `INFRA_DRY_RUN` | `0` | Set to `1` to preview commands without executing |
 
 **Testing (PYTEST):**
