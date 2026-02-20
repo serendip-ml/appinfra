@@ -120,34 +120,120 @@ data = config.to_dict()    # Recursive conversion
 
 ## RateLimiter
 
-Control operation frequency.
+Control operation frequency with blocking or non-blocking modes.
 
 ```python
 class RateLimiter:
     def __init__(
         self,
-        max_calls: int,      # Maximum calls allowed
-        period: float        # Time period in seconds
+        lg: Logger,               # Logger (required, first parameter)
+        per_minute: float,        # Operations per minute (e.g., 1/60 for hourly)
     ): ...
 
-    def __enter__(self): ...
-    def __exit__(self, ...): ...
-    def acquire(self) -> None: ...
+    def next(self, respect_max_ticks: bool = True) -> float: ...  # Blocking: wait and return delay
+    def try_next(self) -> bool: ...                               # Non-blocking: return True if allowed
+```
+
+**Blocking Mode (`next()`):**
+
+```python
+from appinfra.rate_limit import RateLimiter
+from appinfra.log import Logger
+
+lg = Logger("my_app")
+limiter = RateLimiter(lg, per_minute=60)  # 1 operation per second
+
+for i in range(10):
+    limiter.next()  # Blocks/sleeps if rate limit exceeded
+    do_operation()
+```
+
+**Non-Blocking Mode (`try_next()`):**
+
+For event loops that cannot block (e.g., message-processing loops):
+
+```python
+limiter = RateLimiter(lg, per_minute=60)
+
+while running:
+    process_messages()  # Handle SHUTDOWN signals, etc.
+
+    if limiter.try_next():
+        do_rate_limited_operation()
+    # If rate limited, skip this cycle and retry on next iteration
+```
+
+**Bypass Mode:**
+
+```python
+limiter.next(respect_max_ticks=False)  # Returns delay but doesn't sleep
+```
+
+## Backoff
+
+Exponential backoff for retry logic with configurable delays and jitter.
+
+```python
+class Backoff:
+    def __init__(
+        self,
+        lg: Logger,               # Logger (required, first parameter)
+        base: float = 1.0,        # Initial delay (seconds, must be > 0)
+        max_delay: float = 60.0,  # Maximum delay cap (must be > 0)
+        factor: float = 2.0,      # Multiplier per attempt (must be >= 1)
+        jitter: bool = True,      # Randomize to avoid thundering herd
+    ): ...
+
+    def wait(self) -> float: ...       # Blocking: sleep and return actual delay
+    def next_delay(self) -> float: ... # Non-blocking: return delay, increment attempt
+    def reset(self) -> None: ...       # Reset after success
+
+    @property
+    def attempts(self) -> int: ...     # Current attempt count
 ```
 
 **Usage:**
 
 ```python
-from appinfra.rate_limit import RateLimiter
-import time
+from appinfra.rate_limit import Backoff
 
-# Allow 5 calls per 10 seconds
-limiter = RateLimiter(max_calls=5, period=10.0)
+backoff = Backoff(logger)
 
-for i in range(10):
-    with limiter:
-        print(f"Call {i}")
-        # Blocks after 5 calls until period resets
+while True:
+    try:
+        response = call_endpoint()
+        backoff.reset()  # Success - reset for next time
+        return response
+    except ConnectionError:
+        backoff.wait()  # Exponential backoff: 1s, 2s, 4s, 8s... capped at 60s
+```
+
+**Algorithm:**
+
+```text
+delay = min(base * (factor ** attempts), max_delay)
+if jitter:
+    delay = delay * random.uniform(0.0, 1.0)  # Full jitter
+```
+
+**Non-Blocking Mode:**
+
+```python
+backoff = Backoff(logger, base=1.0, max_delay=30.0)
+
+delay = backoff.next_delay()  # Get delay without sleeping
+# ... do something else ...
+time.sleep(delay)             # Sleep manually when ready
+```
+
+**Custom Configuration:**
+
+```python
+# Aggressive backoff for critical services
+backoff = Backoff(logger, base=0.1, max_delay=5.0, factor=1.5, jitter=True)
+
+# Conservative backoff for batch jobs
+backoff = Backoff(logger, base=5.0, max_delay=300.0, factor=2.0, jitter=False)
 ```
 
 ## EWMA

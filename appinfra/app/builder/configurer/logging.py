@@ -4,7 +4,9 @@ Logging configuration builder for AppBuilder.
 This module provides focused builder for configuring logging.
 """
 
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Self
 
 if TYPE_CHECKING:
     from ..app import AppBuilder, LoggingConfig
@@ -18,7 +20,7 @@ class LoggingConfigurer:
     following the Single Responsibility Principle.
     """
 
-    def __init__(self, app_builder: "AppBuilder"):
+    def __init__(self, app_builder: AppBuilder):
         """
         Initialize the logging configurer.
 
@@ -27,7 +29,7 @@ class LoggingConfigurer:
         """
         self._app_builder = app_builder
 
-    def with_config(self, config: "LoggingConfig") -> "LoggingConfigurer":
+    def with_config(self, config: LoggingConfig) -> Self:
         """
         Set the logging configuration.
 
@@ -40,7 +42,7 @@ class LoggingConfigurer:
         self._app_builder._logging_config = config
         return self
 
-    def with_level(self, level: str) -> "LoggingConfigurer":
+    def with_level(self, level: str) -> Self:
         """
         Set the log level.
 
@@ -57,7 +59,7 @@ class LoggingConfigurer:
         self._app_builder._logging_config.level = level
         return self
 
-    def with_location(self, depth: int) -> "LoggingConfigurer":
+    def with_location(self, depth: int) -> Self:
         """
         Set the location depth for log messages.
 
@@ -74,7 +76,7 @@ class LoggingConfigurer:
         self._app_builder._logging_config.location = depth
         return self
 
-    def with_micros(self, enabled: bool = True) -> "LoggingConfigurer":
+    def with_micros(self, enabled: bool = True) -> Self:
         """
         Enable or disable microsecond timestamps.
 
@@ -91,7 +93,7 @@ class LoggingConfigurer:
         self._app_builder._logging_config.micros = enabled
         return self
 
-    def with_format(self, format_string: str) -> "LoggingConfigurer":
+    def with_format(self, format_string: str) -> Self:
         """
         Set custom log format string.
 
@@ -108,7 +110,7 @@ class LoggingConfigurer:
         self._app_builder._logging_config.format_string = format_string
         return self
 
-    def with_topic_level(self, pattern: str, level: str) -> "LoggingConfigurer":
+    def with_topic_level(self, pattern: str, level: str) -> Self:
         """
         Set log level for a specific topic pattern.
 
@@ -139,7 +141,7 @@ class LoggingConfigurer:
         manager.add_rule(pattern, level, source="api", priority=10)
         return self
 
-    def with_topic_levels(self, levels: dict[str, str]) -> "LoggingConfigurer":
+    def with_topic_levels(self, levels: dict[str, str]) -> Self:
         """
         Set log levels for multiple topic patterns at once.
 
@@ -173,7 +175,7 @@ class LoggingConfigurer:
         manager.add_rules_from_dict(levels, source="api", priority=10)
         return self
 
-    def with_runtime_updates(self, enabled: bool = True) -> "LoggingConfigurer":
+    def with_runtime_updates(self, enabled: bool = True) -> Self:
         """
         Enable or disable runtime updates to existing loggers.
 
@@ -212,7 +214,7 @@ class LoggingConfigurer:
         self,
         enabled: bool = True,
         debounce_ms: int = 500,
-    ) -> "LoggingConfigurer":
+    ) -> Self:
         """
         Enable hot-reload of logging configuration from config file.
 
@@ -276,7 +278,7 @@ class LoggingConfigurer:
 
         return self
 
-    def done(self) -> "AppBuilder":
+    def done(self) -> AppBuilder:
         """
         Finish logging configuration and return to main builder.
 

@@ -91,6 +91,15 @@ def _cache_result(
 # Helper functions for LogFormatter._format_with_colors()
 
 
+def _escape_percent(s: str) -> str:
+    """Escape % as %% to prevent format string interpretation.
+
+    Exception messages (e.g., SQLAlchemy errors) often contain %(param)s
+    patterns that would cause KeyError during %-style formatting.
+    """
+    return s.replace("%", "%%")
+
+
 def _format_extra_without_colors(record: logging.LogRecord) -> str:
     """Format extra fields without colors."""
     extra = getattr(record, "__infra__extra", None)
@@ -109,17 +118,17 @@ def _format_extra_without_colors(record: logging.LogRecord) -> str:
         if key in special_keys:
             continue
         value = extra[key]
-        extra_parts.append(f"[{key}:{value}]")
+        extra_parts.append(f"[{key}:{_escape_percent(str(value))}]")
 
     result = " " + " ".join(extra_parts) if extra_parts else ""
 
     # Append exception info (prefer pre-formatted from queue mode)
     if "exception_formatted" in extra:
-        result += "\n" + extra["exception_formatted"]
+        result += "\n" + _escape_percent(extra["exception_formatted"])
     elif "exception" in extra:
         exc = extra["exception"]
         if isinstance(exc, Exception):
-            result += f"\n{exc.__class__.__name__}: {exc}"
+            result += f"\n{_escape_percent(f'{exc.__class__.__name__}: {exc}')}"
 
     return result
 
@@ -342,10 +351,10 @@ class FieldFormatter:
         # Handle exception - prefer pre-formatted (from queue mode), fall back to live
         if "exception_formatted" in fields:
             # Pre-formatted exception from MPQueueHandler (cross-process)
-            s += "\n" + fields["exception_formatted"]
+            s += "\n" + _escape_percent(fields["exception_formatted"])
         elif "exception" in fields:
             # Live exception in same process
-            s += "\n" + self._render_exception(fields["exception"])
+            s += "\n" + _escape_percent(self._render_exception(fields["exception"]))
 
         return s
 

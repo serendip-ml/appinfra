@@ -6,8 +6,6 @@ Patterns are designed to minimize false positives while catching
 real secrets.
 """
 
-from __future__ import annotations
-
 # Pattern names for documentation and configuration
 PATTERN_NAMES = {
     "api_key": "API keys (generic)",

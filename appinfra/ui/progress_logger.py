@@ -15,6 +15,8 @@ import os
 import sys
 from typing import TYPE_CHECKING, Any
 
+from ..log import Logger
+
 if TYPE_CHECKING:
     from rich.console import Console as RichConsole
     from rich.progress import Progress as RichProgress
@@ -63,19 +65,19 @@ class ProgressLogger:
     through to the logger.
 
     Example - Spinner mode (unknown duration):
-        with ProgressLogger(logger, "Processing...") as pl:
+        with ProgressLogger(lg, "Processing...") as pl:
             for item in items:
                 process(item)
                 pl.log("Processed item")
 
     Example - Progress bar mode (known total):
-        with ProgressLogger(logger, "Downloading...", total=100) as pl:
+        with ProgressLogger(lg, "Downloading...", total=100) as pl:
             for chunk in chunks:
                 download(chunk)
                 pl.update(advance=1)
 
     Example - Switch mid-operation:
-        with ProgressLogger(logger, "Scanning...") as pl:
+        with ProgressLogger(lg, "Scanning...") as pl:
             items = scan_directory()  # Spinner while scanning
             pl.set_total(len(items))  # Switch to progress bar
             for item in items:
@@ -85,7 +87,7 @@ class ProgressLogger:
 
     def __init__(
         self,
-        logger: logging.Logger,
+        lg: Logger,
         message: str = "Working...",
         total: int | None = None,
         spinner: str = "dots",
@@ -97,7 +99,7 @@ class ProgressLogger:
         Initialize the progress logger.
 
         Args:
-            logger: Logger instance to use for log messages
+            lg: Logger instance to use for log messages
             message: Status/progress message to display
             total: Total items for progress bar (None = spinner mode)
             spinner: Spinner style for spinner mode (e.g., "dots", "arc", "moon")
@@ -109,7 +111,7 @@ class ProgressLogger:
             bar_style: Style for completed portion of bar (e.g., "green", "blue",
                        "bar.complete"). Default is Rich's "bar.complete" (Monokai pink).
         """
-        self._logger = logger
+        self._lg = lg
         self._message = message
         self._total = total
         self._spinner = spinner
@@ -226,7 +228,7 @@ class ProgressLogger:
             **kwargs: Additional keyword args for logger (e.g., extra={})
         """
         self._pause()
-        self._logger.log(level, msg, *args, **kwargs)
+        self._lg.log(level, msg, *args, **kwargs)
         self._resume()
 
     def debug(self, msg: str, *args: Any, **kwargs: Any) -> None:

@@ -5,8 +5,10 @@ This module provides a fluent API for building middleware components
 with request/response processing and conditional execution.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Self
 
 from ..server.handlers import Middleware
 
@@ -28,7 +30,7 @@ class MiddlewareBuilder:
         self._conditions: list[Callable] = []
         self._priority: int = 0
 
-    def process_request(self, func: Callable) -> "MiddlewareBuilder":
+    def process_request(self, func: Callable) -> Self:
         """
         Set the request processing function.
 
@@ -39,7 +41,7 @@ class MiddlewareBuilder:
         self._request_processor = func
         return self
 
-    def process_response(self, func: Callable) -> "MiddlewareBuilder":
+    def process_response(self, func: Callable) -> Self:
         """
         Set the response processing function.
 
@@ -50,7 +52,7 @@ class MiddlewareBuilder:
         self._response_processor = func
         return self
 
-    def handle_error(self, func: Callable) -> "MiddlewareBuilder":
+    def handle_error(self, func: Callable) -> Self:
         """
         Set the error handling function.
 
@@ -61,7 +63,7 @@ class MiddlewareBuilder:
         self._error_handler = func
         return self
 
-    def when(self, condition: Callable) -> "MiddlewareBuilder":
+    def when(self, condition: Callable) -> Self:
         """
         Add a condition for when this middleware should run.
 
@@ -72,7 +74,7 @@ class MiddlewareBuilder:
         self._conditions.append(condition)
         return self
 
-    def with_priority(self, priority: int) -> "MiddlewareBuilder":
+    def with_priority(self, priority: int) -> Self:
         """
         Set the middleware priority (higher numbers run first).
 
@@ -82,7 +84,7 @@ class MiddlewareBuilder:
         self._priority = priority
         return self
 
-    def build(self) -> "BuiltMiddleware":
+    def build(self) -> BuiltMiddleware:
         """Build the middleware with all configured options."""
         return BuiltMiddleware(
             name=self._name,

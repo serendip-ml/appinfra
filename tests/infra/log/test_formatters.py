@@ -856,3 +856,130 @@ class TestMissingCoverage:
 
         # Should use micro rule width (different spacing)
         assert isinstance(result, str)
+
+    def test_format_exception_with_percent_placeholders_no_colors(self):
+        """Test formatting exception with %-style placeholders doesn't crash.
+
+        Regression test: Exception messages containing %(name)s patterns
+        (common in SQLAlchemy errors) were being interpreted as format
+        placeholders, causing KeyError during formatting.
+        """
+        from appinfra.log.formatters import _format_without_colors
+
+        config = LogConfig(location=0, micros=False, colors=False)
+        formatter = LogFormatter(config)
+
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.WARNING,
+            pathname="/test.py",
+            lineno=42,
+            msg="session rollback",
+            args=(),
+            exc_info=None,
+        )
+
+        # Exception with %-style placeholder in message (like SQLAlchemy errors)
+        exc = ValueError("Missing parameter %(context_pattern)s in query")
+        setattr(record, "__infra__extra", {"exception": exc})
+
+        # Verify exception is included in format string
+        fmt = _format_without_colors(formatter, record, 50)
+        assert "ValueError" in fmt, f"Exception not in format: {fmt!r}"
+        assert "context_pattern" in fmt
+
+        # This should NOT raise KeyError: 'context_pattern'
+        result = formatter.format(record)
+
+        # The exception message should appear in output (escaped)
+        assert "context_pattern" in result
+        assert "ValueError" in result
+
+    def test_format_exception_with_percent_placeholders_colors(self, formatter_config):
+        """Test formatting exception with %-style placeholders with colors enabled."""
+        formatter = LogFormatter(formatter_config)
+
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.WARNING,
+            pathname="/test.py",
+            lineno=42,
+            msg="session rollback",
+            args=(),
+            exc_info=None,
+        )
+
+        # Exception with %-style placeholder in message (like SQLAlchemy errors)
+        exc = ValueError("Missing parameter %(context_pattern)s in query")
+        setattr(record, "__infra__extra", {"exception": exc})
+
+        # This should NOT raise KeyError: 'context_pattern'
+        result = formatter.format(record)
+
+        # The exception message should appear in output
+        # (Note: without active traceback, _render_exception returns just str(e))
+        assert "context_pattern" in result
+        assert "Missing parameter" in result
+
+    def test_format_exception_formatted_with_percent_placeholders(self):
+        """Test pre-formatted exception with %-style placeholders (queue mode)."""
+        config = LogConfig(location=0, micros=False, colors=False)
+        formatter = LogFormatter(config)
+
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.WARNING,
+            pathname="/test.py",
+            lineno=42,
+            msg="session rollback",
+            args=(),
+            exc_info=None,
+        )
+
+        # Pre-formatted exception string (from MPQueueHandler cross-process)
+        setattr(
+            record,
+            "__infra__extra",
+            {"exception_formatted": "ValueError: Query failed %(user_id)s"},
+        )
+
+        # This should NOT raise KeyError: 'user_id'
+        result = formatter.format(record)
+
+        # The exception message should appear in output
+        assert "user_id" in result
+        assert "ValueError" in result
+
+    def test_format_extra_field_with_percent_placeholders_no_colors(self):
+        """Test formatting extra field with %-style placeholders doesn't crash.
+
+        Regression test: Extra field values containing %(name)s patterns
+        were being interpreted as format placeholders, causing ValueError
+        during formatting.
+        """
+        config = LogConfig(location=0, micros=False, colors=False)
+        formatter = LogFormatter(config)
+
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.WARNING,
+            pathname="/test.py",
+            lineno=42,
+            msg="test message",
+            args=(),
+            exc_info=None,
+        )
+
+        # Extra field with %-style placeholder in value
+        setattr(
+            record,
+            "__infra__extra",
+            {"query": "SELECT * FROM users WHERE id = %(user_id)s"},
+        )
+
+        # This should NOT raise ValueError: 'Formatting field not found'
+        result = formatter.format(record)
+
+        # The extra field value should appear in output
+        assert "user_id" in result
+        assert "query" in result

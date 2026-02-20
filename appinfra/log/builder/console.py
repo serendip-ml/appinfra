@@ -7,7 +7,7 @@ for console-only logging with various formatting options.
 
 import logging
 import sys
-from typing import Any
+from typing import Any, Self
 
 from ..config import LogConfig
 from ..formatters import LogFormatter
@@ -118,7 +118,7 @@ class ConsoleLoggingBuilder(LoggingBuilder):
         # Default to console handler
         self.with_console_handler()
 
-    def with_colors(self, enabled: bool = True) -> "ConsoleLoggingBuilder":
+    def with_colors(self, enabled: bool = True) -> Self:
         """
         Enable or disable colored console output.
 
@@ -130,7 +130,7 @@ class ConsoleLoggingBuilder(LoggingBuilder):
         """
         return super().with_colors(enabled)
 
-    def with_stream(self, stream: Any) -> "ConsoleLoggingBuilder":
+    def with_stream(self, stream: Any) -> Self:
         """
         Set the output stream for console logging.
 
@@ -147,7 +147,7 @@ class ConsoleLoggingBuilder(LoggingBuilder):
         self.with_console_handler(stream=stream)
         return self
 
-    def stdout(self) -> "ConsoleLoggingBuilder":
+    def stdout(self) -> Self:
         """
         Use stdout for console output.
 
@@ -158,7 +158,7 @@ class ConsoleLoggingBuilder(LoggingBuilder):
 
         return self.with_stream(sys.stdout)
 
-    def stderr(self) -> "ConsoleLoggingBuilder":
+    def stderr(self) -> Self:
         """
         Use stderr for console output.
 

@@ -24,6 +24,7 @@ from .ewma import EWMA
 from .exceptions import (
     ConfigError,
     DatabaseError,
+    DependencyError,
     InfraError,
     LoggingError,
     ObservabilityError,
@@ -31,7 +32,7 @@ from .exceptions import (
     ToolError,
     ValidationError,
 )
-from .rate_limit import RateLimiter
+from .rate_limit import Backoff, RateLimiter
 from .regex_utils import (
     RegexComplexityError,
     RegexTimeoutError,
@@ -58,6 +59,7 @@ __all__ = [
     "db",
     "net",
     # Core classes
+    "Backoff",
     "DictInterface",
     "DotDict",
     "EWMA",
@@ -81,6 +83,7 @@ __all__ = [
     "InfraError",
     "ConfigError",
     "DatabaseError",
+    "DependencyError",
     "LoggingError",
     "ValidationError",
     "ToolError",

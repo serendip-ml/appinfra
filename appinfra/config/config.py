@@ -9,7 +9,7 @@ file inclusion support via !include tags.
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import yaml  # type: ignore[import-untyped]
 
@@ -201,7 +201,7 @@ class Config(DotDict):
         self.set(**config_data)
         self.set(**self._resolve(self.dict()))
 
-    def reload(self) -> "Config":
+    def reload(self) -> Self:
         """Reload configuration from disk.
 
         Re-reads all source files, re-applies variable substitution

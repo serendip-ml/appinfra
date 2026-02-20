@@ -7,7 +7,7 @@ Users can install it with: pip install infra[validation]
 
 try:
     import re
-    from typing import Any
+    from typing import Any, Self
 
     from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -90,7 +90,7 @@ try:
         )
 
         @model_validator(mode="after")
-        def validate_version_or_image(self) -> "PostgreSQLServerConfig":
+        def validate_version_or_image(self) -> Self:
             """Ensure either version or image is specified."""
             if self.version is None and self.image is None:
                 raise ValueError("Either 'version' or 'image' must be specified")

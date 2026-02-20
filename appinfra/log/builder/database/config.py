@@ -5,6 +5,8 @@ Provides configuration objects for database logging handlers with customizable
 table structure and data mapping.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from collections.abc import Callable
@@ -150,7 +152,7 @@ class DatabaseHandlerConfig(HandlerConfig):
 
     def create_handler(
         self, config: LogConfig, logger: Any = None, lifecycle_manager: Any = None
-    ) -> "DatabaseHandler":
+    ) -> DatabaseHandler:
         """Create a database handler instance.
 
         Args:

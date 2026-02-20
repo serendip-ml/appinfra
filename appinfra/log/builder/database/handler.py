@@ -3,6 +3,8 @@ Database logging handler implementation.
 
 Handles logging to database tables with batching, performance optimization,
 and critical error flush mechanism.
+
+Requires: pip install appinfra[sql]
 """
 
 import logging
@@ -10,10 +12,24 @@ import signal
 from datetime import datetime
 from typing import Any
 
-import sqlalchemy
-
+from ....exceptions import DependencyError
 from ...config import LogConfig
 from .config import DatabaseHandlerConfig
+
+# Lazy import sqlalchemy - it's an optional dependency
+try:
+    import sqlalchemy
+
+    SQLALCHEMY_AVAILABLE = True
+except ImportError:
+    sqlalchemy = None  # type: ignore[assignment]
+    SQLALCHEMY_AVAILABLE = False
+
+
+def _require_sqlalchemy() -> None:
+    """Raise DependencyError if sqlalchemy is not installed."""
+    if not SQLALCHEMY_AVAILABLE:
+        raise DependencyError("sqlalchemy", "sql", "Database logging")
 
 
 class DatabaseHandler(logging.Handler):
@@ -38,7 +54,11 @@ class DatabaseHandler(logging.Handler):
             handler_config: Database handler configuration
             log_config: Logger configuration
             lifecycle_manager: Optional lifecycle manager for shutdown registration
+
+        Raises:
+            DependencyError: If sqlalchemy is not installed
         """
+        _require_sqlalchemy()
         super().__init__()
         self._lg = lg
         self.handler_config = handler_config

@@ -6,8 +6,6 @@ other interactive prompts. Respects --yes and --non-interactive
 flags, and auto-detects non-TTY environments.
 """
 
-from __future__ import annotations
-
 import getpass
 import os
 import re

@@ -6,7 +6,7 @@ objects with a fluent API.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Self
 
 from ...config import Config
 from ...dot_dict import DotDict
@@ -54,47 +54,47 @@ class ConfigBuilder:
         self._environment: str = "production"
         self._custom_config: dict[str, Any] = {}
 
-    def with_log_level(self, level: str) -> "ConfigBuilder":
+    def with_log_level(self, level: str) -> Self:
         """Set the log level."""
         self._log_level = level
         return self
 
-    def with_log_location(self, depth: int) -> "ConfigBuilder":
+    def with_log_location(self, depth: int) -> Self:
         """Set the log location depth."""
         self._log_location = depth
         return self
 
-    def with_log_micros(self, enabled: bool = True) -> "ConfigBuilder":
+    def with_log_micros(self, enabled: bool = True) -> Self:
         """Enable/disable microsecond timestamps in logs."""
         self._log_micros = enabled
         return self
 
-    def with_quiet_mode(self, enabled: bool = True) -> "ConfigBuilder":
+    def with_quiet_mode(self, enabled: bool = True) -> Self:
         """Enable/disable quiet mode."""
         self._quiet_mode = enabled
         return self
 
-    def with_debug_mode(self, enabled: bool = True) -> "ConfigBuilder":
+    def with_debug_mode(self, enabled: bool = True) -> Self:
         """Enable/disable debug mode."""
         self._debug_mode = enabled
         return self
 
-    def with_verbose_mode(self, enabled: bool = True) -> "ConfigBuilder":
+    def with_verbose_mode(self, enabled: bool = True) -> Self:
         """Enable/disable verbose mode."""
         self._verbose_mode = enabled
         return self
 
-    def with_config_file(self, file_path: str) -> "ConfigBuilder":
+    def with_config_file(self, file_path: str) -> Self:
         """Set the configuration file path."""
         self._config_file = file_path
         return self
 
-    def with_environment(self, env: str) -> "ConfigBuilder":
+    def with_environment(self, env: str) -> Self:
         """Set the environment (development, staging, production)."""
         self._environment = env
         return self
 
-    def with_custom_config(self, key: str, value: Any) -> "ConfigBuilder":
+    def with_custom_config(self, key: str, value: Any) -> Self:
         """Add custom configuration value."""
         self._custom_config[key] = value
         return self
@@ -158,47 +158,47 @@ class ServerConfigBuilder:
         self._keep_alive = True
         self._compression = True
 
-    def with_port(self, port: int) -> "ServerConfigBuilder":
+    def with_port(self, port: int) -> Self:
         """Set the server port."""
         self._port = port
         return self
 
-    def with_host(self, host: str) -> "ServerConfigBuilder":
+    def with_host(self, host: str) -> Self:
         """Set the server host."""
         self._host = host
         return self
 
-    def with_ssl(self, enabled: bool = True) -> "ServerConfigBuilder":
+    def with_ssl(self, enabled: bool = True) -> Self:
         """Enable/disable SSL."""
         self._ssl_enabled = enabled
         return self
 
-    def with_cors(self, origins: list[str]) -> "ServerConfigBuilder":
+    def with_cors(self, origins: list[str]) -> Self:
         """Set CORS origins."""
         self._cors_origins = origins
         return self
 
-    def add_cors_origin(self, origin: str) -> "ServerConfigBuilder":
+    def add_cors_origin(self, origin: str) -> Self:
         """Add a CORS origin."""
         self._cors_origins.append(origin)
         return self
 
-    def with_timeout(self, timeout: int) -> "ServerConfigBuilder":
+    def with_timeout(self, timeout: int) -> Self:
         """Set the request timeout."""
         self._timeout = timeout
         return self
 
-    def with_max_connections(self, max_conn: int) -> "ServerConfigBuilder":
+    def with_max_connections(self, max_conn: int) -> Self:
         """Set the maximum number of connections."""
         self._max_connections = max_conn
         return self
 
-    def with_keep_alive(self, enabled: bool = True) -> "ServerConfigBuilder":
+    def with_keep_alive(self, enabled: bool = True) -> Self:
         """Enable/disable keep-alive."""
         self._keep_alive = enabled
         return self
 
-    def with_compression(self, enabled: bool = True) -> "ServerConfigBuilder":
+    def with_compression(self, enabled: bool = True) -> Self:
         """Enable/disable compression."""
         self._compression = enabled
         return self
@@ -229,34 +229,32 @@ class LoggingConfigBuilder:
         self._max_file_size = 10 * 1024 * 1024  # 10MB
         self._backup_count = 5
 
-    def with_level(self, level: str) -> "LoggingConfigBuilder":
+    def with_level(self, level: str) -> Self:
         """Set the log level."""
         self._level = level
         return self
 
-    def with_location(self, depth: int) -> "LoggingConfigBuilder":
+    def with_location(self, depth: int) -> Self:
         """Set the log location depth."""
         self._location = depth
         return self
 
-    def with_micros(self, enabled: bool = True) -> "LoggingConfigBuilder":
+    def with_micros(self, enabled: bool = True) -> Self:
         """Enable/disable microsecond timestamps."""
         self._micros = enabled
         return self
 
-    def with_format(self, format_string: str) -> "LoggingConfigBuilder":
+    def with_format(self, format_string: str) -> Self:
         """Set the log format string."""
         self._format_string = format_string
         return self
 
-    def with_file_output(self, file_path: str) -> "LoggingConfigBuilder":
+    def with_file_output(self, file_path: str) -> Self:
         """Enable file output for logs."""
         self._file_path = file_path
         return self
 
-    def with_file_rotation(
-        self, max_size: int, backup_count: int = 5
-    ) -> "LoggingConfigBuilder":
+    def with_file_rotation(self, max_size: int, backup_count: int = 5) -> Self:
         """Configure file rotation."""
         self._max_file_size = max_size
         self._backup_count = backup_count

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import sqlalchemy
 import sqlalchemy.orm
 
-from ...log import LoggerFactory
+from ...log import Logger, LoggerFactory
 from ..pg.interface import Interface
 
 if TYPE_CHECKING:
@@ -74,7 +74,7 @@ class SQLite(Interface):
         >>> sqlite = SQLite(logger, db_config)
     """
 
-    def __init__(self, lg: Any, cfg: Any) -> None:
+    def __init__(self, lg: Logger, cfg: Any) -> None:
         """
         Initialize the SQLite database interface.
 

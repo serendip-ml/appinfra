@@ -13,8 +13,8 @@ INFRA_CLEAN_PRESERVE ?= .data .logs .GRADING.md
 
 clean:: areyousure ## restores project to original post-clone state (preserves .data/, .logs/, .GRADING.md)
 	@echo "* restoring project to original state..."
-	@echo "  - Removing coverage files (.coverage/, .htmlcov/, .coverage.json, .cicd-coverage/)..."
-	@rm -rf .coverage .htmlcov .cicd-coverage .coverage.json
+	@echo "  - Removing coverage files (.coverage, .cover/, .htmlcov/, .coverage.json, .cicd-coverage/)..."
+	@rm -rf .coverage .cover .htmlcov .cicd-coverage .coverage.json
 	@echo "  - Removing build artifacts (*.egg-info, .dist/, .build/, dist/, build/)..."
 	@rm -rf *.egg-info .dist .build dist build
 	@echo "  - Removing documentation build (.site/)..."

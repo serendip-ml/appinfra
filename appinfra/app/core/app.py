@@ -5,6 +5,8 @@ This module provides the main App class that orchestrates the entire
 application lifecycle including tool registration, argument parsing, and execution.
 """
 
+from __future__ import annotations
+
 import argparse
 import logging
 import sys
@@ -17,6 +19,7 @@ from ...dot_dict import DotDict
 
 if TYPE_CHECKING:
     from ...config import ConfigWatcher
+    from ...log import Logger
     from ...subprocess import SubprocessContext
 
 from ... import time
@@ -76,7 +79,7 @@ class App(Traceable):
         self._config_watcher: ConfigWatcher | None = None  # Hot-reload watcher
 
     @property
-    def config_watcher(self) -> "ConfigWatcher | None":
+    def config_watcher(self) -> ConfigWatcher | None:
         """Get the config watcher instance (if hot-reload is enabled)."""
         return self._config_watcher
 
@@ -461,9 +464,7 @@ class App(Traceable):
 
         return result
 
-    def _merge_loaded_and_programmatic_config(
-        self, loaded_config: "DotDict"
-    ) -> "DotDict":
+    def _merge_loaded_and_programmatic_config(self, loaded_config: DotDict) -> DotDict:
         """Merge loaded config with programmatic config, programmatic takes precedence."""
         if self.config and dict(self.config):
             # Deep merge: loaded as base, programmatic takes precedence
@@ -648,13 +649,13 @@ class App(Traceable):
         return self._parsed_args
 
     @property
-    def lg(self) -> logging.Logger:
+    def lg(self) -> Logger:
         """Get the application logger."""
         from typing import cast
 
-        return cast(logging.Logger, self.lifecycle.logger)
+        return cast("Logger", self.lifecycle.logger)
 
-    def subprocess_context(self, handle_signals: bool = True) -> "SubprocessContext":
+    def subprocess_context(self, handle_signals: bool = True) -> SubprocessContext:
         """
         Create a SubprocessContext for use in child processes.
 
@@ -693,7 +694,7 @@ class App(Traceable):
             handle_signals=handle_signals,
         )
 
-    def create_config_watcher(self) -> "ConfigWatcher | None":
+    def create_config_watcher(self) -> ConfigWatcher | None:
         """
         Create a ConfigWatcher for config hot-reload.
 

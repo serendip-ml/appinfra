@@ -159,6 +159,95 @@ class ObservabilityError(InfraError):
     pass
 
 
+class TickerError(InfraError):
+    """
+    Ticker-related errors.
+
+    Base class for all Ticker system errors. Use specific subclasses
+    for different error conditions to enable targeted error handling.
+
+    Examples:
+        - API mode conflicts
+        - Invalid state transitions
+        - Configuration errors
+    """
+
+    pass
+
+
+class TickerAPIError(TickerError):
+    """
+    Ticker API mode conflict errors.
+
+    Raised when attempting to mix incompatible Ticker API modes
+    (blocking run(), non-blocking try_tick(), or iterator).
+
+    Examples:
+        - Calling run() after using try_tick()
+        - Calling try_tick() after using iterator
+        - Using iterator after run() started
+    """
+
+    pass
+
+
+class TickerStateError(TickerError):
+    """
+    Ticker state violation errors.
+
+    Raised when Ticker is in an invalid state for the requested operation.
+
+    Examples:
+        - Starting already running ticker
+        - Invalid state transition
+    """
+
+    pass
+
+
+class TickerConfigError(TickerError):
+    """
+    Ticker configuration errors.
+
+    Raised when Ticker configuration is invalid or incomplete.
+
+    Examples:
+        - Missing required handler for run() mode
+        - Missing secs parameter for scheduled mode
+        - Invalid mode or parameter combination
+    """
+
+    pass
+
+
+class DependencyError(InfraError):
+    """
+    Missing optional dependency error.
+
+    Raised when an optional feature requires a dependency that is not installed.
+    Provides clear instructions on how to install the missing dependency.
+
+    Examples:
+        - sqlalchemy not installed for database features
+        - pydantic not installed for validation features
+    """
+
+    def __init__(self, package: str, extra: str, feature: str) -> None:
+        """
+        Initialize the dependency error.
+
+        Args:
+            package: The missing package name (e.g., "sqlalchemy")
+            extra: The pip extra to install (e.g., "sql")
+            feature: Description of the feature requiring this dependency
+        """
+        message = (
+            f"{feature} requires '{package}' which is not installed. "
+            f"Install it with: pip install appinfra[{extra}]"
+        )
+        super().__init__(message, package=package, extra=extra)
+
+
 # Maintain backward compatibility with existing exception classes
 # by keeping them importable from their original locations while
 # also making them inherit from the new hierarchy

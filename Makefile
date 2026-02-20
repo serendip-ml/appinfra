@@ -18,7 +18,7 @@ INFRA_PYTEST_COVERAGE_THRESHOLD := 95
 INFRA_DEV_DOCSTRING_THRESHOLD := 95
 
 # Install with all optional extras
-INFRA_DEV_INSTALL_EXTRAS := dev,validation,docs,fastapi,hotreload,ui
+INFRA_DEV_INSTALL_EXTRAS := all
 
 # PostgreSQL configuration (filename only - resolved from ETC_DIR)
 INFRA_PG_CONFIG_FILE := pg.yaml

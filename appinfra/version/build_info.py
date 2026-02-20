@@ -12,8 +12,6 @@ Or from a git pre-commit hook:
     git add mypackage/_build_info.py
 """
 
-from __future__ import annotations
-
 import subprocess
 import sys
 from datetime import UTC, datetime

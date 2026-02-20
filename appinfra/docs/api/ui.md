@@ -23,7 +23,7 @@ Automatically pauses visual elements when logs are written, then resumes.
 from appinfra.ui import ProgressLogger
 
 # Spinner mode (unknown duration)
-with ProgressLogger(logger, "Processing...") as pl:
+with ProgressLogger(lg, "Processing...") as pl:
     for item in items:
         process(item)
         pl.info(f"Processed {item.name}")  # Pauses spinner, logs, resumes
@@ -39,7 +39,7 @@ When a total is specified, displays a progress bar with elapsed time and ETA:
 
 ```python
 # Progress bar mode (known total) - shows elapsed time and ETA
-with ProgressLogger(logger, "Downloading...", total=100) as pl:
+with ProgressLogger(lg, "Downloading...", total=100) as pl:
     for i, chunk in enumerate(chunks):
         download(chunk)
         pl.update(advance=1)
@@ -54,7 +54,7 @@ when message text has variable length:
 
 ```python
 # Right-justified: bar stays fixed as message changes
-with ProgressLogger(logger, "Syncing...", total=10, justify="right") as pl:
+with ProgressLogger(lg, "Syncing...", total=10, justify="right") as pl:
     for pkg in packages:
         pl.update(message=f"Syncing {pkg}...")
 ```
@@ -65,7 +65,7 @@ Use `expand=True` to make the progress bar fill the terminal width:
 
 ```python
 # Progress bar expands to fill available width
-with ProgressLogger(logger, "Processing...", total=100, expand=True) as pl:
+with ProgressLogger(lg, "Processing...", total=100, expand=True) as pl:
     for item in items:
         pl.update()
 ```
@@ -74,7 +74,7 @@ with ProgressLogger(logger, "Processing...", total=100, expand=True) as pl:
 
 ```python
 # Start with spinner, switch to progress bar when total is known
-with ProgressLogger(logger, "Scanning...") as pl:
+with ProgressLogger(lg, "Scanning...") as pl:
     items = scan_directory()       # Spinner while scanning
     pl.set_total(len(items))       # Switch to progress bar
     for item in items:
@@ -88,7 +88,7 @@ with ProgressLogger(logger, "Scanning...") as pl:
 class ProgressLogger:
     def __init__(
         self,
-        logger: logging.Logger,
+        lg: Logger,  # appinfra.log.Logger
         message: str = "Working...",
         total: int | None = None,  # None = spinner, int = progress bar
         spinner: str = "dots",     # Spinner style: "dots", "arc", "moon", etc.

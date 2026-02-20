@@ -10,6 +10,92 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-02-20
+
+### Fixed
+- `INFRA_DEV_SKIP_TARGETS` now works for pytest targets in `Makefile.pytest`:
+  - Supported targets: `test.unit`, `test.integration`, `test.e2e`, `test.perf`, `test.security`
+  - Skipping a target also skips its verbose variant (e.g., `test.e2e` skips `test.e2e.v`)
+  - Use case: Projects needing custom test configurations (e.g., GPU tests with `-n 0`)
+
+### Added
+- `appinfra.py` top-level entry point for running CLI during development:
+  - Ensures local source takes precedence over installed package
+  - Run with `./appinfra.py` instead of `python ./appinfra/cli/cli.py`
+- `DependencyError` exception for clear error messages when optional dependencies are missing:
+  - Shows which package is missing and how to install it
+  - Example: `Database logging requires 'sqlalchemy' which is not installed. Install it with: pip install appinfra[sql]`
+- `[sql]` optional extra for database features (sqlalchemy, sqlalchemy-utils, psycopg2-binary):
+  - Core appinfra no longer requires sqlalchemy - install only if using database features
+  - Enables faster CLI startup and smaller install footprint for non-database use cases
+  - Database logging (`log.builder.database`) and database module (`db`) require this extra
+- `[all]` optional extra that includes all other extras (dev, docs, sql, ui, fastapi, validation, hotreload):
+  - Single install command for full development environment: `pip install appinfra[all]`
+- `Backoff` class for exponential backoff retry logic:
+  - Configurable base delay, max delay, growth factor, and jitter
+  - `wait()` method for blocking backoff (sleeps and returns delay)
+  - `next_delay()` method for non-blocking usage (returns delay, increments attempt)
+  - `reset()` method to reset attempt counter after successful operations
+  - Full jitter pattern (delay * 0.0-1.0) to avoid thundering herd problems
+- Non-blocking `RateLimiter.try_next()` method for event loops that cannot block:
+  - Returns `True` if operation is allowed (updates `last_t`), `False` if rate limited
+  - Does not modify state when returning `False` (safe to call repeatedly)
+  - Mirrors `Ticker.try_tick()` semantics: "attempt if ready, skip if not"
+  - Use case: Rate-limit retries in message-processing loops without blocking signal handling
+- Non-consuming `RateLimiter.can_proceed()` method for availability checks:
+  - Returns `True` if rate limit would allow an operation, `False` if rate limited
+  - Does NOT consume a rate limit slot (never modifies `last_t`)
+  - Safe to call repeatedly - multiple calls return the same value
+  - Use case: Event loops that need to check availability without committing to an operation
+- Non-blocking Ticker API for mixed event sources (`time_until_next_tick()` and `try_tick()`):
+  - `time_until_next_tick(now=None)` returns seconds until next tick (use as timeout for event loops)
+  - `try_tick(now=None)` executes tick if ready, returns `bool` (works with or without handler)
+  - Both methods accept optional `now` parameter for drift-free operation with shared timestamps
+  - Supports timing oracle mode without handler: `if ticker.try_tick(): do_work()`
+  - Example: `msg = channel.recv(timeout=ticker.time_until_next_tick()); ticker.try_tick()`
+- `TickerMode` enum for timing behavior control:
+  - `FLEX` (default): Flexible timing - fixed-rate from tick start, no catch-up (resets if late)
+  - `STRICT`: Strict timing - maintains average rate by catching up if tasks run slow
+  - `SPACED`: Spaced timing - waits full interval from task completion for guaranteed minimum spacing
+- Monotonic time for drift-free ticker operation:
+  - All Ticker timing now uses `time.monotonic()` instead of `time.time()`
+  - Immune to NTP adjustments, daylight saving time changes, and system clock modifications
+  - Guaranteed monotonic progression for accurate interval timing
+  - Works correctly with Python's `sched.scheduler`
+
+### Changed
+- Coverage output directory renamed from `.coverage/` to `.cover/`:
+  - Avoids conflict with pytest-cov's `.coverage` SQLite database file
+  - Updated in Makefile.pytest, docker-compose.yml, and GitHub workflows
+- Code quality checker (`appinfra cq cf`) now excludes hidden directories by default:
+  - Skips `.build/`, `.cover/`, `.venv/`, and other dotfile directories
+  - Skips `__pycache__/` directories
+  - Prevents false positives from build artifacts
+- Linter configuration (ruff, mypy) now excludes build artifact directories:
+  - `.build`, `.dist`, `.cover`, `.htmlcov`, `.site`
+- Type annotation cleanup (internal):
+  - Replaced string-quoted self-returns with `typing.Self` across builder classes
+  - Removed unnecessary `from __future__ import annotations` from ~20 files
+  - Enabled ruff rule UP037 to enforce unquoted type annotations
+  - Standardized forward reference handling via future annotations only where needed
+- Ticker timing is now drift-free by capturing `time.monotonic()` once per tick
+  - Accurate: 3600 ticks in exactly 3600 seconds (for `secs=1`)
+  - No accumulated drift from multiple time queries per tick
+
+### Fixed
+- `@builder.tool` decorator now compatible with `with_main_tool()`:
+  - `DecoratedTool.set_args()` now accepts `skip_positional` parameter matching base `Tool` class
+  - Previously raised `TypeError: got an unexpected keyword argument 'skip_positional'`
+- RateLimiter API docs corrected to match actual implementation (`per_minute`/`next()` instead of
+  incorrect `max_calls`/`period`/`acquire()`)
+- Ticker API mode mixing protection: `try_tick()` and `run()` cannot be mixed on the same instance
+  - Prevents state corruption from shared `_first` flag between different API modes
+  - Clear error message: "Cannot call run() after using try_tick()"
+- `make type` and `make check` now use separate mypy cache directories for package vs examples:
+  - Package uses `.mypy_cache/pkg/`, examples use `.mypy_cache/examples/`
+  - Prevents cache invalidation caused by different mypy flags between the two runs
+  - Reduces repeated type check time from ~17s to ~1s (cache now works correctly)
+
 ## [0.3.5] - 2026-02-11
 
 ### Added
@@ -302,7 +388,8 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/serendip-ml/appinfra/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/serendip-ml/appinfra/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/serendip-ml/appinfra/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/serendip-ml/appinfra/compare/v0.3.2...v0.3.3

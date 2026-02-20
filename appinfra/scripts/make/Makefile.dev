@@ -136,9 +136,9 @@ ifeq ($(INFRA_DRY_RUN),1)
 	@echo "[DRY RUN] Would run: mypy $(INFRA_DEV_PKG_NAME)/"
 else
 	@echo "* running type checker..."
-	@${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/ --exclude 'examples/' $(INFRA_DEV_MYPY_FLAGS)
-	@if [ -d "examples" ]; then ${PYTHON} -m mypy examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports $(INFRA_DEV_MYPY_FLAGS); \
-	elif [ -d "$(INFRA_DEV_PKG_NAME)/examples" ]; then ${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports $(INFRA_DEV_MYPY_FLAGS); fi
+	@${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/ --exclude 'examples/' --cache-dir .mypy_cache/pkg $(INFRA_DEV_MYPY_FLAGS)
+	@if [ -d "examples" ]; then ${PYTHON} -m mypy examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports --cache-dir .mypy_cache/examples $(INFRA_DEV_MYPY_FLAGS); \
+	elif [ -d "$(INFRA_DEV_PKG_NAME)/examples" ]; then ${PYTHON} -m mypy $(INFRA_DEV_PKG_NAME)/examples/ --disable-error-code=no-untyped-def --disable-error-code=import-untyped --ignore-missing-imports --cache-dir .mypy_cache/examples $(INFRA_DEV_MYPY_FLAGS); fi
 	@echo "* type checking done"
 endif
 endif # skip type

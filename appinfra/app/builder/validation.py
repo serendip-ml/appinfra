@@ -8,7 +8,7 @@ and validating application inputs.
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Self
 
 
 @dataclass
@@ -219,14 +219,12 @@ class ValidationBuilder:
     def __init__(self) -> None:
         self._rules: list[ValidationRule] = []
 
-    def require_argument(
-        self, name: str, message: str | None = None
-    ) -> "ValidationBuilder":
+    def require_argument(self, name: str, message: str | None = None) -> Self:
         """Add a required argument rule."""
         self._rules.append(RequiredRule(name, message))
         return self
 
-    def require_one_of(self, *args: str) -> "ValidationBuilder":
+    def require_one_of(self, *args: str) -> Self:
         """Require at least one of the specified arguments."""
 
         def validator(value: Any, context: dict[str, Any] | None = None) -> bool:
@@ -243,7 +241,7 @@ class ValidationBuilder:
         )
         return self
 
-    def require_all_of(self, *args: str) -> "ValidationBuilder":
+    def require_all_of(self, *args: str) -> Self:
         """Require all of the specified arguments."""
 
         def validator(value: Any, context: dict[str, Any] | None = None) -> bool:
@@ -260,7 +258,7 @@ class ValidationBuilder:
 
     def with_type(
         self, name: str, expected_type: type, message: str | None = None
-    ) -> "ValidationBuilder":
+    ) -> Self:
         """Add a type validation rule."""
         self._rules.append(TypeRule(name, expected_type, message))
         return self
@@ -271,26 +269,26 @@ class ValidationBuilder:
         min_value: float | None = None,
         max_value: float | None = None,
         message: str | None = None,
-    ) -> "ValidationBuilder":
+    ) -> Self:
         """Add a range validation rule."""
         self._rules.append(RangeRule(name, min_value, max_value, message))
         return self
 
     def with_choice(
         self, name: str, choices: list[Any], message: str | None = None
-    ) -> "ValidationBuilder":
+    ) -> Self:
         """Add a choice validation rule."""
         self._rules.append(ChoiceRule(name, choices, message))
         return self
 
-    def with_custom_rule(self, rule: ValidationRule) -> "ValidationBuilder":
+    def with_custom_rule(self, rule: ValidationRule) -> Self:
         """Add a custom validation rule."""
         self._rules.append(rule)
         return self
 
     def with_custom_validator(
         self, name: str, validator: Callable[[Any], bool], message: str | None = None
-    ) -> "ValidationBuilder":
+    ) -> Self:
         """Add a custom validator function."""
         self._rules.append(CustomRule(name, validator, message))
         return self

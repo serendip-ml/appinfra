@@ -5,8 +5,6 @@ Provides the SecretMasker class for detecting and masking secrets
 in strings using regex patterns.
 """
 
-from __future__ import annotations
-
 import re
 from re import Pattern
 

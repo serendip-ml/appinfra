@@ -7,7 +7,7 @@ connections of different types, supporting PostgreSQL and SQLite.
 
 from typing import Any
 
-from ..log import LoggerFactory
+from ..log import Logger, LoggerFactory
 from . import pg, sqlite
 
 
@@ -97,7 +97,7 @@ class Manager:
     - Connection lifecycle management
     """
 
-    def __init__(self, lg: Any, cfg: Any) -> None:
+    def __init__(self, lg: Logger, cfg: Any) -> None:
         """
         Initialize the database manager.
 

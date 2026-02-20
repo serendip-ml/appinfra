@@ -9,7 +9,7 @@ import collections
 import logging
 import sys
 import threading
-from typing import Any
+from typing import Any, Self
 
 from .callback import CallbackRegistry
 from .config import ChildLogConfig, LogConfig
@@ -349,7 +349,7 @@ class Logger(logging.Logger):
         queue: Any,
         name: str,
         level: int | str = logging.INFO,
-    ) -> "Logger":
+    ) -> Self:
         """
         Create a logger that sends records to a queue for cross-process logging.
 
@@ -430,7 +430,7 @@ class Logger(logging.Logger):
         }
 
     @classmethod
-    def from_queue_config(cls, config: dict[str, Any], name: str) -> "Logger":
+    def from_queue_config(cls, config: dict[str, Any], name: str) -> Self:
         """
         Create a logger from queue configuration.
 

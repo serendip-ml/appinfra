@@ -41,10 +41,12 @@ pip install appinfra
 Optional features:
 
 ```bash
+pip install appinfra[sql]        # Database support (PostgreSQL, SQLite)
 pip install appinfra[ui]         # Rich console, interactive prompts
 pip install appinfra[fastapi]    # FastAPI integration
 pip install appinfra[validation] # Pydantic config validation
 pip install appinfra[hotreload]  # Config file watching
+pip install appinfra[all]        # All extras (dev, docs, and all above)
 ```
 
 ## Documentation
@@ -383,7 +385,7 @@ Falls back to plain logging on non-TTY:
 ```python
 from appinfra.ui import ProgressLogger
 
-with ProgressLogger(logger, "Processing...", total=100) as pl:
+with ProgressLogger(lg, "Processing...", total=100) as pl:
     for item in items:
         result = process(item)
         pl.log(f"Processed {item.name}")     # Pauses spinner, logs, resumes

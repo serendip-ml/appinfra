@@ -40,7 +40,7 @@ COPY appinfra/__init__.py ./appinfra/
 # This allows the Makefile PYTHON variable to work correctly
 RUN python -m venv /root/.venv && \
     /root/.venv/bin/pip install --upgrade pip setuptools wheel && \
-    /root/.venv/bin/pip install ".[dev,validation,docs,fastapi,hotreload,ui]"
+    /root/.venv/bin/pip install ".[all]"
 
 # Add venv to PATH so python/pip commands use the venv
 ENV PATH="/root/.venv/bin:$PATH"
