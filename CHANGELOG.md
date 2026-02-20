@@ -10,6 +10,8 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-02-20
+
 ### Fixed
 - `INFRA_DEV_SKIP_TARGETS` now works for pytest targets in `Makefile.pytest`:
   - Supported targets: `test.unit`, `test.integration`, `test.e2e`, `test.perf`, `test.security`
@@ -386,7 +388,8 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/serendip-ml/appinfra/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/serendip-ml/appinfra/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/serendip-ml/appinfra/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/serendip-ml/appinfra/compare/v0.3.2...v0.3.3
