@@ -10,6 +10,11 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Fixed
+- `make install` and `make install.e` now clean build artifacts before installing:
+  - Removes `*.egg-info`, `.dist`, `.build`, `dist`, `build` directories
+  - Prevents stale cached files from being reinstalled after `make uninstall`
+
 ## [0.4.0] - 2026-02-20
 
 ### Fixed
