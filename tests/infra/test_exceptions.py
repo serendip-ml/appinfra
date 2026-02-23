@@ -13,6 +13,7 @@ import pytest
 from appinfra.exceptions import (
     ConfigError,
     DatabaseError,
+    DependencyError,
     InfraError,
     LoggingError,
     ObservabilityError,
@@ -304,3 +305,38 @@ class TestExceptionHierarchy:
             assert e.context == {"key": "value", "code": 123}
             assert "key=value" in str(e)
             assert "code=123" in str(e)
+
+
+# =============================================================================
+# Test DependencyError
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestDependencyError:
+    """Test DependencyError class."""
+
+    def test_dependency_error_inherits_from_infra_error(self):
+        """Test DependencyError inherits from InfraError."""
+        error = DependencyError(
+            package="sqlalchemy", extra="sql", feature="Database support"
+        )
+        assert isinstance(error, InfraError)
+
+    def test_dependency_error_message_format(self):
+        """Test DependencyError message format."""
+        error = DependencyError(
+            package="sqlalchemy", extra="sql", feature="Database support"
+        )
+        error_str = str(error)
+        assert "Database support" in error_str
+        assert "sqlalchemy" in error_str
+        assert "pip install appinfra[sql]" in error_str
+
+    def test_dependency_error_context(self):
+        """Test DependencyError context contains package and extra."""
+        error = DependencyError(
+            package="pydantic", extra="validation", feature="Schema validation"
+        )
+        assert error.context["package"] == "pydantic"
+        assert error.context["extra"] == "validation"
