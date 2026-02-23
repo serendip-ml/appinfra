@@ -58,14 +58,8 @@ def pytest_runtest_makereport(
     outcome: Any = yield
     report: TestReport = outcome.get_result()
 
-    # Only process skipped tests in the call phase (not setup/teardown)
-    if report.skipped and call.when == "call":
-        # Check if test has expected_skip marker
-        if item.get_closest_marker("expected_skip"):
-            _prefix_skip_reason(report)
-
-    # Also handle setup-phase skips (e.g., skipif evaluated during setup)
-    if report.skipped and call.when == "setup":
+    # Process skipped tests in call or setup phase (not teardown - rare and typically fixture failures)
+    if report.skipped and call.when in ("call", "setup"):
         if item.get_closest_marker("expected_skip"):
             _prefix_skip_reason(report)
 
