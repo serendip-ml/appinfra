@@ -289,6 +289,10 @@ record_skips() {
         local count=$(echo "$line" | sed -E 's/^SKIPPED \[([0-9]+)\].*/\1/')
         # Extract reason: everything after "path:line: " or "path: " (line number optional)
         local reason=$(echo "$line" | sed -E 's/^SKIPPED \[[0-9]+\] [^:]+:([0-9]+:)? //')
+        # Skip reasons prefixed with [expected] (from @pytest.mark.expected_skip)
+        if [[ "$reason" == "[expected] "* ]]; then
+            continue
+        fi
         [ -n "$count" ] && [ -n "$reason" ] && echo "${count}|${reason}" >> "${STATUS_DIR}/skips"
     done
 
