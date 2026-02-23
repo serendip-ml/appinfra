@@ -44,6 +44,7 @@ def test_nested_quantifier_detection(pattern: str):
 
 @pytest.mark.security
 @pytest.mark.unit
+@pytest.mark.expected_skip  # Skips on Windows (no SIGALRM for timeout)
 def test_alternation_explosion_detection():
     """
     Verify pattern complexity validator catches degenerate alternations.
@@ -162,6 +163,7 @@ def test_regex_timeout_enforcement_unix(pattern: str, evil_input: str):
 
 @pytest.mark.security
 @pytest.mark.integration
+@pytest.mark.expected_skip  # Windows-only test, skips on Unix
 @pytest.mark.skipif(
     sys.platform != "win32",
     reason="Test Windows behavior (or mock it on Unix)",
