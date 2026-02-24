@@ -71,6 +71,7 @@ def _process_field(
 
     if isinstance(default, _FieldSpec):
         factories[name] = default.default_factory
+        defaults.pop(name, None)  # Clear any parent static default
         required.discard(name)  # Subclass default overrides parent required
     elif isinstance(default, _MUTABLE_TYPES):
         raise TypeError(
@@ -79,6 +80,7 @@ def _process_field(
         )
     else:
         defaults[name] = default
+        factories.pop(name, None)  # Clear any parent factory default
         required.discard(name)  # Subclass default overrides parent required
 
     # Remove class attribute so it doesn't shadow instance dict values

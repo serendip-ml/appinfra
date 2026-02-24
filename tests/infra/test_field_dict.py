@@ -334,6 +334,39 @@ class TestInheritance:
         result2 = ChildWithDefault(status="custom")
         assert result2.status == "custom"
 
+    def test_subclass_factory_overrides_parent_static_default(self):
+        """Test subclass factory properly overrides parent's static default."""
+
+        class ParentWithStatic(FieldDict):
+            items: list = field(default_factory=list)  # Will be overridden
+            config: str = "parent_config"
+
+        class ChildWithFactory(ParentWithStatic):
+            config: list = field(default_factory=list)  # Override static with factory
+
+        # Each instance should get its own list (not the parent's static default)
+        c1 = ChildWithFactory()
+        c2 = ChildWithFactory()
+        assert c1.config == []
+        assert c2.config == []
+        c1.config.append("item")
+        assert c1.config == ["item"]
+        assert c2.config == []  # Independent - confirms factory is used
+
+    def test_subclass_static_overrides_parent_factory(self):
+        """Test subclass static default properly overrides parent's factory."""
+
+        class ParentWithFactory(FieldDict):
+            items: list = field(default_factory=list)
+
+        class ChildWithStatic(ParentWithFactory):
+            items: str = "static_value"  # Override factory with static
+
+        c1 = ChildWithStatic()
+        c2 = ChildWithStatic()
+        assert c1.items == "static_value"
+        assert c2.items == "static_value"
+
 
 # =============================================================================
 # Test Edge Cases
