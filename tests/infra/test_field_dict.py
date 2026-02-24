@@ -377,6 +377,37 @@ class TestInheritance:
 class TestEdgeCases:
     """Test edge cases and special scenarios."""
 
+    def test_classvar_skipped(self):
+        """Test ClassVar fields are not treated as instance fields."""
+        from typing import ClassVar
+
+        class ConfigWithClassVar(FieldDict):
+            name: str
+            VERSION: ClassVar[str] = "1.0"
+
+        # ClassVar should not be required
+        cfg = ConfigWithClassVar(name="test")
+        assert cfg.name == "test"
+        # ClassVar should still be accessible as class attribute
+        assert ConfigWithClassVar.VERSION == "1.0"
+        # But not in instance dict
+        assert "VERSION" not in cfg
+
+    def test_classvar_string_annotation_skipped(self):
+        """Test ClassVar with string annotation (postponed) is skipped."""
+
+        # Simulate postponed annotation by using __annotations__ directly
+        class ConfigWithStringClassVar(FieldDict):
+            name: str
+
+        # Manually set a string annotation for ClassVar
+        ConfigWithStringClassVar.__annotations__["CACHED"] = "ClassVar[dict]"
+        ConfigWithStringClassVar.CACHED = {}
+
+        # Should not fail - ClassVar should be skipped even as string
+        cfg = ConfigWithStringClassVar(name="test")
+        assert cfg.name == "test"
+
     def test_none_as_default(self):
         """Test None as default value."""
 

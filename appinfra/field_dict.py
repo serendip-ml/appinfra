@@ -6,7 +6,7 @@ dict-native behavior (no serialization methods needed).
 """
 
 from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import Any, ClassVar, get_origin
 
 from .dot_dict import DotDict
 
@@ -49,7 +49,11 @@ def _is_skippable_field(name: str, type_hint: Any) -> bool:
     """Check if a field annotation should be skipped (private or ClassVar)."""
     if name.startswith("_"):
         return True
-    if hasattr(type_hint, "__origin__") and type_hint.__origin__ is ClassVar:
+    # Handle evaluated ClassVar (e.g., ClassVar[int])
+    if get_origin(type_hint) is ClassVar:
+        return True
+    # Handle postponed annotations (strings like "ClassVar[str]" or "typing.ClassVar")
+    if isinstance(type_hint, str) and "ClassVar" in type_hint:
         return True
     return False
 
