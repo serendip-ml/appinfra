@@ -140,6 +140,7 @@ class RunResult(DataDotDict):
     # Required fields (no default)
     status: str
     started_at: datetime
+    completed_at: datetime
 
     # Optional fields (with defaults)
     method: str = "sft"

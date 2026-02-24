@@ -418,9 +418,6 @@ def field(*, default_factory: Callable[[], Any]) -> Any:
     return _FieldSpec(default_factory)
 
 
-# Sentinel for "no default value"
-_MISSING = object()
-
 # Types that are mutable and shouldn't be used as direct defaults
 _MUTABLE_TYPES = (list, dict, set)
 
@@ -460,6 +457,47 @@ def _process_field(
 
     # Remove class attribute so it doesn't shadow instance dict values
     delattr(cls, name)
+
+
+def _collect_parent_fields(
+    cls: type,
+) -> tuple[dict[str, Any], dict[str, Callable[[], Any]], set[str], set[str]]:
+    """Collect field metadata from parent DataDotDict classes."""
+    # Import here to avoid circular reference at module level
+    from appinfra.dot_dict import DataDotDict
+
+    defaults: dict[str, Any] = {}
+    factories: dict[str, Callable[[], Any]] = {}
+    required: set[str] = set()
+    declared: set[str] = set()
+
+    for klass in reversed(cls.__mro__):
+        if klass is DataDotDict or not isinstance(klass, type):
+            continue
+        if issubclass(klass, DataDotDict) and klass is not cls:
+            defaults.update(klass._field_defaults)
+            factories.update(klass._field_factories)
+            required.update(klass._required_fields)
+            declared.update(klass._declared_fields)
+
+    return defaults, factories, required, declared
+
+
+def _merge_positional_dict(
+    cls_name: str, args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> dict[str, Any]:
+    """Merge positional dict argument into kwargs (like DotDict)."""
+    if not args:
+        return kwargs
+    if len(args) > 1:
+        raise TypeError(
+            f"{cls_name}() takes at most 1 positional argument ({len(args)} given)"
+        )
+    if not isinstance(args[0], dict):
+        raise TypeError(
+            f"{cls_name}() argument must be a dict, not {type(args[0]).__name__!r}"
+        )
+    return {**args[0], **kwargs}
 
 
 class DataDotDict(DotDict):
@@ -503,11 +541,10 @@ class DataDotDict(DotDict):
         super().__init_subclass__(**kwargs)
         cls._strict = strict
 
-        defaults: dict[str, Any] = {}
-        factories: dict[str, Callable[[], Any]] = {}
-        required: set[str] = set()
-        declared: set[str] = set()
+        # Collect inherited field metadata from parent classes
+        defaults, factories, required, declared = _collect_parent_fields(cls)
 
+        # Process this class's own annotations (may override inherited)
         for name, type_hint in getattr(cls, "__annotations__", {}).items():
             if _is_skippable_field(name, type_hint):
                 continue
@@ -521,32 +558,31 @@ class DataDotDict(DotDict):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize with field validation and defaults."""
-        # Check required fields
+        kwargs = _merge_positional_dict(type(self).__name__, args, kwargs)
+
+        # Validate required fields
         missing = self._required_fields - kwargs.keys()
         if missing:
-            missing_str = ", ".join(sorted(missing))
-            raise TypeError(f"Missing required field(s): {missing_str}")
+            raise TypeError(f"Missing required field(s): {', '.join(sorted(missing))}")
 
-        # Check strict mode
+        # Validate strict mode
         if self._strict:
             extra = kwargs.keys() - self._declared_fields
             if extra:
-                extra_str = ", ".join(sorted(extra))
-                raise TypeError(f"Unknown field(s) in strict mode: {extra_str}")
+                raise TypeError(
+                    f"Unknown field(s) in strict mode: {', '.join(sorted(extra))}"
+                )
 
         # Apply defaults (static defaults first, then factories)
         for name, default in self._field_defaults.items():
             if name not in kwargs:
                 kwargs[name] = default
-
         for name, factory in self._field_factories.items():
             if name not in kwargs:
                 kwargs[name] = factory()
 
-        # Initialize DotDict
         super().__init__(**kwargs)
 
-        # Call post_init if defined
         if hasattr(self, "__post_init__"):
             self.__post_init__()
 

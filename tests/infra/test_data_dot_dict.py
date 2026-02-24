@@ -238,6 +238,33 @@ class TestDictBehavior:
         assert d == {"status": "ok", "method": "sft"}
         assert type(d) is dict
 
+    def test_positional_dict_argument(self):
+        """Test creating instance with positional dict (like DotDict)."""
+        result = SimpleResult({"status": "from_dict", "method": "custom"})
+        assert result.status == "from_dict"
+        assert result.method == "custom"
+
+    def test_positional_dict_with_kwargs_override(self):
+        """Test kwargs take precedence over positional dict."""
+        result = SimpleResult({"status": "from_dict", "method": "old"}, method="new")
+        assert result.status == "from_dict"
+        assert result.method == "new"  # kwargs wins
+
+    def test_positional_dict_validates_required(self):
+        """Test positional dict still validates required fields."""
+        with pytest.raises(TypeError, match="Missing required field.*status"):
+            SimpleResult({"method": "only_method"})
+
+    def test_multiple_positional_args_raises(self):
+        """Test multiple positional args raises TypeError."""
+        with pytest.raises(TypeError, match="takes at most 1 positional argument"):
+            SimpleResult({}, {})
+
+    def test_non_dict_positional_raises(self):
+        """Test non-dict positional arg raises TypeError."""
+        with pytest.raises(TypeError, match="argument must be a dict"):
+            SimpleResult(["not", "a", "dict"])
+
 
 # =============================================================================
 # Test Repr
@@ -287,6 +314,11 @@ class TestInheritance:
         """Test subclass can add its own fields."""
         result = ExtendedResult(status="ok", details="extra info")
         assert result.details == "extra info"
+
+    def test_subclass_requires_parent_fields(self):
+        """Test subclass enforces parent's required fields."""
+        with pytest.raises(TypeError, match="Missing required field.*status"):
+            ExtendedResult(details="only details")  # missing parent's 'status'
 
 
 # =============================================================================
