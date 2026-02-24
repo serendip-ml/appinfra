@@ -439,14 +439,16 @@ def _process_field(
     required: set[str],
 ) -> None:
     """Process a single field annotation, extracting default or marking required."""
-    if not hasattr(cls, name):
+    # Check cls.__dict__ directly, not hasattr (which sees inherited attributes)
+    if name not in cls.__dict__:
         required.add(name)
         return
 
-    default = getattr(cls, name)
+    default = cls.__dict__[name]
 
     if isinstance(default, _FieldSpec):
         factories[name] = default.default_factory
+        required.discard(name)  # Subclass default overrides parent required
     elif isinstance(default, _MUTABLE_TYPES):
         raise TypeError(
             f"Mutable default for field '{name}' is not allowed. "
@@ -454,6 +456,7 @@ def _process_field(
         )
     else:
         defaults[name] = default
+        required.discard(name)  # Subclass default overrides parent required
 
     # Remove class attribute so it doesn't shadow instance dict values
     delattr(cls, name)

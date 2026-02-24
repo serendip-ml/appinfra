@@ -320,6 +320,20 @@ class TestInheritance:
         with pytest.raises(TypeError, match="Missing required field.*status"):
             ExtendedResult(details="only details")  # missing parent's 'status'
 
+    def test_subclass_can_override_required_with_default(self):
+        """Test subclass can provide default for parent's required field."""
+
+        class ChildWithDefault(BaseResult):
+            status: str = "default_status"  # Override parent's required with default
+
+        # No longer required - can create without providing status
+        result = ChildWithDefault()
+        assert result.status == "default_status"
+
+        # Can still override the default
+        result2 = ChildWithDefault(status="custom")
+        assert result2.status == "custom"
+
 
 # =============================================================================
 # Test Edge Cases
