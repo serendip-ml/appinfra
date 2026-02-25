@@ -32,6 +32,7 @@ from .exceptions import (
     ToolError,
     ValidationError,
 )
+from .field_dict import FieldDict, field
 from .rate_limit import Backoff, RateLimiter
 from .regex_utils import (
     RegexComplexityError,
@@ -60,8 +61,10 @@ __all__ = [
     "net",
     # Core classes
     "Backoff",
+    "FieldDict",
     "DictInterface",
     "DotDict",
+    "field",
     "EWMA",
     "RateLimiter",
     "Config",

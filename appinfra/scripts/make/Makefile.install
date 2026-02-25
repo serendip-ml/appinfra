@@ -13,6 +13,8 @@
 ##@ Package Installation
 
 install:: areyousure ## installs $(INFRA_DEV_PKG_NAME) to all environments in PYTHON_ENVS
+	@echo "* cleaning build artifacts..."
+	@rm -rf *.egg-info .dist .build dist build
 	@echo "* installing $(INFRA_DEV_PKG_NAME) to all environments..."
 	@for pyenv in $(PYTHON_ENVS); do \
 		if [ -x "$$pyenv" ]; then \
@@ -30,6 +32,8 @@ install:: areyousure ## installs $(INFRA_DEV_PKG_NAME) to all environments in PY
 .PHONY: install
 
 install.e:: areyousure ## installs $(INFRA_DEV_PKG_NAME) (editable) to all environments in PYTHON_ENVS
+	@echo "* cleaning build artifacts..."
+	@rm -rf *.egg-info .dist .build dist build
 	@echo "* installing $(INFRA_DEV_PKG_NAME) (editable) to all environments..."
 	@for pyenv in $(PYTHON_ENVS); do \
 		if [ -x "$$pyenv" ]; then \

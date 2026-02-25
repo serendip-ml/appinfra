@@ -10,6 +10,32 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-02-25
+
+### Added
+- `FieldDict` - typed DotDict with field declarations for IDE autocomplete:
+  - Required/optional fields with defaults, `field(default_factory=...)` for mutable defaults
+  - `__post_init__` hook for computed fields, optional `strict=True` mode
+- `appinfra.testing` pytest plugin with `expected_skip` marker for acceptable skips:
+  - Prefixes skip reasons with `[expected]` for filtering in `check.sh`
+  - See `appinfra docs show pytest-plugin` for usage
+- `check.sh` now displays skip summary with grouped reasons:
+  - Shows count and reasons for skipped tests at end of check output
+  - Expected skips (marked with `[expected]`) are filtered from warnings
+  - Helps identify unintentional test skips that need attention
+- `make check.nt` target for running code quality checks without tests:
+  - Runs formatting, linting, type checking, docstring coverage
+  - Skips all test suites (unit, integration, e2e, security, performance)
+  - Useful for quick feedback during development
+
+### Fixed
+- `make install` and `make install.e` now clean build artifacts before installing:
+  - Removes `*.egg-info`, `.dist`, `.build`, `dist`, `build` directories
+  - Prevents stale cached files from being reinstalled after `make uninstall`
+- Test directory `tests/infra/app/fastapi/` renamed to `tests/infra/app/fastapi_tests/`:
+  - Prevents package shadowing when pytest-xdist adds test directories to `sys.path`
+  - Eliminates spurious "FastAPI not available" skips in parallel test runs
+
 ## [0.4.0] - 2026-02-20
 
 ### Fixed
@@ -388,7 +414,8 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/serendip-ml/appinfra/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/serendip-ml/appinfra/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/serendip-ml/appinfra/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/serendip-ml/appinfra/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/serendip-ml/appinfra/compare/v0.3.3...v0.3.4
