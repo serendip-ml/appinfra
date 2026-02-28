@@ -2128,6 +2128,18 @@ config:
         result = load(StringIO(content), track_sources=False)
         assert result["config"]["nested"] == {"a": 1, "b": 2, "c": 3}
 
+    def test_deep_merge_inline_mapping(self):
+        """Test !deep with inline mapping (no anchor reference)."""
+        content = """
+config:
+  <<: !deep {nested: {a: 1, b: 2}}
+  nested:
+    c: 3
+"""
+        result = load(StringIO(content), track_sources=False)
+        # Inline mapping should also deep merge
+        assert result["config"]["nested"] == {"a": 1, "b": 2, "c": 3}
+
     def test_deep_merge_override(self):
         """Test deep merge allows overriding specific nested values."""
         content = """

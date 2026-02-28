@@ -27,7 +27,13 @@ from ._include import (
     _validate_include_standalone,
 )
 from .loader import Loader, preprocess_deep_tags
-from .types import DeepMergeWrapper, ErrorContext, IncludeContext, SecretLiteralWarning
+from .types import (
+    DeepMergeWrapper,
+    ErrorContext,
+    IncludeContext,
+    ResetValue,
+    SecretLiteralWarning,
+)
 
 # Public API exports
 __all__ = [
@@ -35,6 +41,7 @@ __all__ = [
     "Loader",
     "deep_merge",
     "DeepMergeWrapper",
+    "ResetValue",
     "ErrorContext",
     "IncludeContext",
     "SecretLiteralWarning",
@@ -55,8 +62,6 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
     Returns:
         Merged dictionary
     """
-    from .types import ResetValue
-
     result = base.copy()
     for key, value in override.items():
         # ResetValue bypasses merging - use wrapped value directly
