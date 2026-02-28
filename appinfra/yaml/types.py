@@ -60,3 +60,56 @@ class SecretLiteralWarning(UserWarning):
     """Warning emitted when a !secret tagged value appears to be a literal instead of env var."""
 
     pass
+
+
+class DeepMergeWrapper:
+    """
+    Wrapper to mark data for deep merging with YAML merge keys (<<).
+
+    When used with the !deep tag, signals that the wrapped data should be
+    deep-merged into the parent mapping instead of shallow-merged.
+
+    Example:
+        templates:
+          vllm_default: &vllm_default
+            max_model_len: 8192
+            vllm:
+              enforce_eager: false
+              max_num_seqs: 4
+
+        models:
+          my-model:
+            <<: !deep *vllm_default
+            vllm:
+              gpu_memory_gb: 8.0   # Deep merged with template's vllm
+
+    Result:
+        my-model:
+          max_model_len: 8192
+          vllm:
+            enforce_eager: false   # Preserved from template
+            max_num_seqs: 4        # Preserved from template
+            gpu_memory_gb: 8.0     # Added locally
+    """
+
+    __slots__ = ("data",)
+
+    def __init__(self, data: dict) -> None:
+        """
+        Initialize wrapper with data to deep merge.
+
+        Args:
+            data: Dictionary data to be deep merged. Must be a dict.
+
+        Raises:
+            TypeError: If data is not a dictionary.
+        """
+        if not isinstance(data, dict):
+            raise TypeError(
+                f"!deep tag requires a mapping (dict), got {type(data).__name__}. "
+                "Use !deep with anchors or includes that resolve to mappings."
+            )
+        self.data = data
+
+    def __repr__(self) -> str:
+        return f"DeepMergeWrapper({self.data!r})"

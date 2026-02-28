@@ -21,7 +21,13 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 from ._include import _resolve_variables_in_data
-from .types import ENV_VAR_PATTERN, ErrorContext, IncludeContext, SecretLiteralWarning
+from .types import (
+    ENV_VAR_PATTERN,
+    DeepMergeWrapper,
+    ErrorContext,
+    IncludeContext,
+    SecretLiteralWarning,
+)
 
 
 class Loader(yaml.SafeLoader):
@@ -33,11 +39,21 @@ class Loader(yaml.SafeLoader):
     2. Support file inclusion via !include tag
     3. Detect circular includes
     4. Support configurable merge strategies (replace or merge)
+    5. Support deep merging via !deep tag with anchors
 
     Example:
         # In your YAML file:
         database:
           connection: !include "./db_config.yaml"
+
+        # Deep merge with anchors:
+        templates:
+          defaults: &defaults
+            nested: {a: 1, b: 2}
+
+        config:
+          <<: !deep *defaults
+          nested: {c: 3}   # Results in nested: {a: 1, b: 2, c: 3}
 
         # Load with the appinfra yaml module:
         from . import load
@@ -79,6 +95,36 @@ class Loader(yaml.SafeLoader):
         self._pending_include_maps: dict[
             int, dict[str, Path | None]
         ] = {}  # Temp storage for include source maps
+        self._anchor_nodes: dict[str, yaml.Node] = {}  # Track anchors for !deep lookup
+
+    # Note: PyYAML's type stubs incorrectly define anchor as dict[Any, Node],
+    # but at runtime it's str | None. We override with correct types.
+    def compose_mapping_node(  # type: ignore[override]
+        self, anchor: str | None
+    ) -> yaml.MappingNode:
+        """Compose a mapping node, tracking anchors for !deep tag support."""
+        node = super().compose_mapping_node(anchor)  # type: ignore[arg-type]
+        if anchor:
+            self._anchor_nodes[anchor] = node
+        return node
+
+    def compose_sequence_node(  # type: ignore[override]
+        self, anchor: str | None
+    ) -> yaml.SequenceNode:
+        """Compose a sequence node, tracking anchors for !deep tag support."""
+        node = super().compose_sequence_node(anchor)  # type: ignore[arg-type]
+        if anchor:
+            self._anchor_nodes[anchor] = node
+        return node
+
+    def compose_scalar_node(  # type: ignore[override]
+        self, anchor: str | None
+    ) -> yaml.ScalarNode:
+        """Compose a scalar node, tracking anchors for !deep tag support."""
+        node = super().compose_scalar_node(anchor)  # type: ignore[arg-type]
+        if anchor:
+            self._anchor_nodes[anchor] = node
+        return node
 
     def _convert_key_to_string(self, key: Any) -> Any:
         """
@@ -548,8 +594,309 @@ class Loader(yaml.SafeLoader):
 
         return str(path)
 
+    def deep_constructor(self, node: Any) -> DeepMergeWrapper:
+        """
+        Construct a DeepMergeWrapper from !deep tag for deep merging.
+
+        When used with YAML merge keys (<<), signals that the referenced
+        data should be deep-merged instead of shallow-merged.
+
+        Supports two syntaxes:
+        1. !deep *anchor  - Reference an anchor (preprocessed to !deep anchor)
+        2. !deep {inline: mapping} - Inline mapping
+
+        Args:
+            node: YAML node (scalar with anchor name, or a mapping node)
+
+        Returns:
+            DeepMergeWrapper containing the resolved data
+
+        Raises:
+            yaml.YAMLError: If the resolved data is not a mapping or anchor not found
+
+        Example:
+            templates:
+              defaults: &defaults
+                nested:
+                  a: 1
+                  b: 2
+
+            config:
+              <<: !deep *defaults
+              nested:
+                c: 3   # Results in nested: {a: 1, b: 2, c: 3}
+        """
+        ctx = self._create_error_context(node)
+
+        # Handle scalar node: anchor name lookup (from preprocessed !deep *anchor)
+        if isinstance(node, yaml.ScalarNode):
+            anchor_name = self.construct_scalar(node)
+
+            if anchor_name not in self._anchor_nodes:
+                raise yaml.YAMLError(
+                    f"!deep references unknown anchor '{anchor_name}'. "
+                    f"Available anchors: {list(self._anchor_nodes.keys())} "
+                    f"({ctx.format_location()})"
+                )
+
+            anchor_node = self._anchor_nodes[anchor_name]
+            # Construct directly to bypass cache (anchor may be mid-construction)
+            data = self._construct_node_directly(anchor_node)
+        else:
+            # Handle mapping or other nodes directly
+            data = self._construct_node_directly(node)
+
+        # Wrap in DeepMergeWrapper - it validates that data is a dict
+        try:
+            return DeepMergeWrapper(data)
+        except TypeError as e:
+            raise yaml.YAMLError(f"{e} ({ctx.format_location()})")
+
+    def _construct_node_directly(self, node: yaml.Node) -> Any:
+        """
+        Construct a node directly, bypassing the constructed_objects cache.
+
+        This is needed for !deep tag when referencing anchors that may be
+        mid-construction (cached with empty dict due to circular ref handling).
+
+        Args:
+            node: YAML node to construct
+
+        Returns:
+            Constructed Python value
+        """
+        if isinstance(node, yaml.MappingNode):
+            # Don't call flatten_mapping here - we want raw data
+            pairs = []
+            for key_node, value_node in node.value:
+                key = self.construct_object(key_node, deep=False)
+                value = self._construct_node_directly(value_node)
+                pairs.append((key, value))
+            return dict(pairs)
+        elif isinstance(node, yaml.SequenceNode):
+            return [self._construct_node_directly(item) for item in node.value]
+        else:
+            # Scalar - use normal construction
+            return self.construct_object(node, deep=False)
+
+    def deep_include_constructor(self, node: Any) -> DeepMergeWrapper:
+        """
+        Construct a DeepMergeWrapper from !deep-include tag.
+
+        This is the preprocessed form of `!deep !include "path"`, which isn't
+        valid YAML (can't have two tags on one value). The preprocessor
+        transforms it to `!deep-include "path"`.
+
+        Args:
+            node: YAML scalar node containing the include path
+
+        Returns:
+            DeepMergeWrapper containing the included file's data
+
+        Raises:
+            yaml.YAMLError: If include fails or data is not a mapping
+
+        Example:
+            config:
+              <<: !deep !include "./base.yaml"  # Preprocessed to !deep-include
+              nested:
+                c: 3
+        """
+        # Use include_constructor to load the file
+        data = self.include_constructor(node)
+
+        # Wrap in DeepMergeWrapper
+        ctx = self._create_error_context(node)
+        try:
+            return DeepMergeWrapper(data)
+        except TypeError as e:
+            raise yaml.YAMLError(f"{e} ({ctx.format_location()})")
+
+    def flatten_mapping(self, node: yaml.MappingNode) -> None:
+        """
+        Flatten merge keys (<<) with support for deep merging via !deep tag.
+
+        Extends the default YAML merge key behavior to support deep merging
+        when the merge value is wrapped in a DeepMergeWrapper (via !deep tag).
+
+        Standard YAML merge (<<: *anchor) does shallow merge - nested dicts
+        are completely replaced. With !deep tag (<<: !deep *anchor), nested
+        dicts are recursively merged.
+
+        Args:
+            node: YAML MappingNode to process
+        """
+        # Import here to avoid circular import
+        from . import deep_merge as deep_merge_func
+
+        merge_base, has_deep_merge, regular_pairs = self._extract_merge_keys(
+            node, deep_merge_func
+        )
+
+        regular_dict, new_regular_pairs = self._process_deep_merge_pairs(
+            regular_pairs, merge_base, has_deep_merge, deep_merge_func
+        )
+
+        node.value = self._build_final_pairs(
+            merge_base, regular_dict, new_regular_pairs, regular_pairs
+        )
+
+    def _extract_merge_keys(
+        self, node: yaml.MappingNode, deep_merge_func: Any
+    ) -> tuple[dict[str, Any], bool, list[tuple[yaml.Node, yaml.Node]]]:
+        """Extract merge key values and separate regular pairs."""
+        merge_base: dict[str, Any] = {}
+        has_deep_merge = False
+        regular_pairs: list[tuple[yaml.Node, yaml.Node]] = []
+
+        for key_node, value_node in node.value:
+            if self._is_merge_key(key_node):
+                if isinstance(value_node, yaml.SequenceNode):
+                    for subnode in value_node.value:
+                        merge_value = self.construct_object(subnode, deep=True)
+                        self._apply_merge_value(
+                            merge_value, merge_base, deep_merge_func
+                        )
+                        if isinstance(merge_value, DeepMergeWrapper):
+                            has_deep_merge = True
+                else:
+                    merge_value = self.construct_object(value_node, deep=True)
+                    self._apply_merge_value(merge_value, merge_base, deep_merge_func)
+                    if isinstance(merge_value, DeepMergeWrapper):
+                        has_deep_merge = True
+            else:
+                regular_pairs.append((key_node, value_node))
+
+        return merge_base, has_deep_merge, regular_pairs
+
+    def _is_merge_key(self, key_node: yaml.Node) -> bool:
+        """Check if a key node is a YAML merge key (<<)."""
+        return (
+            isinstance(key_node, yaml.ScalarNode)
+            and key_node.tag == "tag:yaml.org,2002:merge"
+        )
+
+    def _process_deep_merge_pairs(
+        self,
+        regular_pairs: list[tuple[yaml.Node, yaml.Node]],
+        merge_base: dict[str, Any],
+        has_deep_merge: bool,
+        deep_merge_func: Any,
+    ) -> tuple[dict[str, Any], list[tuple[yaml.Node, yaml.Node]]]:
+        """Process regular pairs, applying deep merge where keys conflict."""
+        regular_dict: dict[str, Any] = {}
+        new_regular_pairs: list[tuple[yaml.Node, yaml.Node]] = []
+
+        for key_node, value_node in regular_pairs:
+            key = self.construct_object(key_node, deep=False)
+            key = self._convert_key_to_string(key)
+
+            if has_deep_merge and key in merge_base:
+                value = self._construct_node_directly(value_node)
+                if isinstance(merge_base[key], dict) and isinstance(value, dict):
+                    regular_dict[key] = deep_merge_func(merge_base[key], value)
+                else:
+                    regular_dict[key] = value
+            else:
+                new_regular_pairs.append((key_node, value_node))
+
+        return regular_dict, new_regular_pairs
+
+    def _build_final_pairs(
+        self,
+        merge_base: dict[str, Any],
+        regular_dict: dict[str, Any],
+        new_regular_pairs: list[tuple[yaml.Node, yaml.Node]],
+        original_regular_pairs: list[tuple[yaml.Node, yaml.Node]],
+    ) -> list[tuple[yaml.Node, yaml.Node]]:
+        """Build final node pairs from merge base and regular pairs."""
+        if not merge_base and not regular_dict:
+            return original_regular_pairs
+
+        new_pairs: list[tuple[yaml.Node, yaml.Node]] = []
+
+        # Add merge base pairs (not deep-merged with regular pairs)
+        for key, value in merge_base.items():
+            if key not in regular_dict:
+                key_node = yaml.ScalarNode(tag="tag:yaml.org,2002:str", value=str(key))
+                new_pairs.append((key_node, self._value_to_node(value)))
+
+        # Add deep-merged pairs
+        for key, value in regular_dict.items():
+            key_node = yaml.ScalarNode(tag="tag:yaml.org,2002:str", value=str(key))
+            new_pairs.append((key_node, self._value_to_node(value)))
+
+        # Add remaining regular pairs
+        new_pairs.extend(new_regular_pairs)
+        return new_pairs
+
+    def _apply_merge_value(
+        self,
+        merge_value: Any,
+        merge_base: dict[str, Any],
+        deep_merge_func: Any,
+    ) -> None:
+        """
+        Apply a merge value to the merge base dict.
+
+        Args:
+            merge_value: Value to merge (dict or DeepMergeWrapper)
+            merge_base: Dict to merge into
+            deep_merge_func: The deep_merge function for nested merging
+        """
+        if isinstance(merge_value, DeepMergeWrapper):
+            # Deep merge the data into base
+            data = merge_value.data
+            for key, value in data.items():
+                if (
+                    key in merge_base
+                    and isinstance(merge_base[key], dict)
+                    and isinstance(value, dict)
+                ):
+                    merge_base[key] = deep_merge_func(merge_base[key], value)
+                else:
+                    merge_base[key] = value
+        elif isinstance(merge_value, dict):
+            # Shallow merge: later values override
+            merge_base.update(merge_value)
+
+    def _value_to_node(self, value: Any) -> yaml.Node:
+        """
+        Convert a Python value to a YAML node for reconstruction.
+
+        Args:
+            value: Python value to convert
+
+        Returns:
+            Appropriate YAML node
+        """
+        if isinstance(value, dict):
+            pairs = []
+            for k, v in value.items():
+                key_node = yaml.ScalarNode(tag="tag:yaml.org,2002:str", value=str(k))
+                value_node = self._value_to_node(v)
+                pairs.append((key_node, value_node))
+            return yaml.MappingNode(tag="tag:yaml.org,2002:map", value=pairs)
+        elif isinstance(value, list):
+            items = [self._value_to_node(item) for item in value]
+            return yaml.SequenceNode(tag="tag:yaml.org,2002:seq", value=items)
+        elif isinstance(value, bool):
+            return yaml.ScalarNode(
+                tag="tag:yaml.org,2002:bool", value=str(value).lower()
+            )
+        elif isinstance(value, int):
+            return yaml.ScalarNode(tag="tag:yaml.org,2002:int", value=str(value))
+        elif isinstance(value, float):
+            return yaml.ScalarNode(tag="tag:yaml.org,2002:float", value=str(value))
+        elif value is None:
+            return yaml.ScalarNode(tag="tag:yaml.org,2002:null", value="null")
+        else:
+            return yaml.ScalarNode(tag="tag:yaml.org,2002:str", value=str(value))
+
 
 # Register tag constructors with the Loader class
 Loader.add_constructor("!include", Loader.include_constructor)
 Loader.add_constructor("!secret", Loader.secret_constructor)
 Loader.add_constructor("!path", Loader.path_constructor)
+Loader.add_constructor("!deep", Loader.deep_constructor)
+Loader.add_constructor("!deep-include", Loader.deep_include_constructor)
