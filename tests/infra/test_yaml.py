@@ -2111,6 +2111,23 @@ config:
         # Deep merge should preserve a, b from template and add c
         assert result["config"]["nested"] == {"a": 1, "b": 2, "c": 3}
 
+    def test_deep_merge_hyphenated_anchor(self):
+        """Test deep merge works with hyphenated anchor names (kebab-case)."""
+        content = """
+templates:
+  my-defaults: &my-defaults
+    nested:
+      a: 1
+      b: 2
+
+config:
+  <<: !deep *my-defaults
+  nested:
+    c: 3
+"""
+        result = load(StringIO(content), track_sources=False)
+        assert result["config"]["nested"] == {"a": 1, "b": 2, "c": 3}
+
     def test_deep_merge_override(self):
         """Test deep merge allows overriding specific nested values."""
         content = """

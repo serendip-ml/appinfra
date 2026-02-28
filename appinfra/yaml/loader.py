@@ -34,7 +34,8 @@ from .types import (
 )
 
 # Pattern to match !deep *anchor and transform to !deep anchor
-_DEEP_ANCHOR_PATTERN = re.compile(r"!deep\s+\*(\w+)")
+# YAML anchors allow alphanumeric, underscore, and hyphen (e.g., &my-defaults)
+_DEEP_ANCHOR_PATTERN = re.compile(r"!deep\s+\*([a-zA-Z0-9_-]+)")
 
 
 def preprocess_deep_tags(content: str) -> str:
