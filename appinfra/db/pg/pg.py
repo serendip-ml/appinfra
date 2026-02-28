@@ -428,8 +428,6 @@ class PG(Interface):
 
     def _create_extensions(self) -> None:
         """Create PostgreSQL extensions configured in the database config."""
-        from sqlalchemy.exc import IntegrityError
-
         extensions = getattr(self._cfg, "extensions", [])
         if not extensions:
             return
@@ -452,9 +450,9 @@ class PG(Interface):
                     "created extension",
                     extra={**self._lg_extra, "extension": ext},
                 )
-            except IntegrityError:  # pragma: no cover
+            except Exception:  # pragma: no cover
                 # Race condition: another process created it concurrently.
-                # Extension exists, which is the desired state.
+                # CREATE EXTENSION IF NOT EXISTS is idempotent, so extension exists.
                 pass
 
     def _is_valid_extension_name(self, name: str) -> bool:

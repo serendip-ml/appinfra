@@ -52,8 +52,10 @@ if TYPE_CHECKING:
 # Helpers
 # =============================================================================
 
+import re
+
 # Extension name validation pattern (same as PG class)
-_EXT_PATTERN = __import__("re").compile(r"^[a-z][a-z0-9_-]*$")
+_EXT_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 
 def _create_extensions_in_db(url: str, extensions: list[str]) -> None:
@@ -84,7 +86,7 @@ def _setup_database_with_lock(config: dict[str, Any]) -> None:
     This prevents race conditions with pytest-xdist workers.
     """
     import hashlib
-    from urllib.parse import urlparse
+    from urllib.parse import urlparse, urlunparse
 
     import sqlalchemy
     import sqlalchemy_utils
@@ -96,7 +98,7 @@ def _setup_database_with_lock(config: dict[str, Any]) -> None:
     url = config["url"]
     parsed = urlparse(url)
     db_name = parsed.path.lstrip("/")
-    postgres_url = url.replace(f"/{db_name}", "/postgres")
+    postgres_url = urlunparse(parsed._replace(path="/postgres"))
     lock_id = int(hashlib.md5(db_name.encode()).hexdigest()[:15], 16)
 
     engine = sqlalchemy.create_engine(postgres_url)

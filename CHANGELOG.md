@@ -13,6 +13,9 @@ For API stability guarantees and deprecation policy, see
 ### Fixed
 - Added `setuptools` to dev dependencies (required by `sphinx.setup_command`)
 - Test for `!path` YAML tag now uses non-existent paths to avoid symlink resolution issues
+- `PG` testing fixtures now handle `create_db` race conditions with pytest-xdist:
+  - Uses PostgreSQL advisory locks to coordinate database creation across workers
+  - Prevents "database already exists" errors when multiple workers start simultaneously
 
 ## [0.4.1] - 2026-02-25
 
