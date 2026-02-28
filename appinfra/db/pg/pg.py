@@ -271,8 +271,13 @@ class PG(Interface):
         # Ensure database exists if create_db is enabled
         create_db = getattr(self._cfg, "create_db", False)
         if create_db is True and not sqlalchemy_utils.database_exists(self._engine.url):
-            sqlalchemy_utils.create_database(self._engine.url)
-            self._lg.info("created db", extra=self._lg_extra)
+            try:
+                sqlalchemy_utils.create_database(self._engine.url)
+                self._lg.info("created db", extra=self._lg_extra)
+            except Exception:  # pragma: no cover
+                # Race condition: another process created it. Verify it exists now.
+                if not sqlalchemy_utils.database_exists(self._engine.url):
+                    raise
 
         # Create configured extensions
         self._create_extensions()
@@ -427,23 +432,30 @@ class PG(Interface):
         if not extensions:
             return
 
-        with self._engine.connect() as conn:
-            for ext in extensions:
-                # Defense-in-depth validation (also validated by Pydantic schema)
-                if not self._is_valid_extension_name(ext):
-                    self._lg.warning(
-                        "skipping invalid extension name",
-                        extra={**self._lg_extra, "extension": ext},
-                    )
-                    continue
+        for ext in extensions:
+            # Defense-in-depth validation (also validated by Pydantic schema)
+            if not self._is_valid_extension_name(ext):
+                self._lg.warning(
+                    "skipping invalid extension name",
+                    extra={**self._lg_extra, "extension": ext},
+                )
+                continue
 
-                # Use identifier quoting for safety (though we validated the name)
-                conn.execute(text(f'CREATE EXTENSION IF NOT EXISTS "{ext}"'))
+            # Each extension in its own transaction to avoid rollback affecting others
+            try:
+                with self._engine.connect() as conn:
+                    conn.execute(text(f'CREATE EXTENSION IF NOT EXISTS "{ext}"'))
+                    conn.commit()
                 self._lg.debug(
                     "created extension",
                     extra={**self._lg_extra, "extension": ext},
                 )
-            conn.commit()
+            except Exception as e:  # pragma: no cover
+                # Race condition: another process created it concurrently.
+                # PostgreSQL error code 42710 = duplicate_object (extension exists).
+                pgcode = getattr(getattr(e, "orig", None), "pgcode", None)
+                if pgcode != "42710":
+                    raise
 
     def _is_valid_extension_name(self, name: str) -> bool:
         """
