@@ -450,10 +450,12 @@ class PG(Interface):
                     "created extension",
                     extra={**self._lg_extra, "extension": ext},
                 )
-            except Exception:  # pragma: no cover
+            except Exception as e:  # pragma: no cover
                 # Race condition: another process created it concurrently.
-                # CREATE EXTENSION IF NOT EXISTS is idempotent, so extension exists.
-                pass
+                # PostgreSQL error code 42710 = duplicate_object (extension exists).
+                pgcode = getattr(getattr(e, "orig", None), "pgcode", None)
+                if pgcode != "42710":
+                    raise
 
     def _is_valid_extension_name(self, name: str) -> bool:
         """

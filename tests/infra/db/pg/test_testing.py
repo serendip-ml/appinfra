@@ -51,8 +51,8 @@ class TestSetupDatabaseWithLock:
     """Test _setup_database_with_lock helper."""
 
     def test_skips_when_create_db_false(self):
-        """Test that function returns early when create_db is not set."""
-        config = {"url": "postgresql://localhost/test"}
+        """Test that function returns early when create_db is False."""
+        config = {"url": "postgresql://localhost/test", "create_db": False}
         # Should not raise - just returns early (no DB connection attempted)
         _setup_database_with_lock(config)
 

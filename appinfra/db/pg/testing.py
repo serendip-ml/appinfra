@@ -68,11 +68,11 @@ def _create_extensions_in_db(url: str, extensions: list[str]) -> None:
 
     engine = sqlalchemy.create_engine(url)
     try:
-        with engine.connect() as conn:
-            for ext in extensions:
-                if _EXT_PATTERN.match(ext):
+        for ext in extensions:
+            if _EXT_PATTERN.match(ext):
+                with engine.connect() as conn:
                     conn.execute(text(f'CREATE EXTENSION IF NOT EXISTS "{ext}"'))
-            conn.commit()
+                    conn.commit()
     finally:
         engine.dispose()
 
