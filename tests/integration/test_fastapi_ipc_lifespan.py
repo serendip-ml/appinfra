@@ -166,8 +166,11 @@ class TestFastAPIIPCWithLifecycleCallbacks:
 
         # Build server with startup callback AND IPC mode
         # This combination previously broke IPC polling
+        from appinfra.log import Logger
+
+        lg = Logger("test-ipc-lifespan")
         server = (
-            ServerBuilder("test-ipc-lifespan")
+            ServerBuilder(lg, "test-ipc-lifespan")
             .with_host("127.0.0.1")
             .with_port(18765)  # Use non-standard port to avoid conflicts
             .with_on_startup(track_startup, name="track_startup")
@@ -259,8 +262,11 @@ class TestFastAPIIPCWithLifecycleCallbacks:
             app.state.startup_completed = True
 
         # Build server
+        from appinfra.log import Logger
+
+        lg = Logger("test-ipc-full")
         server = (
-            ServerBuilder("test-ipc-full")
+            ServerBuilder(lg, "test-ipc-full")
             .with_host("127.0.0.1")
             .with_port(18766)
             .with_on_startup(startup_callback, name="startup")
@@ -345,8 +351,11 @@ class TestFastAPIIPCWithLifecycleCallbacks:
         response_q: mp.Queue = mp.Queue()
 
         # Build server with exception handler in subprocess mode
+        from appinfra.log import Logger
+
+        lg_server = Logger("test-exc-handler")
         server = (
-            ServerBuilder("test-exc-handler")
+            ServerBuilder(lg_server, "test-exc-handler")
             .with_host("127.0.0.1")
             .with_port(18767)
             .routes.with_route("/ping", lambda: {"status": "ok"}, methods=["GET"])

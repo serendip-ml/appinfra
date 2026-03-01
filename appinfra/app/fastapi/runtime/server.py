@@ -12,6 +12,8 @@ from .logging import setup_subprocess_logging
 from .subprocess import SubprocessManager
 
 if TYPE_CHECKING:
+    from ....log import Logger
+    from ....log.mp import LogQueueListener
     from .adapter import FastAPIAdapter
 
 # Module-level logger for main process Server class methods
@@ -43,23 +45,12 @@ def _build_uvicorn_log_config(config: ApiConfig) -> dict[str, Any]:
     }
 
 
-def _create_subprocess_logger(config: ApiConfig) -> Any:
-    """Create appinfra logger for subprocess hot-reload support."""
-    from ....log import LoggerFactory
-    from ....log.config import LogConfig
-
-    setup_subprocess_logging(
-        config.log_file, log_level=config.uvicorn.log_level.upper()
-    )
-    log_config = LogConfig.from_params(level=config.uvicorn.log_level, location=1)
-    return LoggerFactory.create_root(log_config)
-
-
 def _uvicorn_subprocess_entry(
     adapter: FastAPIAdapter,
     config: ApiConfig,
     request_q: mp.Queue[Any],
     response_q: mp.Queue[Any],
+    log_config: dict[str, Any],
 ) -> None:
     """
     Entry point for uvicorn subprocess.
@@ -69,12 +60,13 @@ def _uvicorn_subprocess_entry(
     """
     import uvicorn
 
+    from ....log import Logger
     from ....subprocess import SubprocessContext
     from .ipc import IPCChannel
 
-    lg = _create_subprocess_logger(config)
-
-    # Inject logger into handlers that need it (after unpickling, before build)
+    # Set up queue-based logging forwarding to parent process
+    setup_subprocess_logging(config.log_file, log_level=log_config.get("level", "info"))
+    lg = Logger.from_queue_config(log_config, name="fastapi.subprocess")
     adapter.inject_subprocess_logger(lg)
 
     with SubprocessContext(
@@ -118,6 +110,7 @@ class Server:
 
     def __init__(
         self,
+        lg: Logger,
         name: str,
         config: ApiConfig,
         adapter: FastAPIAdapter,
@@ -128,6 +121,7 @@ class Server:
         Initialize server.
 
         Args:
+            lg: Logger for queue-based subprocess logging
             name: Server name (for logging)
             config: API configuration
             adapter: FastAPI adapter with route/middleware definitions
@@ -147,8 +141,14 @@ class Server:
         self._adapter = adapter
         self._request_q = request_q
         self._response_q = response_q
+        self._lg = lg
         self._subprocess_manager: SubprocessManager | None = None
         self._app: FastAPI | None = None
+
+        # Queue-based logging for subprocess (only if logger provided)
+        self._log_queue: mp.Queue[Any] | None = None
+        self._log_config: dict[str, Any] | None = None
+        self._log_listener: LogQueueListener | None = None
 
     @property
     def name(self) -> str:
@@ -217,6 +217,23 @@ class Server:
         if self._subprocess_manager and self._subprocess_manager.is_alive():
             raise RuntimeError("Server subprocess is already running")
 
+    def _setup_subprocess_logging(self) -> None:
+        """Set up queue-based logging for subprocess."""
+        from ....log.mp import LogQueueListener
+
+        self._log_queue = mp.Queue()
+        self._log_config = self._lg.queue_config(self._log_queue)
+        self._log_listener = LogQueueListener(self._log_queue, self._lg)
+        self._log_listener.start()
+
+    def _teardown_subprocess_logging(self) -> None:
+        """Tear down queue-based logging."""
+        if self._log_listener is not None:
+            self._log_listener.stop()
+            self._log_listener = None
+        self._log_queue = None
+        self._log_config = None
+
     def _create_subprocess_manager(self) -> SubprocessManager:
         """Create subprocess manager with current configuration."""
         assert self._request_q is not None
@@ -227,7 +244,13 @@ class Server:
 
         return SubprocessManager(
             target=_uvicorn_subprocess_entry,
-            args=(self._adapter, self._config, self._request_q, self._response_q),
+            args=(
+                self._adapter,
+                self._config,
+                self._request_q,
+                self._response_q,
+                self._log_config,
+            ),
             shutdown_timeout=5.0,
             auto_restart=self._config.auto_restart,
             restart_delay=self._config.restart_delay,
@@ -245,6 +268,7 @@ class Server:
             RuntimeError: If not in subprocess mode or already running
         """
         self._validate_subprocess_mode()
+        self._setup_subprocess_logging()
         self._subprocess_manager = self._create_subprocess_manager()
         proc = self._subprocess_manager.start()
         logger.info(
@@ -266,6 +290,7 @@ class Server:
             logger.info(f"Stopping server '{self._name}'...")
             self._subprocess_manager.stop()
             self._subprocess_manager = None
+            self._teardown_subprocess_logging()
             logger.info(f"Server '{self._name}' stopped")
 
     def _run_direct(self) -> None:

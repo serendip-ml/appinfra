@@ -14,11 +14,13 @@ pip install appinfra[fastapi]
 
 ```python
 from appinfra.app.fastapi import ServerBuilder
+from appinfra.log import Logger
 
 async def health():
     return {"status": "ok"}
 
-server = (ServerBuilder("myapi")
+lg = Logger("myapi")
+server = (ServerBuilder(lg, "myapi")
     .with_port(8000)
     .routes.with_route("/health", health).done()
     .build())
@@ -34,10 +36,12 @@ computation:
 ```python
 import multiprocessing as mp
 from appinfra.app.fastapi import ServerBuilder
+from appinfra.log import Logger
 
 request_q, response_q = mp.Queue(), mp.Queue()
 
-server = (ServerBuilder("worker-api")
+lg = Logger("worker-api")
+server = (ServerBuilder(lg, "worker-api")
     .with_port(8000)
     .routes.with_route("/health", health).done()
     .subprocess
@@ -55,13 +59,18 @@ while True:
     response_q.put(result)
 ```
 
+**Note:** The Logger is required for queue-based subprocess logging. The subprocess inherits the
+main process log level, so exception handlers using `self._lg` log at the correct level.
+
 ### AppBuilder Integration
 
 ```python
 from appinfra.app import AppBuilder
 from appinfra.app.fastapi import ServerBuilder, ServerPlugin
+from appinfra.log import Logger
 
-server = ServerBuilder("myapi").with_port(8000).build()
+lg = Logger("myapi")
+server = ServerBuilder(lg, "myapi").with_port(8000).build()
 
 app = (AppBuilder("myapp")
     .tools.with_plugin(ServerPlugin(server)).done()
@@ -76,8 +85,10 @@ Fluent builder for configuring FastAPI servers.
 
 ```python
 from appinfra.app.fastapi import ServerBuilder
+from appinfra.log import Logger
 
-server = (ServerBuilder("myapi")
+lg = Logger("myapi")
+server = (ServerBuilder(lg, "myapi")
     # Server binding
     .with_host("0.0.0.0")
     .with_port(8000)
@@ -101,7 +112,7 @@ server = (ServerBuilder("myapi")
 Access via `.routes`:
 
 ```python
-server = (ServerBuilder("myapi")
+server = (ServerBuilder(lg, "myapi")
     .routes
         # Simple route
         .with_route("/health", health_handler)
@@ -134,7 +145,7 @@ server = (ServerBuilder("myapi")
 Access via `.subprocess`:
 
 ```python
-server = (ServerBuilder("myapi")
+server = (ServerBuilder(lg, "myapi")
     .subprocess
         # IPC queues (required for subprocess mode)
         .with_ipc(request_q, response_q)
@@ -172,7 +183,7 @@ async def init_db(app):
 async def close_db(app):
     await app.state.db.close()
 
-server = (ServerBuilder("myapi")
+server = (ServerBuilder(lg, "myapi")
     .with_on_startup(init_db, name="init_db")
     .with_on_shutdown(close_db, name="close_db")
     .build())
@@ -189,7 +200,7 @@ async def lifespan(app):
     # Shutdown
     await app.state.db.close()
 
-server = (ServerBuilder("myapi")
+server = (ServerBuilder(lg, "myapi")
     .with_lifespan(lifespan)
     .build())
 ```
@@ -212,7 +223,7 @@ async def add_headers(request, response):
 async def log_error(request, exc):
     logger.error(f"Error handling {request.url}: {exc}")
 
-server = (ServerBuilder("myapi")
+server = (ServerBuilder(lg, "myapi")
     .with_on_request(log_request)
     .with_on_response(add_headers)
     .with_on_exception(log_error)
@@ -239,10 +250,30 @@ or other values injected by your middleware.
 
 #### Error Handling
 
-- **Startup failures:** Wrapped with callback name for debugging:
-  `RuntimeError("Startup callback 'init_db' failed")`
-- **Shutdown failures:** Logged but don't prevent other callbacks from running. All shutdown
-  callbacks execute even if earlier ones fail.
+- **Startup failures:** Raises `CallbackError` with callback name for debugging
+- **Shutdown failures:** Logs error (if logger available), then raises `CallbackError`
+- **Configuration conflicts:** Using both `with_lifespan()` and startup/shutdown callbacks raises
+  `ConfigError` at build time
+
+### Logger Access in Route Handlers
+
+In subprocess mode, the logger is automatically injected into `request.state.lg`:
+
+```python
+from fastapi import Request
+from starlette.responses import JSONResponse
+
+@router.post("/process")
+async def process(request: Request):
+    try:
+        result = await do_work()
+        return {"result": result}
+    except TimeoutError as e:
+        request.state.lg.error("request timeout", extra={"error": str(e)})
+        return JSONResponse({"error": "timeout"}, status_code=504)
+```
+
+This provides clean logger access without passing it through closure chains.
 
 ### Exception Handlers in Subprocess Mode
 
@@ -261,7 +292,7 @@ class TimeoutHandler(ExceptionHandler):
         return JSONResponse({"error": "timeout"}, status_code=504)
 
 lg = Logger("api")
-server = (ServerBuilder("api")
+server = (ServerBuilder(lg, "api")
     .routes
         .with_exception_handler(TimeoutError, TimeoutHandler(lg))
         .done()
@@ -285,7 +316,7 @@ handle `__getstate__`/`__setstate__` yourself.
 Access via `.uvicorn`:
 
 ```python
-server = (ServerBuilder("myapi")
+server = (ServerBuilder(lg, "myapi")
     .uvicorn
         .with_workers(4)
         .with_log_level("info")
@@ -308,7 +339,7 @@ server = (ServerBuilder("myapi")
 Runtime server instance returned by `ServerBuilder.build()`.
 
 ```python
-server = ServerBuilder("myapi").build()
+server = ServerBuilder(lg, "myapi").build()
 
 # Properties
 server.name              # Server name
@@ -474,13 +505,15 @@ def run_worker(request_q: mp.Queue, response_q: mp.Queue):
 ```python
 import multiprocessing as mp
 from appinfra.app.fastapi import ServerBuilder
+from appinfra.log import Logger
 
 # Create IPC queues
 request_q: mp.Queue = mp.Queue()
 response_q: mp.Queue = mp.Queue()
 
 # Build server with IPC
-server = (ServerBuilder("worker-api")
+lg = Logger("worker-api")
+server = (ServerBuilder(lg, "worker-api")
     .with_port(8000)
     .subprocess
         .with_ipc(request_q, response_q)
@@ -578,8 +611,10 @@ Integrates server with AppBuilder for CLI apps:
 ```python
 from appinfra.app import AppBuilder
 from appinfra.app.fastapi import ServerBuilder, ServerPlugin
+from appinfra.log import Logger
 
-server = ServerBuilder("myapi").with_port(8000).build()
+lg = Logger("myapi")
+server = ServerBuilder(lg, "myapi").with_port(8000).build()
 
 app = (AppBuilder("myapp")
     .tools.with_plugin(ServerPlugin(server)).done()

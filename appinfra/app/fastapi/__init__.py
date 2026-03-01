@@ -65,6 +65,9 @@ from .config.api import ApiConfig
 from .config.ipc import IPCConfig
 from .config.uvicorn import UvicornConfig
 
+# Error classes are always available
+from .errors import CallbackError, ConfigError
+
 _INSTALL_MSG = "FastAPI is not installed. Install with: pip install appinfra[fastapi]"
 
 # Flag to track if real implementations are available
@@ -145,4 +148,7 @@ __all__ = [
     # Exception handlers (subprocess support)
     "ExceptionHandler",
     "LoggerInjectable",
+    # Errors (always available)
+    "CallbackError",
+    "ConfigError",
 ]

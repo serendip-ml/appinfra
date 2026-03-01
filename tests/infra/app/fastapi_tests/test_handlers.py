@@ -301,7 +301,8 @@ class TestServerBuilderValidation:
 
         handler = UnpicklableHandler()
 
-        builder = ServerBuilder("test")
+        mock_lg = MagicMock()
+        builder = ServerBuilder(mock_lg, "test")
         builder._exception_handlers.append(
             ExceptionHandlerDefinition(ValueError, handler)
         )
@@ -320,7 +321,7 @@ class TestServerBuilderValidation:
         mock_lg = MagicMock()
         handler = ConcreteHandler(mock_lg)
 
-        builder = ServerBuilder("test")
+        builder = ServerBuilder(mock_lg, "test")
         builder._exception_handlers.append(
             ExceptionHandlerDefinition(ValueError, handler)
         )
@@ -342,7 +343,8 @@ class TestServerBuilderValidation:
 
         handler = UnpicklableHandler()
 
-        builder = ServerBuilder("test")
+        mock_lg = MagicMock()
+        builder = ServerBuilder(mock_lg, "test")
         builder._exception_handlers.append(
             ExceptionHandlerDefinition(ValueError, handler)
         )
@@ -363,7 +365,8 @@ class TestServerBuilderValidation:
         handler = PicklableHandlerWithLoggerAttr()
         handler.lg = Logger("test")  # Set a real Logger
 
-        builder = ServerBuilder("test")
+        mock_lg = MagicMock()
+        builder = ServerBuilder(mock_lg, "test")
 
         with caplog.at_level(logging.WARNING):
             # Call the warning function directly (bypasses pickle check)

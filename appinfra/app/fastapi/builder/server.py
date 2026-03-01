@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from starlette.requests import Request
     from starlette.responses import Response
 
+    from ....log import Logger
+
 from ..config.api import ApiConfig
 from ..config.ipc import IPCConfig
 from ..config.uvicorn import UvicornConfig
@@ -85,13 +87,15 @@ class ServerBuilder:
             response_q.put(result)
     """
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, lg: Logger, name: str) -> None:
         """
         Initialize builder.
 
         Args:
+            lg: Logger for subprocess log forwarding
             name: Server name (used for logging)
         """
+        self._lg = lg
         self._name = name
         self._init_api_defaults()
         self._init_subprocess_defaults()
@@ -490,6 +494,7 @@ class ServerBuilder:
             self._validate_subprocess_handlers()
 
         return Server(
+            lg=self._lg,
             name=self._name,
             config=config,
             adapter=adapter,
