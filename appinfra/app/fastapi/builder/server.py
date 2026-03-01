@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import multiprocessing as mp
 import pickle
 from collections.abc import Awaitable, Callable
@@ -36,8 +35,6 @@ from ..runtime.server import Server
 from .route import RouteConfigurer
 from .subprocess import SubprocessConfigurer
 from .uvicorn import UvicornConfigurer
-
-logger = logging.getLogger("fastapi.builder")
 
 
 class ServerBuilder:
@@ -457,13 +454,14 @@ class ServerBuilder:
 
         for attr, value in handler.__dict__.items():
             if isinstance(value, Logger):
-                logger.warning(
+                self._lg.warning(
                     "Exception handler contains Logger attribute that may not "
-                    "work correctly in subprocess mode. "
-                    "handler=%s attribute=%s exc_class=%s",
-                    type(handler).__name__,
-                    attr,
-                    exc_class_name,
+                    "work correctly in subprocess mode",
+                    extra={
+                        "handler": type(handler).__name__,
+                        "attribute": attr,
+                        "exc_class": exc_class_name,
+                    },
                 )
 
     def _validate_subprocess_handlers(self) -> None:

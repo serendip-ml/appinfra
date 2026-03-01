@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import multiprocessing as mp
 from typing import TYPE_CHECKING, Any
 
@@ -15,9 +14,6 @@ if TYPE_CHECKING:
     from ....log import Logger
     from ....log.mp import LogQueueListener
     from .adapter import FastAPIAdapter
-
-# Module-level logger for main process Server class methods
-logger = logging.getLogger("fastapi.server")
 
 # Guard imports for optional dependency
 try:
@@ -269,11 +265,20 @@ class Server:
         """
         self._validate_subprocess_mode()
         self._setup_subprocess_logging()
-        self._subprocess_manager = self._create_subprocess_manager()
-        proc = self._subprocess_manager.start()
-        logger.info(
-            f"Server '{self._name}' started in subprocess "
-            f"(pid={proc.pid}, host={self._config.host}, port={self._config.port})"
+        try:
+            self._subprocess_manager = self._create_subprocess_manager()
+            proc = self._subprocess_manager.start()
+        except Exception:
+            self._teardown_subprocess_logging()
+            raise
+        self._lg.info(
+            "Server started in subprocess",
+            extra={
+                "server": self._name,
+                "pid": proc.pid,
+                "host": self._config.host,
+                "port": self._config.port,
+            },
         )
         return proc
 
@@ -287,11 +292,11 @@ class Server:
             timeout: Seconds to wait for graceful shutdown
         """
         if self._subprocess_manager:
-            logger.info(f"Stopping server '{self._name}'...")
+            self._lg.info("Stopping server", extra={"server": self._name})
             self._subprocess_manager.stop()
             self._subprocess_manager = None
             self._teardown_subprocess_logging()
-            logger.info(f"Server '{self._name}' stopped")
+            self._lg.info("Server stopped", extra={"server": self._name})
 
     def _run_direct(self) -> None:
         """Run uvicorn directly in current process (blocking)."""
@@ -299,9 +304,13 @@ class Server:
 
         app = self._adapter.build()
 
-        logger.info(
-            f"Starting server '{self._name}' "
-            f"(host={self._config.host}, port={self._config.port})"
+        self._lg.info(
+            "Starting server",
+            extra={
+                "server": self._name,
+                "host": self._config.host,
+                "port": self._config.port,
+            },
         )
 
         uvicorn.run(

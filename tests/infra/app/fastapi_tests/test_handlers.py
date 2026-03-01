@@ -354,10 +354,8 @@ class TestServerBuilderValidation:
         server = builder.build()
         assert server is not None
 
-    def test_warn_on_logger_attributes_function(self, mock_fastapi, caplog):
+    def test_warn_on_logger_attributes_function(self, mock_fastapi):
         """Test _warn_on_logger_attributes logs warning for Logger attributes."""
-        import logging
-
         from appinfra.app.fastapi.builder.server import ServerBuilder
         from appinfra.log import Logger
 
@@ -368,9 +366,14 @@ class TestServerBuilderValidation:
         mock_lg = MagicMock()
         builder = ServerBuilder(mock_lg, "test")
 
-        with caplog.at_level(logging.WARNING):
-            # Call the warning function directly (bypasses pickle check)
-            builder._warn_on_logger_attributes(handler, "TestException")
+        # Call the warning function directly (bypasses pickle check)
+        builder._warn_on_logger_attributes(handler, "TestException")
 
-        assert "Logger attribute" in caplog.text
-        assert "PicklableHandlerWithLoggerAttr" in caplog.text
+        # Verify warning was logged via appinfra Logger
+        mock_lg.warning.assert_called_once()
+        call_args = mock_lg.warning.call_args
+        assert "Logger attribute" in call_args[0][0]
+        extra = call_args[1]["extra"]
+        assert extra["handler"] == "PicklableHandlerWithLoggerAttr"
+        assert extra["attribute"] == "lg"
+        assert extra["exc_class"] == "TestException"

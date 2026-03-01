@@ -15,7 +15,7 @@ Example:
             return JSONResponse({"error": "timeout"}, status_code=504)
 
     lg = Logger("api")
-    server = (ServerBuilder("api", lg=lg)
+    server = (ServerBuilder(lg, "api")
         .routes
         .with_exception_handler(TimeoutError, TimeoutHandler(lg))
         .done()
