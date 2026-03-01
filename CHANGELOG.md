@@ -10,7 +10,29 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING:** FastAPI `ServerBuilder` and `Server` now require `lg: Logger` as first parameter:
+  - Before: `ServerBuilder("name")` / `Server(name="name", ...)`
+  - After: `ServerBuilder(lg, "name")` / `Server(lg, name="name", ...)`
+  - Enables queue-based subprocess logging that inherits main process log level
+  - Exception handlers using `self._lg` now log at correct level in subprocess mode
+- **BREAKING:** FastAPI lifecycle callback failures now raise `CallbackError` instead of being swallowed:
+  - Startup, shutdown, and exception callbacks that fail now propagate errors
+  - Errors are logged first if logger is available, then `CallbackError` is raised
+- **BREAKING:** Using both `with_lifespan()` and `with_on_startup()`/`with_on_shutdown()` now raises
+  `ConfigError` instead of logging a warning and ignoring callbacks
+
 ### Added
+- FastAPI: `ExceptionHandler` base class for subprocess mode with Logger support:
+  - Handles Logger pickle/unpickle automatically; subclass and implement `handle()`
+  - Build-time validation catches unpicklable handlers with clear error messages
+- FastAPI: Queue-based subprocess logging forwards logs to main process:
+  - Subprocess Logger inherits level from main process (e.g., debug, info, warning)
+  - Uses `Logger.queue_config()` and `Logger.from_queue_config()` pattern
+- FastAPI: Logger injection into `request.state.lg` in subprocess mode:
+  - Route handlers can access logger via `request.state.lg`
+  - Automatically injected by middleware when subprocess logger is available
+- FastAPI: New error classes `CallbackError` and `ConfigError` for cleaner error handling
 - `!deep` YAML tag for recursive deep merging with YAML merge keys (`<<`):
   - Standard merge keys do shallow merge (nested dicts replaced entirely)
   - `!deep` enables deep merge where nested dicts are recursively merged
