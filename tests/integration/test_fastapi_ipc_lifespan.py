@@ -327,9 +327,6 @@ class TestFastAPIIPCWithLifecycleCallbacks:
         2. Framework re-injects subprocess Logger after unpickling
         3. Handler can log and return proper responses
         """
-        if _TestSubprocessErrorHandler is None:
-            pytest.skip("ExceptionHandler not available")
-
         from appinfra.app.fastapi.builder.server import ServerBuilder
         from appinfra.log import Logger
 
@@ -346,8 +343,6 @@ class TestFastAPIIPCWithLifecycleCallbacks:
         response_q: mp.Queue = mp.Queue()
 
         # Build server with exception handler in subprocess mode
-        from appinfra.log import Logger
-
         lg_server = Logger("test-exc-handler")
         server = (
             ServerBuilder(lg_server, "test-exc-handler")

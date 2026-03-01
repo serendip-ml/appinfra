@@ -10,14 +10,15 @@ from appinfra.app.fastapi.config.ipc import IPCConfig
 from appinfra.app.fastapi.config.uvicorn import UvicornConfig
 
 
+@pytest.fixture
+def mock_lg():
+    """Mock logger for ServerBuilder."""
+    return MagicMock()
+
+
 @pytest.mark.unit
 class TestServerBuilder:
     """Tests for ServerBuilder fluent interface."""
-
-    @pytest.fixture
-    def mock_lg(self):
-        """Mock logger for ServerBuilder."""
-        return MagicMock()
 
     @pytest.fixture
     def mock_fastapi(self):
@@ -179,11 +180,6 @@ class TestRouteConfigurer:
     """Tests for RouteConfigurer."""
 
     @pytest.fixture
-    def mock_lg(self):
-        """Mock logger for ServerBuilder."""
-        return MagicMock()
-
-    @pytest.fixture
     def mock_fastapi(self):
         """Mock FastAPI to avoid import dependency."""
         with patch("appinfra.app.fastapi.builder.server.FastAPIAdapter") as mock:
@@ -297,11 +293,6 @@ class TestRouteConfigurer:
 @pytest.mark.unit
 class TestSubprocessConfigurer:
     """Tests for SubprocessConfigurer."""
-
-    @pytest.fixture
-    def mock_lg(self):
-        """Mock logger for ServerBuilder."""
-        return MagicMock()
 
     @pytest.fixture
     def mock_fastapi(self):
@@ -422,11 +413,6 @@ class TestUvicornConfigurer:
     """Tests for UvicornConfigurer."""
 
     @pytest.fixture
-    def mock_lg(self):
-        """Mock logger for ServerBuilder."""
-        return MagicMock()
-
-    @pytest.fixture
     def mock_fastapi(self):
         """Mock FastAPI to avoid import dependency."""
         with patch("appinfra.app.fastapi.builder.server.FastAPIAdapter") as mock:
@@ -521,11 +507,6 @@ class TestUvicornConfigurer:
 @pytest.mark.unit
 class TestServerBuilderLifecycleCallbacks:
     """Tests for ServerBuilder lifecycle callback methods."""
-
-    @pytest.fixture
-    def mock_lg(self):
-        """Mock logger for ServerBuilder."""
-        return MagicMock()
 
     @pytest.fixture
     def mock_fastapi(self):
