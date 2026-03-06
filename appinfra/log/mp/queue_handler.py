@@ -96,7 +96,10 @@ class MPQueueHandler(logging.Handler):
         """
         Prepare __infra__extra dict for pickling.
 
-        Converts exception objects to formatted strings.
+        Converts exception objects to formatted strings. Handles:
+        - The standard "exception" key (renamed to "exception_formatted")
+        - Any other keys containing exceptions (converted in-place)
+        - Nested dicts and lists containing exceptions
 
         Args:
             record: Log record to modify in place
@@ -105,18 +108,47 @@ class MPQueueHandler(logging.Handler):
         if extra is None:
             return
 
-        if "exception" not in extra:
-            return
-
-        exc = extra["exception"]
-        if not isinstance(exc, BaseException):
-            return
-
-        # Create a copy to avoid modifying shared state
-        extra = extra.copy()
-        extra["exception_formatted"] = self._format_exception_in_context(exc)
-        del extra["exception"]
+        # Recursively sanitize to handle exceptions anywhere in the structure
+        extra = self._sanitize_for_pickle(extra)
         setattr(record, "__infra__extra", extra)
+
+    def _sanitize_for_pickle(self, obj: Any) -> Any:
+        """
+        Recursively sanitize an object for pickling.
+
+        Converts BaseException instances to formatted strings.
+        Handles dicts, lists, tuples, and sets.
+
+        Args:
+            obj: Object to sanitize
+
+        Returns:
+            Sanitized object safe for pickling
+        """
+        if isinstance(obj, BaseException):
+            return self._format_exception_in_context(obj)
+
+        if isinstance(obj, dict):
+            result = {}
+            for key, value in obj.items():
+                sanitized = self._sanitize_for_pickle(value)
+                # Special handling for "exception" key - rename to "exception_formatted"
+                if key == "exception" and isinstance(value, BaseException):
+                    result["exception_formatted"] = sanitized
+                else:
+                    result[key] = sanitized
+            return result
+
+        if isinstance(obj, list):
+            return [self._sanitize_for_pickle(item) for item in obj]
+
+        if isinstance(obj, tuple):
+            return tuple(self._sanitize_for_pickle(item) for item in obj)
+
+        if isinstance(obj, set):
+            return {self._sanitize_for_pickle(item) for item in obj}
+
+        return obj
 
     def _format_exc_info(
         self, exc_info: tuple[type, BaseException, Any] | tuple[None, None, None]
