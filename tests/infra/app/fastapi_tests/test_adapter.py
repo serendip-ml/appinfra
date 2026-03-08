@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from appinfra.app.fastapi.config.api import ApiConfig
 from appinfra.app.fastapi.runtime.adapter import (
@@ -1054,6 +1053,7 @@ class TestSubprocessLoggerMiddlewareOrdering:
     def test_app_state_lg_available_in_custom_middleware(self):
         """Test that app.state.lg is available in custom middleware before request.state.lg."""
         from fastapi import Request
+        from starlette.middleware.base import BaseHTTPMiddleware
         from starlette.testclient import TestClient
 
         # Track what the middleware observes
@@ -1088,15 +1088,15 @@ class TestSubprocessLoggerMiddlewareOrdering:
             async def test_route():
                 return {"status": "ok"}
 
-            # Make a request
-            client = TestClient(app)
-            response = client.get("/test")
+            # Make a request using context manager for proper lifespan handling
+            with TestClient(app) as client:
+                response = client.get("/test")
 
-            assert response.status_code == 200
+                assert response.status_code == 200
 
-            # Verify middleware ordering: app.state.lg available, request.state.lg not yet set
-            assert middleware_observations["app_state_lg"] is mock_logger
-            assert middleware_observations["request_state_lg"] is None
+                # Verify middleware ordering: app.state.lg available, request.state.lg not yet set
+                assert middleware_observations["app_state_lg"] is mock_logger
+                assert middleware_observations["request_state_lg"] is None
 
 
 @pytest.mark.unit
