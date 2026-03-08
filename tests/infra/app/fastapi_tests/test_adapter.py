@@ -1002,6 +1002,51 @@ class TestLifecycleCallbackExecution:
 
 
 @pytest.mark.unit
+class TestSubprocessLoggerInjection:
+    """Tests for subprocess logger injection."""
+
+    @pytest.fixture
+    def mock_fastapi(self):
+        """Mock FastAPI and dependencies."""
+        with (
+            patch("appinfra.app.fastapi.runtime.adapter.FASTAPI_AVAILABLE", True),
+            patch("appinfra.app.fastapi.runtime.adapter.FastAPI") as mock_fastapi_cls,
+            patch("appinfra.app.fastapi.runtime.adapter.CORSMiddleware") as mock_cors,
+        ):
+            mock_app = MagicMock()
+            mock_app.state = MagicMock()
+            mock_fastapi_cls.return_value = mock_app
+            yield {
+                "FastAPI": mock_fastapi_cls,
+                "app": mock_app,
+                "CORSMiddleware": mock_cors,
+            }
+
+    def test_inject_subprocess_logger_sets_app_state_lg(self, mock_fastapi):
+        """Test that inject_subprocess_logger enables app.state.lg access."""
+        adapter = FastAPIAdapter(ApiConfig())
+        mock_logger = MagicMock()
+
+        adapter.inject_subprocess_logger(mock_logger)
+        app = adapter.build()
+
+        # app.state.lg should be set for middleware access
+        assert mock_fastapi["app"].state.lg is mock_logger
+
+    def test_no_logger_middleware_without_inject_subprocess_logger(self, mock_fastapi):
+        """Test that logger middleware is not added without inject_subprocess_logger."""
+        adapter = FastAPIAdapter(ApiConfig())
+
+        adapter.build()
+
+        # Without inject_subprocess_logger, app.middleware should not be called for logger
+        # (it may be called for other middleware like callbacks)
+        middleware_decorator = mock_fastapi["app"].middleware
+        # If no callbacks, middleware decorator should not have been called
+        assert middleware_decorator.call_count == 0
+
+
+@pytest.mark.unit
 class TestIPCLifespanIntegration:
     """Tests for IPC lifecycle integration with lifespan."""
 
