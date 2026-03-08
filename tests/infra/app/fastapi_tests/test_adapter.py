@@ -1053,7 +1053,6 @@ class TestSubprocessLoggerMiddlewareOrdering:
 
     def test_app_state_lg_available_in_custom_middleware(self):
         """Test that app.state.lg is available in custom middleware before request.state.lg."""
-        pytest.importorskip("httpx")
         from fastapi import Request
         from starlette.testclient import TestClient
 
