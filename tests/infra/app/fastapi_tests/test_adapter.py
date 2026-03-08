@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.testclient import TestClient
 
 from appinfra.app.fastapi.config.api import ApiConfig
 from appinfra.app.fastapi.runtime.adapter import (
@@ -1054,7 +1053,9 @@ class TestSubprocessLoggerMiddlewareOrdering:
 
     def test_app_state_lg_available_in_custom_middleware(self):
         """Test that app.state.lg is available in custom middleware before request.state.lg."""
+        pytest.importorskip("httpx")
         from fastapi import Request
+        from starlette.testclient import TestClient
 
         # Track what the middleware observes
         middleware_observations: dict = {}
