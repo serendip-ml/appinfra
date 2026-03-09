@@ -11,7 +11,7 @@ For API stability guarantees and deprecation policy, see
 ## [Unreleased]
 
 ### Fixed
-- `make check` now shows failing test names and assertion errors when tests fail
+- `make check` now shows failing test names and error details when tests fail
   (previously only showed pass/fail count with no details)
 
 ### Changed

@@ -237,12 +237,12 @@ display_failures() {
                 echo "$failed_lines"
                 echo ""
             fi
-            # Show assertion errors (lines starting with E that contain Assert)
-            local assert_lines
-            assert_lines=$(grep -E "^E\s+Assert" "$logfile" 2>/dev/null | head -5 || true)
-            if [ -n "$assert_lines" ]; then
+            # Show error lines (pytest prefixes errors with "E ")
+            local error_lines
+            error_lines=$(grep -E "^E\s+" "$logfile" 2>/dev/null | head -5 || true)
+            if [ -n "$error_lines" ]; then
                 echo -e "${GRAY}Errors:${RESET}"
-                echo "$assert_lines"
+                echo "$error_lines"
             fi
         fi
         echo ""
