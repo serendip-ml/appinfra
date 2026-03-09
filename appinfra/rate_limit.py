@@ -40,7 +40,13 @@ class RateLimiter:
         self.per_minute = per_minute
         self._lock = threading.Lock()
         # Initialize to future time so first request also respects rate limit
-        self.last_t: float = time.monotonic() + 60.0 / per_minute
+        self._last_t: float = time.monotonic() + 60.0 / per_minute
+
+    @property
+    def last_t(self) -> float:
+        """Return the next available slot time (thread-safe)."""
+        with self._lock:
+            return self._last_t
 
     def next(self, respect_max_ticks: bool = True) -> float:
         """
@@ -58,14 +64,14 @@ class RateLimiter:
         delay = 60.0 / self.per_minute
         with self._lock:
             now = time.monotonic()
-            if now >= self.last_t:
+            if now >= self._last_t:
                 # Slot available now, claim next slot
                 wait = 0.0
-                self.last_t = now + delay
+                self._last_t = now + delay
             else:
                 # Need to wait for current slot
-                wait = self.last_t - now
-                self.last_t = self.last_t + delay
+                wait = self._last_t - now
+                self._last_t = self._last_t + delay
         # Sleep outside lock to avoid blocking other threads
         if wait > 0 and respect_max_ticks:
             self._lg.trace(
@@ -100,9 +106,9 @@ class RateLimiter:
         delay = 60.0 / self.per_minute
         with self._lock:
             now = time.monotonic()
-            if now >= self.last_t:
+            if now >= self._last_t:
                 # Slot available, claim next slot
-                self.last_t = now + delay
+                self._last_t = now + delay
                 return True
             return False
 
@@ -126,7 +132,7 @@ class RateLimiter:
                     handle_other_work()
         """
         with self._lock:
-            return time.monotonic() >= self.last_t
+            return time.monotonic() >= self._last_t
 
 
 class Backoff:
