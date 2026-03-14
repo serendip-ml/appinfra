@@ -20,6 +20,10 @@ For API stability guarantees and deprecation policy, see
   simultaneously
 
 ### Changed
+- **BREAKING:** Renamed error classes for consistency (shorter names):
+  - `ConfigurationError` → `ConfigError` (appinfra.app.errors)
+  - `LogConfigurationError` → `LogConfigError` (appinfra.log.errors)
+  - `InvalidConfigurationError` → `InvalidConfigError` (appinfra.time.sched)
 - **BREAKING:** Renamed exception modules from `exceptions.py` to `errors.py` for consistency:
   - `appinfra.exceptions` → `appinfra.errors`
   - `appinfra.log.exceptions` → `appinfra.log.errors`
