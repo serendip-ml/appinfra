@@ -12,7 +12,7 @@ from appinfra.app.errors import (
     ApplicationError,
     AttrNotFoundError,
     CommandError,
-    ConfigurationError,
+    ConfigError,
     DupToolError,
     InfraAppError,
     LifecycleError,
@@ -191,17 +191,17 @@ class TestToolRegistrationError:
 
 
 # =============================================================================
-# Test ConfigurationError
+# Test ConfigError
 # =============================================================================
 
 
 @pytest.mark.unit
-class TestConfigurationError:
-    """Test ConfigurationError class."""
+class TestConfigError:
+    """Test ConfigError class."""
 
     def test_with_message(self):
-        """Test ConfigurationError (line 81)."""
-        error = ConfigurationError("invalid setting")
+        """Test ConfigError (line 81)."""
+        error = ConfigError("invalid setting")
 
         assert "Configuration error" in str(error)
         assert "invalid setting" in str(error)

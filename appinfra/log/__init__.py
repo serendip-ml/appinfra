@@ -58,7 +58,7 @@ from .errors import (
     CallbackError,
     FormatterError,
     InvalidLogLevelError,
-    LogConfigurationError,
+    LogConfigError,
     LogError,
 )
 from .factory import LoggerFactory
@@ -320,7 +320,7 @@ __all__ = [
     # Exception classes
     "LogError",
     "InvalidLogLevelError",
-    "LogConfigurationError",
+    "LogConfigError",
     "FormatterError",
     "CallbackError",
     # LoggingBuilder classes
