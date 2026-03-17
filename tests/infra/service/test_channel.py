@@ -8,6 +8,7 @@ import pytest
 from appinfra.service import (
     ChannelClosedError,
     ChannelConfig,
+    ChannelError,
     ChannelFactory,
     ChannelTimeoutError,
     Message,
@@ -201,8 +202,6 @@ class TestThreadChannel:
 
     def test_response_with_error(self) -> None:
         """submit() raises ChannelError if response has error."""
-        from appinfra.service import ChannelError
-
         pair = ChannelFactory().create_thread_pair()
         parent, child = pair.parent, pair.child
 
@@ -338,11 +337,15 @@ class TestProcessChannel:
         with pytest.raises(ChannelClosedError):
             pair.parent.send(Request(id="1", data="test"))
 
+        pair.child.close()
+
     def test_recv_on_closed_raises(self) -> None:
         """recv() on closed ProcessChannel raises ChannelClosedError."""
         pair = ChannelFactory().create_process_pair()
-        pair.child.close()
 
         # ProcessChannel.close() closes underlying mp.Queue, so recv raises
         with pytest.raises(ChannelClosedError):
+            pair.child.close()
             pair.child.recv(timeout=0.1)
+
+        pair.parent.close()

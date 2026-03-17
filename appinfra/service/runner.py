@@ -209,8 +209,10 @@ class Runner(ABC):
         for hook in self._hooks:
             try:
                 hook(self.name, from_state, to)
-            except Exception:
-                pass
+            except Exception as e:
+                self.service.lg.warning(
+                    "state hook failed", extra={"exception": e, "hook": hook}
+                )
 
 
 class ThreadRunner(Runner):
@@ -496,12 +498,17 @@ class ProcessRunner(Runner):
 
     @property
     def exception(self) -> BaseException | None:
-        """Exception from subprocess, if any."""
-        # Check for errors from subprocess
+        """Exception from subprocess, if any.
+
+        Returns the first exception encountered (root cause).
+        """
+        # Drain queue, keep first exception (root cause)
         if self._error_queue is not None:
             try:
                 while not self._error_queue.empty():
-                    self._exception = self._error_queue.get_nowait()
+                    exc = self._error_queue.get_nowait()
+                    if self._exception is None:
+                        self._exception = exc
             except Exception:
                 pass
         return self._exception
@@ -545,7 +552,12 @@ def _process_entry(
     error_queue: mp.Queue[BaseException],
     log_config: dict[str, Any],
 ) -> None:
-    """Entry point for service subprocess."""
+    """Entry point for service subprocess.
+
+    Injects runtime dependencies into the service:
+    - ``_lg``: Logger configured to forward to parent via queue
+    - ``_shutdown_event``: Event signaled when parent requests shutdown
+    """
     try:
         lg = Logger.from_queue_config(log_config, name=f"svc/{service.name}")
         service._lg = lg

@@ -54,6 +54,10 @@ def dependency_levels(services: dict[str, Service]) -> list[list[str]]:
 
     Services within the same level can be started/stopped in parallel.
 
+    Note:
+        Assumes the graph is valid (no cycles, no missing deps). Call
+        ``validate_dependencies()`` first to ensure this.
+
     Args:
         services: Dict mapping service name to Service instance.
 

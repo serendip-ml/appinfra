@@ -127,7 +127,11 @@ class TestManagerRegistration:
             mgr.add_service(SimpleService("a", depends_on=["nonexistent"]))
 
     def test_cycle_rejected(self, lg):
-        """Cycle detection works."""
+        """Cycle detection works.
+
+        Note: Tests validate_dependencies directly because Manager.add()
+        rejects missing dependencies before cycles can be formed.
+        """
         from appinfra.service.graph import validate_dependencies
 
         class _Svc:
@@ -370,6 +374,7 @@ class UnhealthyService(Service):
 
     def __init__(self, name: str) -> None:
         self._name = name
+        self._lg = MagicMock()
         self._stop = threading.Event()
         self._teardown_called = False
 

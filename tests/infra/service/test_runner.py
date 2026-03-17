@@ -2,7 +2,7 @@
 
 import threading
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -49,6 +49,7 @@ class SimpleService(Service):
 
     def __init__(self, name: str = "test", health_delay: float = 0) -> None:
         self._name = name
+        self._lg = MagicMock()
         self._health_delay = health_delay
         self._stop_event = threading.Event()
         self._running = False
@@ -77,6 +78,9 @@ class SimpleService(Service):
 class FailingService(Service):
     """Service that raises during execute()."""
 
+    def __init__(self) -> None:
+        self._lg = MagicMock()
+
     @property
     def name(self) -> str:
         return "failing"
@@ -87,6 +91,9 @@ class FailingService(Service):
 
 class SetupFailService(Service):
     """Service that fails during setup()."""
+
+    def __init__(self) -> None:
+        self._lg = MagicMock()
 
     @property
     def name(self) -> str:
@@ -103,6 +110,7 @@ class FailOnFirstExecute(Service):
     """Service that fails on first execute but succeeds on retry."""
 
     def __init__(self) -> None:
+        self._lg = MagicMock()
         self._runs = 0
         self._stop_event = threading.Event()
         self._healthy = False
