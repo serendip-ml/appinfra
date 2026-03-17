@@ -147,12 +147,20 @@ class TestChannelFactory:
 
     def test_create_thread_pair_with_max_queue_size(self) -> None:
         """Thread pair respects max queue size."""
-        config = ChannelConfig(max_queue_size=10)
+        config = ChannelConfig(max_queue_size=2)
         factory = ChannelFactory(config)
         pair = factory.create_thread_pair()
 
         assert pair.parent is not None
         assert pair.child is not None
+
+        # Verify max queue size is enforced
+        pair.parent.send(Message(payload="msg1"))
+        pair.parent.send(Message(payload="msg2"))
+        # Queue should be full now - verify by checking underlying queue
+        assert pair.child._inbound.full()  # type: ignore[union-attr]
+
+        pair.close()
 
     def test_create_process_pair_with_max_queue_size(self) -> None:
         """Process pair respects max queue size."""
@@ -240,17 +248,20 @@ class TestRunnerFactory:
 
         result = factory.create_process_runner_with_channel(service)
 
-        assert isinstance(result, RunnerWithChannel)
-        assert isinstance(result.runner, ProcessRunner)
-        assert isinstance(result.channel, ProcessChannel)
-        assert isinstance(result.service_channel, ProcessChannel)
+        try:
+            assert isinstance(result, RunnerWithChannel)
+            assert isinstance(result.runner, ProcessRunner)
+            assert isinstance(result.channel, ProcessChannel)
+            assert isinstance(result.service_channel, ProcessChannel)
 
-        # Verify channels are connected
-        result.channel.send(Message(payload="test"))
-        msg = result.service_channel.recv(timeout=0.1)
-        assert msg.payload == "test"
-
-        result.channel.close()
+            # Verify channels are connected
+            result.channel.send(Message(payload="test"))
+            msg = result.service_channel.recv(timeout=0.5)
+            assert msg.payload == "test"
+        finally:
+            # Ensure both channels are closed to prevent resource leak
+            result.channel.close()
+            result.service_channel.close()
 
 
 # ServiceFactory tests

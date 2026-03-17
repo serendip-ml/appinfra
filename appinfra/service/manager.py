@@ -262,20 +262,29 @@ class Manager:
         """Start all services in a level."""
         self._check_failed_deps(names)
 
+        # Track which services we've started in this level
+        started_in_level: list[str] = []
+
         # Start all (non-blocking)
         for name in names:
             self._lg.info(f"starting {name}")
             self._runners[name].start()
+            # Track immediately after start() so cleanup can stop it if needed
+            with self._lock:
+                self._started.append(name)
+            started_in_level.append(name)
 
         # Wait for all to be healthy
-        for name in names:
+        for name in started_in_level:
             runner = self._runners[name]
             try:
                 runner.wait_healthy()
-                with self._lock:
-                    self._started.append(name)
                 self._lg.info(f"{name} is healthy")
             except Exception:
+                # Remove from started since it failed during health check
+                with self._lock:
+                    if name in self._started:
+                        self._started.remove(name)
                 self._failed.add(name)
                 raise
 

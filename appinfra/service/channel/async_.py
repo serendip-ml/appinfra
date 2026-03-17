@@ -31,7 +31,11 @@ class AsyncChannel(ABC, Generic[TRequest, TResponse]):
     2. Receive: recv() to get next incoming message
     3. Request/response: submit() sends and waits for matching response
 
-    Safe for concurrent use from multiple coroutines.
+    Note:
+        submit() and recv() share the same inbound queue. If using both patterns
+        concurrently, messages may be buffered in redelivery queue. For pure
+        request/response patterns, use submit() exclusively. For pure streaming,
+        use recv() exclusively.
     """
 
     @abstractmethod
@@ -86,13 +90,16 @@ class _BaseAsyncChannel(AsyncChannel[TRequest, TResponse]):
     """Base implementation with common async logic."""
 
     def __init__(self, response_timeout: float = 30.0) -> None:
+        """Initialize channel with timeout configuration."""
         self._response_timeout = response_timeout
         self._closed = False
+        self._closed_event = asyncio.Event()
         self._lock = asyncio.Lock()
         self._redelivery: asyncio.Queue[Any] = asyncio.Queue()
 
     @property
     def is_closed(self) -> bool:
+        """Return True if channel is closed."""
         return self._closed
 
     async def _get_from_queue(self, timeout: float | None) -> Any:
@@ -146,6 +153,9 @@ class _BaseAsyncChannel(AsyncChannel[TRequest, TResponse]):
         poll_interval = 0.05
 
         while True:
+            if self._closed:
+                raise ChannelClosedError("Channel closed while waiting for chunk")
+
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ChannelTimeoutError(
@@ -173,6 +183,9 @@ class _BaseAsyncChannel(AsyncChannel[TRequest, TResponse]):
         poll_interval = 0.05
 
         while True:
+            if self._closed:
+                raise ChannelClosedError("Channel closed while waiting for response")
+
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ChannelTimeoutError(
@@ -226,8 +239,9 @@ class _BaseAsyncChannel(AsyncChannel[TRequest, TResponse]):
         return result
 
     async def close(self) -> None:
-        """Close channel."""
+        """Close channel and unblock any waiting coroutines."""
         self._closed = True
+        self._closed_event.set()
 
 
 class AsyncThreadChannel(_BaseAsyncChannel[TRequest, TResponse]):
@@ -239,22 +253,26 @@ class AsyncThreadChannel(_BaseAsyncChannel[TRequest, TResponse]):
         inbound: asyncio.Queue[TResponse],
         response_timeout: float = 30.0,
     ) -> None:
+        """Initialize with outbound and inbound asyncio queues."""
         super().__init__(response_timeout)
         self._outbound = outbound
         self._inbound = inbound
 
     async def send(self, message: TRequest) -> None:
+        """Send message to outbound queue."""
         if self._closed:
             raise ChannelClosedError("Channel is closed")
         await self._outbound.put(message)
 
     async def _get_from_queue(self, timeout: float | None) -> Any:
+        """Get message from inbound queue with timeout."""
         try:
             return await asyncio.wait_for(self._inbound.get(), timeout=timeout)
         except TimeoutError:
             raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
 
     async def recv(self, timeout: float | None = None) -> TResponse:
+        """Receive next message from inbound queue."""
         try:
             return cast(TResponse, self._redelivery.get_nowait())
         except asyncio.QueueEmpty:
@@ -278,17 +296,20 @@ class AsyncProcessChannel(_BaseAsyncChannel[TRequest, TResponse]):
         inbound: mp.Queue[TResponse],
         response_timeout: float = 30.0,
     ) -> None:
+        """Initialize with outbound and inbound multiprocessing queues."""
         super().__init__(response_timeout)
         self._outbound = outbound
         self._inbound = inbound
 
     async def send(self, message: TRequest) -> None:
+        """Send message to outbound queue via executor."""
         if self._closed:
             raise ChannelClosedError("Channel is closed")
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._outbound.put, message)
 
     async def _get_from_queue(self, timeout: float | None) -> Any:
+        """Get message from inbound queue with timeout via executor."""
         loop = asyncio.get_running_loop()
         try:
             return await loop.run_in_executor(
@@ -298,24 +319,20 @@ class AsyncProcessChannel(_BaseAsyncChannel[TRequest, TResponse]):
             raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
 
     async def recv(self, timeout: float | None = None) -> TResponse:
+        """Receive next message from inbound queue."""
         try:
             return cast(TResponse, self._redelivery.get_nowait())
         except asyncio.QueueEmpty:
             pass
 
+        # Check closed first to avoid ValueError from closed mp.Queue
         if self._closed:
-            try:
-                loop = asyncio.get_running_loop()
-                return cast(
-                    TResponse,
-                    await loop.run_in_executor(None, self._inbound.get_nowait),
-                )
-            except queue.Empty:
-                raise ChannelClosedError("Channel is closed")
+            raise ChannelClosedError("Channel is closed")
 
         return cast(TResponse, await self._get_from_queue(timeout))
 
     async def close(self) -> None:
+        """Close both queues and mark channel as closed."""
         await super().close()
         try:
             self._outbound.close()

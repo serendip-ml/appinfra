@@ -65,7 +65,7 @@ sql = [
     "psycopg2-binary>=2.9.0,<3.0.0",
 ]
 service = [
-    "httpx>=0.24.0,<1.0.0",
+    # No additional dependencies - service module uses stdlib only
 ]
 all = [
     "appinfra[dev]",

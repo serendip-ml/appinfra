@@ -120,9 +120,20 @@ class ScheduledService(Service):
 
     If used with ThreadRunner, the default execute() loops calling tick().
 
+    Important:
+        Subclasses must call super().__init__() in their __init__ to
+        initialize the stop event used by execute() and teardown().
+
     Example:
         class MetricsCollector(ScheduledService):
-            name = "metrics"
+            def __init__(self, lg: Logger) -> None:
+                super().__init__()
+                self._lg = lg
+
+            @property
+            def name(self) -> str:
+                return "metrics"
+
             interval = 60.0  # Collect every minute
 
             def tick(self) -> None:

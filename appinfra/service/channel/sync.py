@@ -59,6 +59,7 @@ class _BaseChannel(Channel[TRequest, TResponse]):
     """Base implementation with common logic for submit()."""
 
     def __init__(self, response_timeout: float = 30.0) -> None:
+        """Initialize channel with timeout configuration."""
         self._response_timeout = response_timeout
         self._closed = False
         self._lock = threading.Lock()
@@ -66,6 +67,7 @@ class _BaseChannel(Channel[TRequest, TResponse]):
 
     @property
     def is_closed(self) -> bool:
+        """Return True if channel is closed."""
         return self._closed
 
     def _get_from_queue(self, timeout: float | None) -> Any:
@@ -157,22 +159,26 @@ class ThreadChannel(_BaseChannel[TRequest, TResponse]):
         inbound: queue.Queue[TResponse],
         response_timeout: float = 30.0,
     ) -> None:
+        """Initialize with outbound and inbound queues."""
         super().__init__(response_timeout)
         self._outbound = outbound
         self._inbound = inbound
 
     def send(self, message: TRequest) -> None:
+        """Send message to outbound queue."""
         if self._closed:
             raise ChannelClosedError("Channel is closed")
         self._outbound.put(message)
 
     def _get_from_queue(self, timeout: float | None) -> Any:
+        """Get message from inbound queue with timeout."""
         try:
             return self._inbound.get(timeout=timeout)
         except queue.Empty:
             raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
 
     def recv(self, timeout: float | None = None) -> TResponse:
+        """Receive next message from inbound queue."""
         try:
             return cast(TResponse, self._redelivery.get_nowait())
         except queue.Empty:
@@ -196,22 +202,26 @@ class ProcessChannel(_BaseChannel[TRequest, TResponse]):
         inbound: mp.Queue[TResponse],
         response_timeout: float = 30.0,
     ) -> None:
+        """Initialize with outbound and inbound multiprocessing queues."""
         super().__init__(response_timeout)
         self._outbound = outbound
         self._inbound = inbound
 
     def send(self, message: TRequest) -> None:
+        """Send message to outbound queue."""
         if self._closed:
             raise ChannelClosedError("Channel is closed")
         self._outbound.put(message)
 
     def _get_from_queue(self, timeout: float | None) -> Any:
+        """Get message from inbound queue with timeout."""
         try:
             return self._inbound.get(timeout=timeout)
         except queue.Empty:
             raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
 
     def recv(self, timeout: float | None = None) -> TResponse:
+        """Receive next message from inbound queue."""
         try:
             return cast(TResponse, self._redelivery.get_nowait())
         except queue.Empty:
@@ -224,6 +234,7 @@ class ProcessChannel(_BaseChannel[TRequest, TResponse]):
         return cast(TResponse, self._get_from_queue(timeout))
 
     def close(self) -> None:
+        """Close both queues and mark channel as closed."""
         super().close()
         try:
             self._outbound.close()

@@ -38,8 +38,11 @@ class ServiceFactory:
 
     Provides dependency injection for services:
     - Register service types with their configuration
-    - Create services with consistent dependencies (logger, channels)
+    - Create services with consistent dependencies (logger)
     - Support custom factory functions for complex initialization
+
+    For services that need channels, use RunnerFactory which provides
+    create_thread_runner_with_channel() and create_process_runner_with_channel().
 
     Example:
         factory = ServiceFactory(lg)
@@ -58,17 +61,14 @@ class ServiceFactory:
             factory_fn=lambda lg, **kw: CacheService(lg, host="localhost", **kw),
         )
 
-        # Register with channel support
-        factory.register(
-            "worker",
-            WorkerService,
-            with_channel=True,
-        )
-
         # Create instances
         db = factory.create("database")
         cache = factory.create("cache", ttl=300)
-        worker, channel = factory.create_with_channel("worker")
+
+        # Check if service needs a channel (for use with RunnerFactory)
+        if factory.needs_channel("worker"):
+            # Use RunnerFactory.create_thread_runner_with_channel()
+            pass
     """
 
     def __init__(self, lg: Logger) -> None:

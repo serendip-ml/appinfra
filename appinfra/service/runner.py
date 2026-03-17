@@ -500,6 +500,22 @@ class ProcessRunner(Runner):
         return None
 
 
+def _start_health_poller(
+    service: Any, shutdown_event: MPEvent, healthy_event: MPEvent
+) -> None:
+    """Start background thread to poll service health and signal when ready."""
+    import threading
+
+    def poll() -> None:
+        while not shutdown_event.is_set():
+            if service.is_healthy():
+                healthy_event.set()
+                return
+            time.sleep(0.05)
+
+    threading.Thread(target=poll, daemon=True).start()
+
+
 def _process_entry(
     service: Any,
     shutdown_event: MPEvent,
@@ -507,28 +523,14 @@ def _process_entry(
     error_queue: mp.Queue[BaseException],
     log_config: dict[str, Any],
 ) -> None:
-    """Entry point for service subprocess.
-
-    Args:
-        service: The service to run.
-        shutdown_event: Event to signal shutdown.
-        healthy_event: Event to signal health.
-        error_queue: Queue for sending exceptions back.
-        log_config: Logger configuration from parent process.
-    """
+    """Entry point for service subprocess."""
     try:
-        # Create logger for subprocess
         lg = Logger.from_queue_config(log_config, name=f"svc/{service.name}")
-
-        # Inject logger and shutdown event into service
         service._lg = lg
         if hasattr(service, "_shutdown_event"):
             service._shutdown_event = shutdown_event
 
-        # Signal healthy once execute starts
-        healthy_event.set()
-
-        # Run execute
+        _start_health_poller(service, shutdown_event, healthy_event)
         service.execute()
     except BaseException as e:
         try:
