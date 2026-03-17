@@ -9,12 +9,32 @@ from typing import TYPE_CHECKING, Self
 from .errors import DependencyFailedError
 from .graph import dependency_levels, validate_dependencies
 from .runner import Runner, ThreadRunner
-from .state import RestartPolicy, State
+from .state import RestartPolicy, State, StateHook
 
 if TYPE_CHECKING:
     from appinfra.log import Logger
 
     from .base import Service
+
+
+class _DepProxy:
+    """Proxy for dependency graph operations.
+
+    Provides the minimal interface needed by validate_dependencies()
+    and dependency_levels() without requiring full Service instances.
+    """
+
+    def __init__(self, name: str, deps: list[str]) -> None:
+        self._name = name
+        self._deps = deps
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def depends_on(self) -> list[str]:
+        return self._deps
 
 
 class Manager:
@@ -215,59 +235,26 @@ class Manager:
             results[name] = runner.check()
         return results
 
-    def on_state_change(self, name: str, hook: object) -> None:
+    def on_state_change(self, name: str, hook: StateHook) -> None:
         """Register a state change hook for a service.
 
         Args:
             name: Service name.
             hook: Callable(service_name, from_state, to_state).
         """
+        self._runners[name].on_state_change(hook)
 
-        self._runners[name].on_state_change(hook)  # type: ignore[arg-type]
+    def _build_dep_proxies(self) -> dict[str, _DepProxy]:
+        """Build dependency proxy objects for graph operations."""
+        return {name: _DepProxy(name, self._depends_on[name]) for name in self._runners}
 
     def _validate_graph(self) -> None:
         """Validate dependency graph."""
-
-        class _DepProxy:
-            """Proxy for dependency validation."""
-
-            def __init__(self, name: str, deps: list[str]) -> None:
-                self._name = name
-                self._deps = deps
-
-            @property
-            def name(self) -> str:
-                return self._name
-
-            @property
-            def depends_on(self) -> list[str]:
-                return self._deps
-
-        services = {
-            name: _DepProxy(name, self._depends_on[name]) for name in self._runners
-        }
-        validate_dependencies(services)  # type: ignore[arg-type]
+        validate_dependencies(self._build_dep_proxies())  # type: ignore[arg-type]
 
     def _get_dependency_levels(self) -> list[list[str]]:
         """Get services grouped by dependency level."""
-
-        class _DepProxy:
-            def __init__(self, name: str, deps: list[str]) -> None:
-                self._name = name
-                self._deps = deps
-
-            @property
-            def name(self) -> str:
-                return self._name
-
-            @property
-            def depends_on(self) -> list[str]:
-                return self._deps
-
-        services = {
-            name: _DepProxy(name, self._depends_on[name]) for name in self._runners
-        }
-        return dependency_levels(services)  # type: ignore[arg-type]
+        return dependency_levels(self._build_dep_proxies())  # type: ignore[arg-type]
 
     def _start_level(self, names: list[str]) -> None:
         """Start all services in a level."""

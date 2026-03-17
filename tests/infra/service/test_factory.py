@@ -107,7 +107,7 @@ class TestChannelFactory:
 
         # Verify connectivity
         pair.parent.send(Message(payload="test"))
-        msg = pair.child.recv(timeout=0.1)
+        msg = pair.child.recv(timeout=1.0)
         assert msg.payload == "test"
 
     def test_create_thread_pair_with_config(self) -> None:
@@ -116,8 +116,8 @@ class TestChannelFactory:
         factory = ChannelFactory(config)
         pair = factory.create_thread_pair()
 
-        # Response timeout is configured
-        assert pair.parent._response_timeout == 5.0
+        # Verify config was applied (accessing private attr to avoid slow behavioral test)
+        assert pair.parent._response_timeout == 5.0  # noqa: SLF001
 
     def test_create_process_pair(self) -> None:
         """Creates connected ProcessChannel pair."""

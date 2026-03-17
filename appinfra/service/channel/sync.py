@@ -67,7 +67,6 @@ class _BaseChannel(Channel[TRequest, TResponse]):
         self._response_timeout = response_timeout
         self._closed = False
         self._closed_event = threading.Event()
-        self._lock = threading.Lock()
         self._redelivery: queue.Queue[Any] = queue.Queue()
 
     @property

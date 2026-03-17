@@ -58,19 +58,37 @@ class TestProcessRunnerIntegration:
         assert runner.state == State.STOPPED
         assert not runner.is_alive()
 
-    def test_subprocess_logging(self, lg, caplog):
+    def test_subprocess_logging(self, lg):
         """Test that subprocess logs are captured via queue."""
-        svc = SimpleProcessService(lg, name="log-test")
-        runner = ProcessRunner(svc)
+        import logging
 
-        runner.start()
-        runner.wait_healthy(timeout=5.0)
+        # Use a custom handler to capture logs (LogQueueListener dispatches to handlers,
+        # not to logger methods, so spying on lg.info() won't work)
+        logged_messages: list[str] = []
 
-        # Give subprocess time to log
-        time.sleep(0.1)
+        class CaptureHandler(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                logged_messages.append(record.getMessage())
 
-        runner.stop()
+        handler = CaptureHandler()
+        lg.addHandler(handler)
 
-        # Log messages from subprocess should be captured
-        # (via LogQueueListener forwarding to parent logger)
-        assert runner.state == State.STOPPED
+        try:
+            svc = SimpleProcessService(lg, name="log-test")
+            runner = ProcessRunner(svc)
+
+            runner.start()
+            runner.wait_healthy(timeout=5.0)
+
+            # Give subprocess time to log
+            time.sleep(0.2)
+
+            runner.stop()
+
+            # Verify log forwarding worked - subprocess should have logged "service started"
+            assert runner.state == State.STOPPED
+            assert any("started" in msg for msg in logged_messages), (
+                f"Expected 'service started' log, got: {logged_messages}"
+            )
+        finally:
+            lg.removeHandler(handler)
