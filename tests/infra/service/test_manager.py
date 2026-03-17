@@ -309,3 +309,54 @@ class TestManagerIsRunning:
             assert mgr.is_running("a")
 
         assert not mgr.is_running("a")
+
+
+class UnhealthyService(Service):
+    """Service that never becomes healthy."""
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self._stop = threading.Event()
+        self._teardown_called = False
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def execute(self) -> None:
+        self._stop.wait()
+
+    def teardown(self) -> None:
+        self._teardown_called = True
+        self._stop.set()
+
+    def is_healthy(self) -> bool:
+        return False  # Never healthy
+
+
+@pytest.mark.unit
+class TestManagerHealthCheckFailure:
+    """Test health check failure handling."""
+
+    def test_health_failure_stops_started_services(self, lg):
+        """Health check failure still stops started services."""
+        from unittest.mock import patch
+
+        from appinfra.service import HealthTimeoutError
+
+        mgr = Manager(lg)
+        svc = UnhealthyService("unhealthy")
+        mgr.add_service(svc)
+
+        # Patch wait_healthy to use short timeout
+        with patch.object(
+            ThreadRunner,
+            "wait_healthy",
+            side_effect=HealthTimeoutError("unhealthy", 0.1),
+        ):
+            with pytest.raises(HealthTimeoutError):
+                mgr.start()
+
+        # Service should be tracked as failed and teardown called
+        assert "unhealthy" in mgr._failed
+        assert svc._teardown_called

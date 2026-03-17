@@ -30,7 +30,11 @@ class Channel(ABC, Generic[TRequest, TResponse]):
     2. Receive: recv() to get next incoming message
     3. Request/response: submit() sends and waits for matching response
 
-    Thread-safe for concurrent send/recv from multiple threads.
+    Note:
+        submit() and recv() share the same inbound queue. If using both patterns
+        concurrently, messages may be buffered in redelivery queue. For pure
+        request/response patterns, use submit() exclusively. For pure streaming,
+        use recv() exclusively.
     """
 
     @abstractmethod
@@ -62,6 +66,7 @@ class _BaseChannel(Channel[TRequest, TResponse]):
         """Initialize channel with timeout configuration."""
         self._response_timeout = response_timeout
         self._closed = False
+        self._closed_event = threading.Event()
         self._lock = threading.Lock()
         self._redelivery: queue.Queue[Any] = queue.Queue()
 
@@ -146,8 +151,40 @@ class _BaseChannel(Channel[TRequest, TResponse]):
         return result
 
     def close(self) -> None:
-        """Close channel."""
+        """Close channel and unblock any waiting threads."""
         self._closed = True
+        self._closed_event.set()
+
+    def _recv_poll(
+        self, inbound: queue.Queue[Any] | mp.Queue[Any], timeout: float | None
+    ) -> TResponse:
+        """Poll inbound queue with short timeouts to observe close()."""
+        poll_interval = 0.1
+        deadline = None if timeout is None else time.monotonic() + timeout
+
+        while True:
+            if self._closed:
+                raise ChannelClosedError("Channel is closed")
+
+            wait_time = self._calc_wait_time(poll_interval, deadline, timeout)
+            try:
+                return cast(TResponse, inbound.get(timeout=wait_time))
+            except queue.Empty:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise ChannelTimeoutError(
+                        f"Timeout waiting for message ({timeout}s)"
+                    )
+
+    def _calc_wait_time(
+        self, poll_interval: float, deadline: float | None, timeout: float | None
+    ) -> float:
+        """Calculate wait time for next poll iteration."""
+        if deadline is None:
+            return poll_interval
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
+        return min(poll_interval, remaining)
 
 
 class ThreadChannel(_BaseChannel[TRequest, TResponse]):
@@ -190,7 +227,7 @@ class ThreadChannel(_BaseChannel[TRequest, TResponse]):
             except queue.Empty:
                 raise ChannelClosedError("Channel is closed")
 
-        return cast(TResponse, self._get_from_queue(timeout))
+        return self._recv_poll(self._inbound, timeout)
 
 
 class ProcessChannel(_BaseChannel[TRequest, TResponse]):
@@ -213,13 +250,6 @@ class ProcessChannel(_BaseChannel[TRequest, TResponse]):
             raise ChannelClosedError("Channel is closed")
         self._outbound.put(message)
 
-    def _get_from_queue(self, timeout: float | None) -> Any:
-        """Get message from inbound queue with timeout."""
-        try:
-            return self._inbound.get(timeout=timeout)
-        except queue.Empty:
-            raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
-
     def recv(self, timeout: float | None = None) -> TResponse:
         """Receive next message from inbound queue."""
         try:
@@ -231,7 +261,7 @@ class ProcessChannel(_BaseChannel[TRequest, TResponse]):
         if self._closed:
             raise ChannelClosedError("Channel is closed")
 
-        return cast(TResponse, self._get_from_queue(timeout))
+        return self._recv_poll(self._inbound, timeout)
 
     def close(self) -> None:
         """Close both queues and mark channel as closed."""

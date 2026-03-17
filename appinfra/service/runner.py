@@ -364,9 +364,14 @@ class ProcessRunner(Runner):
         self._transition(State.INITD)
         self._transition(State.STARTING)
 
-        log_config = self._create_log_infrastructure()
-        self._create_ipc_primitives()
-        self._spawn_process(log_config)
+        try:
+            log_config = self._create_log_infrastructure()
+            self._create_ipc_primitives()
+            self._spawn_process(log_config)
+        except Exception:
+            self._cleanup_ipc()
+            self._transition(State.FAILED)
+            raise
 
     def _run_setup(self) -> None:
         """Run service setup, transition to FAILED on error."""

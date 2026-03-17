@@ -255,6 +255,38 @@ class TestSubmitOnClosedChannel:
             pair.parent.submit(Request(id="1", data="test"), timeout=0.1)
 
 
+class TestCloseUnblocksRecv:
+    """Tests for close() unblocking recv()."""
+
+    def test_close_unblocks_recv_no_timeout(self) -> None:
+        """close() unblocks a thread waiting in recv(timeout=None)."""
+        import time
+
+        pair = ChannelFactory().create_thread_pair()
+        parent = pair.parent
+        error_raised: list[Exception] = []
+
+        def blocking_recv() -> None:
+            try:
+                parent.recv(timeout=None)  # Would block forever
+            except ChannelClosedError as e:
+                error_raised.append(e)
+
+        t = threading.Thread(target=blocking_recv)
+        t.start()
+
+        # Give thread time to start blocking
+        time.sleep(0.15)
+
+        # Close should unblock the recv
+        parent.close()
+        t.join(timeout=1.0)
+
+        assert not t.is_alive(), "Thread should have been unblocked"
+        assert len(error_raised) == 1
+        assert isinstance(error_raised[0], ChannelClosedError)
+
+
 class TestProcessChannel:
     """Tests for ProcessChannel."""
 

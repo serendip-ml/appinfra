@@ -281,10 +281,7 @@ class Manager:
                 runner.wait_healthy()
                 self._lg.info(f"{name} is healthy")
             except Exception:
-                # Remove from started since it failed during health check
-                with self._lock:
-                    if name in self._started:
-                        self._started.remove(name)
+                # Keep in _started so _stop_started() can stop the running process
                 self._failed.add(name)
                 raise
 
