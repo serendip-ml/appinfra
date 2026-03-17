@@ -13,6 +13,7 @@ import multiprocessing as mp
 import queue
 import time
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from typing import Any, Generic, TypeVar, cast
 
 from ..errors import ChannelClosedError, ChannelError, ChannelTimeoutError
@@ -46,6 +47,30 @@ class AsyncChannel(ABC, Generic[TRequest, TResponse]):
         self, request: TRequest, timeout: float | None = None
     ) -> TResponse:
         """Send request and wait for matching response."""
+
+    @abstractmethod
+    def submit_stream(
+        self, request: TRequest, timeout: float | None = None
+    ) -> AsyncIterator[TResponse]:
+        """
+        Send request and yield streaming response chunks.
+
+        Yields response chunks with matching id until one with is_final=True.
+        Each chunk must have an `id` attribute matching the request.
+        The final chunk must have `is_final=True`.
+
+        Args:
+            request: Request message (must have .id attribute)
+            timeout: Timeout for each chunk (None = use default)
+
+        Yields:
+            Response chunks until is_final=True
+
+        Raises:
+            ChannelTimeoutError: If a chunk is not received within timeout
+            ChannelClosedError: If channel is closed
+            ValueError: If request has no id attribute
+        """
 
     @abstractmethod
     async def close(self) -> None:
@@ -88,6 +113,59 @@ class _BaseAsyncChannel(AsyncChannel[TRequest, TResponse]):
 
         await self.send(request)
         return await self._poll_for_response(request_id, effective_timeout)
+
+    async def submit_stream(
+        self, request: TRequest, timeout: float | None = None
+    ) -> AsyncIterator[TResponse]:
+        """Send request and yield streaming response chunks."""
+        if self._closed:
+            raise ChannelClosedError("Channel is closed")
+        if not hasattr(request, "id"):
+            raise ValueError("Request must have an 'id' attribute")
+
+        request_id = request.id  # type: ignore[union-attr]
+        effective_timeout = timeout if timeout is not None else self._response_timeout
+
+        await self.send(request)
+        async for chunk in self._poll_for_stream(request_id, effective_timeout):
+            yield chunk
+
+    async def _poll_for_stream(
+        self, request_id: str, timeout: float
+    ) -> AsyncIterator[TResponse]:
+        """Poll for streaming response chunks until is_final=True."""
+        while True:
+            chunk = await self._get_next_chunk(request_id, timeout)
+            yield chunk
+            if getattr(chunk, "is_final", True):
+                return
+
+    async def _get_next_chunk(self, request_id: str, timeout: float) -> TResponse:
+        """Wait for next chunk with matching request_id."""
+        deadline = time.monotonic() + timeout
+        poll_interval = 0.05
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ChannelTimeoutError(
+                    f"Stream {request_id} timed out waiting for chunk"
+                )
+
+            # Check redelivery queue first
+            message = await self._check_redelivery(request_id)
+            if message is not None:
+                return self._validate_response(message)
+
+            message = await self._try_get_message(min(poll_interval, remaining))
+            if message is None:
+                continue
+
+            if hasattr(message, "id") and message.id == request_id:
+                return self._validate_response(message)
+
+            # Not our message - buffer for later
+            await self._redelivery.put(message)
 
     async def _poll_for_response(self, request_id: str, timeout: float) -> TResponse:
         """Poll for a response with the given request_id."""

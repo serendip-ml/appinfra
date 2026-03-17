@@ -295,6 +295,12 @@ await pair.parent.send(Message(payload="hello"))
 # Request/response (async)
 response = await pair.parent.submit(Request(id="1", data="work"), timeout=5.0)
 
+# Streaming response (async)
+async for chunk in pair.parent.submit_stream(Request(id="2", data="stream")):
+    print(chunk.data)
+    if chunk.is_final:
+        break  # Automatically stops when is_final=True
+
 # For subprocess communication (async parent, sync child)
 pair = factory.create_async_process_pair()
 await pair.parent.send(request)  # Parent uses async

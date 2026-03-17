@@ -28,6 +28,7 @@ For API stability guarantees and deprecation policy, see
     - Async: `AsyncThreadChannel`, `AsyncProcessChannel` for asyncio code
     - `Message`: Generic message with id for request/response correlation
     - `submit()`: Request/response pattern with timeout (blocking or async)
+    - `submit_stream()`: Streaming responses (yields chunks until `is_final=True`)
     - `send()`/`recv()`: Fire-and-forget messaging
   - **Factory classes** for centralized component creation:
     - `ChannelFactory`: Creates channel pairs with consistent configuration
