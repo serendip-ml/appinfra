@@ -205,8 +205,16 @@ class ProcessRunner(Runner):
     def _monitor_loop(self, interval: float) -> None:
         """Monitor loop that checks health and triggers restarts."""
         while not self._stop_monitor_event.is_set():
-            if self._state == State.STOPPED:
+            if self._state in (State.STOPPED, State.DONE):
                 break
+
+            # Check for clean exit (exit_code == 0) - don't restart
+            if not self.is_alive() and self._process is not None:
+                exit_code = self._process.exitcode
+                if exit_code == 0:
+                    # Clean shutdown (e.g., SIGINT/SIGTERM) - transition to DONE
+                    self._transition(State.DONE)
+                    break
 
             # check() handles failure detection and restart
             self.check()

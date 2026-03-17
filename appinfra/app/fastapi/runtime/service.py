@@ -131,9 +131,11 @@ class UvicornService(Service):
         """Check if uvicorn is accepting connections."""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5)
-            result = sock.connect_ex((self._config.host, self._config.port))
-            sock.close()
-            return result == 0
+            try:
+                sock.settimeout(0.5)
+                result = sock.connect_ex((self._config.host, self._config.port))
+                return result == 0
+            finally:
+                sock.close()
         except Exception:
             return False
