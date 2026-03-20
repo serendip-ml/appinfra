@@ -43,6 +43,8 @@ Demonstrates generating markdown documentation from tool configurations.
 ### Basic Generation
 
 ```python
+from pathlib import Path
+
 from appinfra.app.docs import DocsGenerator
 
 generator = DocsGenerator(

@@ -16,10 +16,6 @@ For API stability guarantees and deprecation policy, see
 - Missing guides in `docs/index.md`: api-stability, framework-integration, pytest-plugin
 - Missing example sections in `docs/index.md` and `examples/README.md` for examples 07-12
 
-### Added
-- README documentation for `examples/07_fastapi/` (FastAPI server modes)
-- README documentation for `examples/11_docs/` (documentation generation)
-
 ### Changed
 - **BREAKING:** `IPCChannel.submit()` no longer takes a separate `request_id` parameter. The ID is
   now extracted from the request object's `id` attribute. This simplifies the API and prevents
@@ -31,6 +27,8 @@ For API stability guarantees and deprecation policy, see
   enables monitor-based auto-restart.
 
 ### Added
+- README documentation for `examples/07_fastapi/` (FastAPI server modes)
+- README documentation for `examples/11_docs/` (documentation generation)
 - Service execution framework (`appinfra.service`) for managing service lifecycles:
   - **Three-layer architecture**: Service (what to run), Runner (how to run), Manager (orchestration)
   - **State machine**: Explicit states (CREATED, INITD, STARTING, RUNNING, IDLE, STOPPING, STOPPED,
