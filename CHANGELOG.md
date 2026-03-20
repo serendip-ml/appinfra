@@ -10,6 +10,16 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Fixed
+- Documentation index files referenced non-existent `exceptions.md` (renamed to `errors.md` in v0.5.0)
+- Missing API doc reference for `fastapi.md` in `docs/api/index.md`
+- Missing guides in `docs/index.md`: api-stability, framework-integration, pytest-plugin
+- Missing example sections in `docs/index.md` and `examples/README.md` for examples 07-12
+
+### Added
+- README documentation for `examples/07_fastapi/` (FastAPI server modes)
+- README documentation for `examples/11_docs/` (documentation generation)
+
 ### Changed
 - **BREAKING:** `IPCChannel.submit()` no longer takes a separate `request_id` parameter. The ID is
   now extracted from the request object's `id` attribute. This simplifies the API and prevents
