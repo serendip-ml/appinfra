@@ -681,6 +681,55 @@ class TestLifecycleCallbackExecution:
             assert called == ["shutdown1"]
 
     @pytest.mark.asyncio
+    async def test_lifespan_and_callbacks_chain_in_correct_order(self):
+        """Test that callbacks wrap inner lifespan in correct order."""
+        from contextlib import asynccontextmanager
+
+        from appinfra.app.fastapi.runtime.adapter import (
+            FastAPIAdapter,
+            LifecycleCallbackDefinition,
+            LifespanDefinition,
+        )
+
+        events = []
+
+        @asynccontextmanager
+        async def inner_lifespan(app):
+            events.append("inner_enter")
+            yield
+            events.append("inner_exit")
+
+        async def startup(app):
+            events.append("startup")
+
+        async def shutdown(app):
+            events.append("shutdown")
+
+        with (
+            patch("appinfra.app.fastapi.runtime.adapter.FASTAPI_AVAILABLE", True),
+            patch("appinfra.app.fastapi.runtime.adapter.FastAPI"),
+            patch("appinfra.app.fastapi.runtime.adapter.CORSMiddleware"),
+        ):
+            adapter = FastAPIAdapter(ApiConfig())
+            adapter.set_lifespan(LifespanDefinition(lifespan=inner_lifespan))
+            adapter.add_startup_callback(
+                LifecycleCallbackDefinition(callback=startup, name="startup")
+            )
+            adapter.add_shutdown_callback(
+                LifecycleCallbackDefinition(callback=shutdown, name="shutdown")
+            )
+
+            lifespan = adapter._wrap_lifespan_with_callbacks(inner_lifespan)
+
+            mock_app = MagicMock()
+            async with lifespan(mock_app):
+                # Verify startup ran, then inner lifespan entered
+                assert events == ["startup", "inner_enter"]
+
+            # Verify full order: startup -> inner enter -> inner exit -> shutdown
+            assert events == ["startup", "inner_enter", "inner_exit", "shutdown"]
+
+    @pytest.mark.asyncio
     async def test_callback_middleware_runs_request_callbacks(self):
         """Test that request callbacks are executed by middleware."""
         from appinfra.app.fastapi.runtime.adapter import (

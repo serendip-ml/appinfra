@@ -412,12 +412,14 @@ class FastAPIAdapter:
         @asynccontextmanager
         async def lifespan(app: Any) -> AsyncIterator[None]:
             await _run_startup_callbacks(startup_callbacks, app, lg)
-            if inner is not None:
-                async with inner(app):
+            try:
+                if inner is not None:
+                    async with inner(app):
+                        yield
+                else:
                     yield
-            else:
-                yield
-            await _run_shutdown_callbacks(shutdown_callbacks, app, lg)
+            finally:
+                await _run_shutdown_callbacks(shutdown_callbacks, app, lg)
 
         return lifespan
 
