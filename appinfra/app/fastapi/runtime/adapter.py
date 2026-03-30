@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from ..config.api import ApiConfig
+from ..ratelimit.interface import RateLimiter
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -57,6 +58,15 @@ class MiddlewareDefinition:
 
     middleware_class: type[Any]
     options: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class RateLimitDefinition:
+    """Definition for rate limiting configuration."""
+
+    limiter: RateLimiter
+    exempt_paths: list[str] = field(default_factory=list)
+    cleanup_interval: float = 60.0
 
 
 @dataclass
@@ -265,6 +275,9 @@ class FastAPIAdapter:
         self._response_callbacks: list[ResponseCallbackDefinition] = []
         self._exception_callbacks: list[ExceptionCallbackDefinition] = []
 
+        # Rate limiting
+        self._rate_limiters: list[RateLimitDefinition] = []
+
         # Subprocess logger (injected after unpickling in subprocess mode)
         self._subprocess_lg: Logger | None = None
 
@@ -287,6 +300,10 @@ class FastAPIAdapter:
     def set_cors(self, cors: CORSDefinition) -> None:
         """Set CORS configuration."""
         self._cors = cors
+
+    def add_rate_limiter(self, definition: RateLimitDefinition) -> None:
+        """Add a rate limiter configuration."""
+        self._rate_limiters.append(definition)
 
     def add_startup_callback(self, callback: LifecycleCallbackDefinition) -> None:
         """Add a startup callback."""
@@ -334,6 +351,7 @@ class FastAPIAdapter:
         self._configure_logger_injection(app)
         self._configure_request_response_middleware(app)
         self._configure_middleware(app)
+        self._configure_rate_limiting(app)
         self._configure_exception_handlers(app)
         self._configure_routes(app)
         self._configure_routers(app)
@@ -483,6 +501,26 @@ class FastAPIAdapter:
         # Add other middleware
         for mw in self._middleware:
             app.add_middleware(mw.middleware_class, **mw.options)  # type: ignore[arg-type]
+
+    def _configure_rate_limiting(self, app: FastAPI) -> None:
+        """Configure rate limiting middleware on the app.
+
+        Each limiter gets its own middleware layer. Added last among middleware
+        so they run outermost (Starlette applies in reverse order of
+        add_middleware calls). Multiple limiters are checked independently -
+        the first one to deny a request wins.
+        """
+        if not self._rate_limiters:
+            return
+        from ..ratelimit.middleware import RateLimitMiddleware
+
+        for rl in self._rate_limiters:
+            app.add_middleware(
+                RateLimitMiddleware,
+                limiter=rl.limiter,
+                exempt_paths=rl.exempt_paths,
+                cleanup_interval=rl.cleanup_interval,
+            )
 
     def _configure_exception_handlers(self, app: FastAPI) -> None:
         """Configure exception handlers on the app."""

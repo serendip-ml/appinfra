@@ -28,6 +28,16 @@ For API stability guarantees and deprecation policy, see
   enables monitor-based auto-restart.
 
 ### Added
+- HTTP rate limiting middleware for FastAPI servers (`appinfra.app.fastapi.ratelimit`):
+  - `RateLimiter` ABC defining the interface for pluggable rate limiting strategies
+  - `TokenBucketLimiter`: O(1) per-request rate limiting with configurable burst, per-IP or global
+    keying, proxy header support (`X-Forwarded-For`, `CF-Connecting-IP`), and automatic stale entry
+    cleanup
+  - Raw ASGI middleware (not BaseHTTPMiddleware) for correct streaming/background task behavior
+  - `ServerBuilder.with_rate_limiter()` integration with exempt path support
+  - Multiple limiters can be chained (e.g., global + per-IP); first to deny wins
+  - 429 responses with `Retry-After` header; `X-RateLimit-Limit`/`X-RateLimit-Remaining` on 200s
+  - Pickle-safe for subprocess mode (fresh state per worker)
 - README documentation for `examples/07_fastapi/` (FastAPI server modes)
 - README documentation for `examples/11_docs/` (documentation generation)
 - Service execution framework (`appinfra.service`) for managing service lifecycles:
