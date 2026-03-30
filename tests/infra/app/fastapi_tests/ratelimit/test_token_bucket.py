@@ -61,6 +61,17 @@ class TestExtractIpWithHeader:
         result = _extract_ip_with_header(scope, b"x-forwarded-for")
         assert result == "10.0.0.1"
 
+    def test_empty_header_falls_back_to_client(self):
+        """Test fallback when proxy header is empty or whitespace."""
+        scope = {
+            "client": ("10.0.0.1", 80),
+            "headers": [(b"x-forwarded-for", b"")],
+        }
+        assert _extract_ip_with_header(scope, b"x-forwarded-for") == "10.0.0.1"
+
+        scope["headers"] = [(b"x-forwarded-for", b"  ,  ")]
+        assert _extract_ip_with_header(scope, b"x-forwarded-for") == "10.0.0.1"
+
     def test_cloudflare_header(self):
         """Test CF-Connecting-IP header."""
         scope = {

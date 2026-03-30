@@ -39,7 +39,9 @@ def _extract_ip_with_header(scope: dict[str, Any], header_name: bytes) -> str:
         if name == header_name:
             # Take leftmost IP for X-Forwarded-For style headers
             decoded: str = value.decode("latin-1").split(",")[0].strip()
-            return decoded
+            if decoded:
+                return decoded
+            break  # Header found but empty, fall back to client IP
     return _extract_ip_from_scope(scope)
 
 
