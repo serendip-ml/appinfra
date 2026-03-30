@@ -11,6 +11,7 @@ For API stability guarantees and deprecation policy, see
 ## [Unreleased]
 
 ### Fixed
+- `python -m appinfra.version.build_info` now includes `MODIFIED` field, matching setuptools hook
 - `make check` reported `cq.strict` target even when `INFRA_DEV_CQ_STRICT=false`
 - Documentation index files referenced non-existent `exceptions.md` (renamed to `errors.md` in v0.5.0)
 - Missing API doc reference for `fastapi.md` in `docs/api/index.md`

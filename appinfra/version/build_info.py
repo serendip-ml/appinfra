@@ -24,38 +24,33 @@ COMMIT_HASH = "{commit_full}"
 COMMIT_SHORT = "{commit_short}"
 COMMIT_MESSAGE = "{commit_message}"
 BUILD_TIME = "{build_time}"
+MODIFIED = {modified}
 '''
 
 
-def get_git_commit() -> tuple[str, str, str] | None:
-    """Get current git commit hash and message."""
+def _run_git(*args: str) -> str | None:
+    """Run a git command and return stripped stdout, or None on failure."""
     try:
-        # Get commit hash
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=5,
+            ["git", *args], capture_output=True, text=True, timeout=5
         )
-        if result.returncode != 0:
-            return None
-
-        full = result.stdout.strip()
-        short = full[:7]
-
-        # Get commit message (first line only)
-        result = subprocess.run(
-            ["git", "log", "-1", "--format=%s"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        message = result.stdout.strip() if result.returncode == 0 else ""
-
-        return full, short, message
+        return result.stdout.strip() if result.returncode == 0 else None
     except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        pass
-    return None
+        return None
+
+
+def get_git_commit() -> tuple[str, str, str, bool] | None:
+    """Get current git commit hash, message, and dirty status."""
+    full = _run_git("rev-parse", "HEAD")
+    if not full:
+        return None
+
+    short = full[:7]
+    message = _run_git("log", "-1", "--format=%s") or ""
+    status = _run_git("status", "--porcelain")
+    modified = bool(status) if status is not None else False
+
+    return full, short, message, modified
 
 
 def generate(package_dir: Path) -> bool:
@@ -73,7 +68,7 @@ def generate(package_dir: Path) -> bool:
         print("Not in a git repo or no commits", file=sys.stderr)
         return False
 
-    commit_full, commit_short, commit_message = commit
+    commit_full, commit_short, commit_message, modified = commit
     build_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Escape message for Python string
@@ -84,6 +79,7 @@ def generate(package_dir: Path) -> bool:
         commit_short=commit_short,
         commit_message=escaped_message,
         build_time=build_time,
+        modified=modified,
     )
 
     build_info_path = package_dir / "_build_info.py"
