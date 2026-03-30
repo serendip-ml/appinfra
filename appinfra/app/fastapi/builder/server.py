@@ -26,6 +26,7 @@ from ..runtime.adapter import (
     LifecycleCallbackDefinition,
     LifespanDefinition,
     MiddlewareDefinition,
+    RateLimitDefinition,
     RequestCallbackDefinition,
     ResponseCallbackDefinition,
     RouteDefinition,
@@ -131,6 +132,7 @@ class ServerBuilder:
         self._request_callbacks: list[RequestCallbackDefinition] = []
         self._response_callbacks: list[ResponseCallbackDefinition] = []
         self._exception_callbacks: list[ExceptionCallbackDefinition] = []
+        self._rate_limiters: list[RateLimitDefinition] = []
 
     # Direct configuration methods
 
@@ -355,6 +357,50 @@ class ServerBuilder:
         )
         return self
 
+    # Rate limiting
+
+    def with_rate_limiter(
+        self,
+        limiter: Any,
+        exempt_paths: list[str] | None = None,
+        cleanup_interval: float = 60.0,
+    ) -> ServerBuilder:
+        """Configure HTTP rate limiting.
+
+        The limiter controls both the algorithm (token bucket, sliding window,
+        etc.) and the key extraction strategy (per-IP, global, custom).
+        The middleware returns 429 with Retry-After header when rate limited,
+        and injects X-RateLimit-* headers on successful responses.
+
+        Args:
+            limiter: Rate limiter instance implementing the RateLimiter ABC
+                (from appinfra.app.fastapi.ratelimit).
+            exempt_paths: Paths that bypass rate limiting (e.g., ["/health"]).
+            cleanup_interval: Seconds between stale entry cleanup (default: 60).
+
+        Returns:
+            Self for method chaining.
+
+        Example:
+            from appinfra.app.fastapi.ratelimit import TokenBucketLimiter
+
+            server = (ServerBuilder(lg, "api")
+                .with_rate_limiter(
+                    TokenBucketLimiter(rate="60/min", burst=10),
+                    exempt_paths=["/health"],
+                )
+                .routes.with_route("/health", health).done()
+                .build())
+        """
+        self._rate_limiters.append(
+            RateLimitDefinition(
+                limiter=limiter,
+                exempt_paths=exempt_paths or [],
+                cleanup_interval=cleanup_interval,
+            )
+        )
+        return self
+
     # Focused configurers
 
     @property
@@ -417,6 +463,8 @@ class ServerBuilder:
             adapter.add_response_callback(response_cb)
         for exception_cb in self._exception_callbacks:
             adapter.add_exception_callback(exception_cb)
+        for rl in self._rate_limiters:
+            adapter.add_rate_limiter(rl)
 
     def _is_subprocess_mode(self) -> bool:
         """Check if subprocess mode is configured."""

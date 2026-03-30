@@ -169,6 +169,54 @@ server = (ServerBuilder(lg, "myapi")
     .build())
 ```
 
+### Rate Limiting
+
+Add per-IP or global rate limiting via `with_rate_limiter()`. Uses a raw ASGI middleware (not
+BaseHTTPMiddleware) for correct behavior with streaming and background tasks.
+
+```python
+from appinfra.app.fastapi.ratelimit import TokenBucketLimiter
+
+server = (ServerBuilder(lg, "myapi")
+    .with_rate_limiter(
+        TokenBucketLimiter(rate="60/min", burst=10),
+        exempt_paths=["/health"],
+    )
+    .routes.with_route("/health", health).done()
+    .build())
+```
+
+**TokenBucketLimiter options:**
+
+| Option | Description |
+|--------|-------------|
+| `rate` | Max requests per window. String (`"60/min"`) or int (requires `window`). |
+| `window` | Window in seconds (default: 60). Ignored when rate is a string. |
+| `burst` | Max burst capacity (default: same as rate). |
+| `proxy_header` | Header for real client IP (e.g., `"X-Forwarded-For"`, `"CF-Connecting-IP"`). |
+| `key_func` | Custom key extraction: `Callable[[scope], str]`. Overrides proxy_header. |
+| `stale_ttl` | Seconds before idle entries are cleaned up (default: window * 2). |
+
+**Multiple limiters** can be chained. Each runs independently - first to deny wins:
+
+```python
+server = (ServerBuilder(lg, "myapi")
+    # Global: 1000 req/min across all clients
+    .with_rate_limiter(
+        TokenBucketLimiter(rate="1000/min", key_func=lambda s: "global"),
+        exempt_paths=["/health"],
+    )
+    # Per-IP: 60 req/min per client
+    .with_rate_limiter(
+        TokenBucketLimiter(rate="60/min"),
+        exempt_paths=["/health"],
+    )
+    .build())
+```
+
+Denied requests receive a `429 Too Many Requests` response with `Retry-After` header. Allowed
+responses include `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers.
+
 ### Lifecycle Callbacks
 
 Register callbacks for application lifecycle events:
