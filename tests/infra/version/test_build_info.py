@@ -9,7 +9,49 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from appinfra.version.build_info import generate, get_git_commit, main
+from appinfra.version.build_info import _run_git, generate, get_git_commit, main
+
+# =============================================================================
+# Test _run_git
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestRunGit:
+    """Test _run_git helper function."""
+
+    @patch("subprocess.run")
+    def test_returns_stdout_on_success(self, mock_run):
+        """Test returns stdout when git succeeds."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="output\n")
+
+        result = _run_git("status")
+        assert result == "output"
+
+    @patch("subprocess.run")
+    def test_returns_none_on_failure(self, mock_run):
+        """Test returns None when git fails."""
+        mock_run.return_value = MagicMock(returncode=1)
+
+        result = _run_git("status")
+        assert result is None
+
+    @patch("subprocess.run")
+    def test_handles_subprocess_error(self, mock_run):
+        """Test handles subprocess errors."""
+        mock_run.side_effect = subprocess.SubprocessError("error")
+
+        result = _run_git("status")
+        assert result is None
+
+    @patch("subprocess.run")
+    def test_handles_file_not_found(self, mock_run):
+        """Test handles missing git command."""
+        mock_run.side_effect = FileNotFoundError("git not found")
+
+        result = _run_git("status")
+        assert result is None
+
 
 # =============================================================================
 # Test get_git_commit
@@ -20,71 +62,78 @@ from appinfra.version.build_info import generate, get_git_commit, main
 class TestGetGitCommit:
     """Test get_git_commit function."""
 
-    @patch("subprocess.run")
-    def test_returns_commit_info(self, mock_run):
-        """Test returns commit hash and message."""
+    @patch("appinfra.version.build_info._run_git")
+    def test_returns_commit_info(self, mock_run_git):
+        """Test returns commit hash, message, and dirty status."""
 
-        def run_side_effect(args, **kwargs):
+        def side_effect(*args):
             if "rev-parse" in args:
-                return MagicMock(
-                    returncode=0,
-                    stdout="abc123def456789012345678901234567890abcd\n",
-                )
+                return "abc123def456789012345678901234567890abcd"
             elif "--format=%s" in args:
-                return MagicMock(returncode=0, stdout="Test commit message\n")
-            return MagicMock(returncode=1)
+                return "Test commit message"
+            elif "--porcelain" in args:
+                return " M file.py"
+            return None
 
-        mock_run.side_effect = run_side_effect
+        mock_run_git.side_effect = side_effect
 
         result = get_git_commit()
 
         assert result is not None
-        full, short, message = result
+        full, short, message, modified = result
         assert full == "abc123def456789012345678901234567890abcd"
         assert short == "abc123d"
         assert message == "Test commit message"
+        assert modified is True
 
-    @patch("subprocess.run")
-    def test_returns_none_on_git_failure(self, mock_run):
+    @patch("appinfra.version.build_info._run_git")
+    def test_returns_none_on_git_failure(self, mock_run_git):
         """Test returns None when git command fails."""
-        mock_run.return_value = MagicMock(returncode=1)
+        mock_run_git.return_value = None
 
         result = get_git_commit()
         assert result is None
 
-    @patch("subprocess.run")
-    def test_handles_subprocess_error(self, mock_run):
-        """Test handles subprocess errors gracefully."""
-        mock_run.side_effect = subprocess.SubprocessError("git error")
-
-        result = get_git_commit()
-        assert result is None
-
-    @patch("subprocess.run")
-    def test_handles_file_not_found(self, mock_run):
-        """Test handles missing git command."""
-        mock_run.side_effect = FileNotFoundError("git not found")
-
-        result = get_git_commit()
-        assert result is None
-
-    @patch("subprocess.run")
-    def test_handles_empty_commit_message(self, mock_run):
+    @patch("appinfra.version.build_info._run_git")
+    def test_handles_empty_commit_message(self, mock_run_git):
         """Test handles empty commit message."""
 
-        def run_side_effect(args, **kwargs):
+        def side_effect(*args):
             if "rev-parse" in args:
-                return MagicMock(returncode=0, stdout="abc123\n")
+                return "abc123"
             elif "--format=%s" in args:
-                return MagicMock(returncode=1)  # message command fails
-            return MagicMock(returncode=1)
+                return None  # message command fails
+            elif "--porcelain" in args:
+                return ""
+            return None
 
-        mock_run.side_effect = run_side_effect
+        mock_run_git.side_effect = side_effect
 
         result = get_git_commit()
         assert result is not None
-        _, _, message = result
+        _, _, message, modified = result
         assert message == ""
+        assert modified is False
+
+    @patch("appinfra.version.build_info._run_git")
+    def test_clean_working_tree(self, mock_run_git):
+        """Test modified is False when working tree is clean."""
+
+        def side_effect(*args):
+            if "rev-parse" in args:
+                return "abc123"
+            elif "--format=%s" in args:
+                return "Clean commit"
+            elif "--porcelain" in args:
+                return ""
+            return None
+
+        mock_run_git.side_effect = side_effect
+
+        result = get_git_commit()
+        assert result is not None
+        _, _, _, modified = result
+        assert modified is False
 
 
 # =============================================================================
@@ -103,6 +152,7 @@ class TestGenerate:
             "abc123def456789012345678901234567890abcd",
             "abc123d",
             "Test commit",
+            True,
         )
 
         result = generate(tmp_path)
@@ -115,6 +165,7 @@ class TestGenerate:
         assert 'COMMIT_SHORT = "abc123d"' in content
         assert 'COMMIT_MESSAGE = "Test commit"' in content
         assert "BUILD_TIME" in content
+        assert "MODIFIED = True" in content
 
     @patch("appinfra.version.build_info.get_git_commit")
     def test_returns_false_without_git(self, mock_get_commit, tmp_path):
@@ -131,6 +182,7 @@ class TestGenerate:
             "abc123def456789012345678901234567890abcd",
             "abc123d",
             'Fix "bug" in code',
+            False,
         )
 
         generate(tmp_path)
@@ -145,6 +197,7 @@ class TestGenerate:
             "abc123def456789012345678901234567890abcd",
             "abc123d",
             "Fix path\\to\\file",
+            False,
         )
 
         generate(tmp_path)
