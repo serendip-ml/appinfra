@@ -119,6 +119,13 @@ class TestTokenBucketInit:
         with pytest.raises(ValueError, match="Window must be positive"):
             TokenBucketLimiter(rate=10, window=-1.0)
 
+    def test_invalid_stale_ttl(self):
+        """Test error on non-positive stale_ttl."""
+        with pytest.raises(ValueError, match="stale_ttl must be positive"):
+            TokenBucketLimiter(rate="60/min", stale_ttl=0)
+        with pytest.raises(ValueError, match="stale_ttl must be positive"):
+            TokenBucketLimiter(rate="60/min", stale_ttl=-1.0)
+
 
 # =============================================================================
 # Test is_allowed

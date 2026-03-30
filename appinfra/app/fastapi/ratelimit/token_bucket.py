@@ -98,6 +98,9 @@ class TokenBucketLimiter(RateLimiter):
             raise ValueError(f"Burst must be positive, got: {burst}")
         self._burst = burst if burst is not None else self._max_requests
 
+        if stale_ttl is not None and stale_ttl <= 0:
+            raise ValueError(f"stale_ttl must be positive, got: {stale_ttl}")
+
         self._refill_rate = self._max_requests / self._window  # tokens per second
         self._stale_ttl = stale_ttl if stale_ttl is not None else self._window * 2
 
