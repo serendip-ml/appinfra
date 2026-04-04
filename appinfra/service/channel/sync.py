@@ -68,6 +68,12 @@ class Transport(Protocol):
         """
         Receive the next message from the wire.
 
+        Important:
+            Implementations **must** honor the *timeout* parameter and return
+            or raise within that window.  ``Channel`` relies on short-interval
+            polling to check for close; a transport that blocks indefinitely
+            will prevent close from taking effect promptly.
+
         Args:
             timeout: Maximum seconds to wait. None means block indefinitely.
 
@@ -190,8 +196,10 @@ class Channel(Generic[TRequest, TResponse]):
         """Try to drain one buffered message from the transport before raising."""
         try:
             return cast(TResponse, self._transport.recv(0))
-        except Exception:
+        except ChannelTimeoutError:
             raise ChannelClosedError("Channel is closed")
+        except Exception as exc:
+            raise ChannelClosedError("Channel is closed") from exc
 
     def _recv_poll(self, timeout: float | None) -> TResponse:
         """Poll transport with periodic close checks."""

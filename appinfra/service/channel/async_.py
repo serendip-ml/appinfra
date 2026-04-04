@@ -199,8 +199,10 @@ class AsyncChannel(Generic[TRequest, TResponse]):
             # Small epsilon — recv(0) with asyncio.wait_for cancels immediately
             # even when data is available, so use a brief window instead.
             return cast(TResponse, await self._transport.recv(0.01))
-        except Exception:
+        except ChannelTimeoutError:
             raise ChannelClosedError("Channel is closed")
+        except Exception as exc:
+            raise ChannelClosedError("Channel is closed") from exc
 
     async def _poll_for_response(self, request_id: str, timeout: float) -> TResponse:
         """Poll for a response with the given request_id."""
@@ -331,14 +333,17 @@ class AsyncProcessQueueTransport(Generic[TRequest, TResponse]):
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._outbound.put, message)
 
+    _RECV_CAP = 60.0
+
     async def recv(self, timeout: float | None = None) -> TResponse:
         """Get next message from the inbound mp.Queue via executor.
 
-        When timeout is None, uses a large finite timeout (86400s) to avoid
-        blocking the executor thread indefinitely — mp.Queue.get(timeout=None)
-        cannot be interrupted by close().
+        When timeout is None, caps at ``_RECV_CAP`` (60s) to avoid blocking
+        the executor thread indefinitely — mp.Queue.get(timeout=None) cannot
+        be interrupted by close().  The channel's poll loop retries
+        automatically, so the cap is transparent to callers.
         """
-        effective = timeout if timeout is not None else 86400.0
+        effective = timeout if timeout is not None else self._RECV_CAP
         loop = asyncio.get_running_loop()
         try:
             return await loop.run_in_executor(

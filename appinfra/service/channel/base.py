@@ -10,6 +10,7 @@ This module provides:
 from __future__ import annotations
 
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
@@ -60,8 +61,8 @@ class RedeliveryBuffer:
     """
 
     def __init__(self, max_size: int = 4096) -> None:
-        self._keyed: dict[str, list[Any]] = {}
-        self._unkeyed: list[Any] = []
+        self._keyed: dict[str, deque[Any]] = {}
+        self._unkeyed: deque[Any] = deque()
         self._size: int = 0
         self._max_size = max_size
         self.drops: int = 0
@@ -76,7 +77,7 @@ class RedeliveryBuffer:
         msgs = self._keyed.get(request_id)
         if msgs:
             self._size -= 1
-            msg = msgs.pop(0)
+            msg = msgs.popleft()
             if not msgs:
                 del self._keyed[request_id]
             return msg
@@ -84,16 +85,17 @@ class RedeliveryBuffer:
 
     def pop_any(self) -> Any | None:
         """Pop the next buffered message regardless of id (for ``recv()``)."""
-        for key, msgs in self._keyed.items():
-            if msgs:
-                self._size -= 1
-                msg = msgs.pop(0)
-                if not msgs:
-                    del self._keyed[key]
-                return msg
+        if self._keyed:
+            key = next(iter(self._keyed))
+            msgs = self._keyed[key]
+            self._size -= 1
+            msg = msgs.popleft()
+            if not msgs:
+                del self._keyed[key]
+            return msg
         if self._unkeyed:
             self._size -= 1
-            return self._unkeyed.pop(0)
+            return self._unkeyed.popleft()
         return None
 
     def put(self, message: Any) -> None:
@@ -102,22 +104,23 @@ class RedeliveryBuffer:
             self._evict_oldest()
         msg_id = getattr(message, "id", None)
         if msg_id is not None:
-            self._keyed.setdefault(msg_id, []).append(message)
+            self._keyed.setdefault(msg_id, deque()).append(message)
         else:
             self._unkeyed.append(message)
         self._size += 1
 
     def _evict_oldest(self) -> None:
         """Evict one entry from the buffer."""
-        for key, msgs in self._keyed.items():
-            if msgs:
-                msgs.pop(0)
-                if not msgs:
-                    del self._keyed[key]
-                self._size -= 1
-                self.drops += 1
-                return
+        if self._keyed:
+            key = next(iter(self._keyed))
+            msgs = self._keyed[key]
+            msgs.popleft()
+            if not msgs:
+                del self._keyed[key]
+            self._size -= 1
+            self.drops += 1
+            return
         if self._unkeyed:
-            self._unkeyed.pop(0)
+            self._unkeyed.popleft()
             self._size -= 1
             self.drops += 1
