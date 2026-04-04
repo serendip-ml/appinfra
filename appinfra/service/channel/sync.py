@@ -117,6 +117,8 @@ class Channel(Generic[TRequest, TResponse]):
         response_timeout: Default timeout for ``submit()`` calls (seconds).
     """
 
+    _MAX_REDELIVERY = 4096
+
     def __init__(
         self,
         transport: Transport,
@@ -210,6 +212,9 @@ class Channel(Generic[TRequest, TResponse]):
         poll_interval = 0.05
 
         while True:
+            if self.is_closed:
+                raise ChannelClosedError("Channel closed while waiting for response")
+
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ChannelTimeoutError(
@@ -227,7 +232,16 @@ class Channel(Generic[TRequest, TResponse]):
             if hasattr(message, "id") and message.id == request_id:
                 return self._validate_response(message)
 
-            self._redelivery.put(message)
+            self._buffer_for_redelivery(message)
+
+    def _buffer_for_redelivery(self, message: Any) -> None:
+        """Buffer a message for redelivery, discarding oldest if at capacity."""
+        if self._redelivery.qsize() >= self._MAX_REDELIVERY:
+            try:
+                self._redelivery.get_nowait()
+            except queue.Empty:
+                pass
+        self._redelivery.put(message)
 
     def _try_recv(self, timeout: float) -> Any | None:
         """Try to receive, returning None on timeout."""

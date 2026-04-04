@@ -190,7 +190,15 @@ class RunnerFactory:
         return QueueChannelFactory(self._channel_config).create_pair()
 
     def _create_process_pair(self) -> ChannelPair:
-        """Create a channel pair for process runners."""
+        """Create a channel pair for process runners.
+
+        When using a custom factory, the caller is responsible for ensuring the
+        transport is process-safe (picklable queues or shared-memory).
+        """
         if self._custom_channel_factory is not None:
+            self._lg.info(
+                "custom channel factory used with ProcessRunner — "
+                "ensure transport is process-safe (picklable)",
+            )
             return self._custom_channel_factory.create_pair()
         return ProcessQueueChannelFactory(self._channel_config).create_pair()

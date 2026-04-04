@@ -415,20 +415,22 @@ class TestServiceFactory:
 class StubTransport:
     """Minimal Transport implementation for testing custom transports.
 
-    Satisfies the Transport protocol with in-memory message buffering.
-    No base class needed — just implements send/recv/close/is_closed.
+    Satisfies the Transport protocol with shared in-memory buffers so that
+    a pair of StubTransports can exchange messages (send on one → recv on the
+    other).  No base class needed — just implements send/recv/close/is_closed.
     """
 
-    def __init__(self) -> None:
-        self._messages: list[Any] = []
+    def __init__(self, inbox: list[Any], outbox: list[Any]) -> None:
+        self._inbox = inbox
+        self._outbox = outbox
         self._closed = False
 
     def send(self, message: Any) -> None:
-        self._messages.append(message)
+        self._outbox.append(message)
 
     def recv(self, timeout: float | None = None) -> Any:
-        if self._messages:
-            return self._messages.pop(0)
+        if self._inbox:
+            return self._inbox.pop(0)
         raise ChannelTimeoutError(f"No messages ({timeout}s)")
 
     def close(self) -> None:
@@ -439,9 +441,14 @@ class StubTransport:
         return self._closed
 
 
-def _stub_channel() -> Channel[Any, Any]:
-    """Create a Channel wrapping a StubTransport."""
-    return Channel(StubTransport())
+def _stub_pair() -> ChannelPair:
+    """Create a connected ChannelPair backed by StubTransport."""
+    parent_buf: list[Any] = []
+    child_buf: list[Any] = []
+    return ChannelPair(
+        parent=Channel(StubTransport(inbox=parent_buf, outbox=child_buf)),
+        child=Channel(StubTransport(inbox=child_buf, outbox=parent_buf)),
+    )
 
 
 class StubChannelFactory:
@@ -452,7 +459,7 @@ class StubChannelFactory:
 
     def create_pair(self) -> ChannelPair:
         self.calls += 1
-        return ChannelPair(parent=_stub_channel(), child=_stub_channel())
+        return _stub_pair()
 
 
 class TestChannelPairFactory:
@@ -472,16 +479,15 @@ class TestChannelPairFactory:
 
     def test_channel_pair_accepts_custom_transport(self) -> None:
         """ChannelPair works with Channel wrapping custom Transport."""
-        parent = Channel(StubTransport())
-        child = Channel(StubTransport())
-        pair = ChannelPair(parent=parent, child=child)
+        pair = _stub_pair()
 
-        assert pair.parent is parent
-        assert pair.child is child
+        pair.parent.send(Message(payload="ping"))
+        msg = pair.child.recv(timeout=0.1)
+        assert msg.payload == "ping"
 
         pair.close()
-        assert parent.is_closed
-        assert child.is_closed
+        assert pair.parent.is_closed
+        assert pair.child.is_closed
 
 
 class TestPluggableTransport:
@@ -513,7 +519,7 @@ class TestPluggableTransport:
 
     def test_thread_runner_with_injected_pair(self, lg: Logger) -> None:
         """Per-call channel_pair overrides factory."""
-        pair = ChannelPair(parent=_stub_channel(), child=_stub_channel())
+        pair = _stub_pair()
         runner_factory = RunnerFactory(lg)
         service = SimpleService(lg)
 
@@ -526,7 +532,7 @@ class TestPluggableTransport:
 
     def test_process_runner_with_injected_pair(self, lg: Logger) -> None:
         """Per-call channel_pair overrides factory for process runner."""
-        pair = ChannelPair(parent=_stub_channel(), child=_stub_channel())
+        pair = _stub_pair()
         runner_factory = RunnerFactory(lg)
         service = SimpleService(lg)
 
@@ -540,7 +546,7 @@ class TestPluggableTransport:
     def test_injected_pair_takes_precedence_over_factory(self, lg: Logger) -> None:
         """Per-call channel_pair beats factory-level channel_factory."""
         stub_factory = StubChannelFactory()
-        pair = ChannelPair(parent=_stub_channel(), child=_stub_channel())
+        pair = _stub_pair()
         runner_factory = RunnerFactory(lg, channel_factory=stub_factory)
         service = SimpleService(lg)
 

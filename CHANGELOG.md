@@ -29,6 +29,14 @@ For API stability guarantees and deprecation policy, see
   `create_pair()` method
 - **Breaking**: `ChannelPairFactory` protocol uses single `create_pair()` method instead of
   separate `create_thread_pair()`/`create_process_pair()`
+- **Breaking:** `IPCChannel.submit()` no longer takes a separate `request_id` parameter. The ID is
+  now extracted from the request object's `id` attribute. This simplifies the API and prevents
+  mismatches between the request ID and the request object.
+  - Old: `await ipc.submit(request_id, request, timeout=30.0)`
+  - New: `await ipc.submit(request, timeout=30.0)` (request must have `.id` attribute)
+- FastAPI subprocess mode now uses `ProcessRunner` from the service package instead of the internal
+  `SubprocessManager`. This provides better integration with the service execution framework and
+  enables monitor-based auto-restart.
 
 ### Fixed
 - `python -m appinfra.version.build_info` now includes `MODIFIED` field, matching setuptools hook
@@ -38,15 +46,6 @@ For API stability guarantees and deprecation policy, see
 - Missing guides in `docs/index.md`: api-stability, framework-integration, pytest-plugin
 - Missing example sections in `docs/index.md` and `examples/README.md` for examples 07-12
 
-### Changed
-- **BREAKING:** `IPCChannel.submit()` no longer takes a separate `request_id` parameter. The ID is
-  now extracted from the request object's `id` attribute. This simplifies the API and prevents
-  mismatches between the request ID and the request object.
-  - Old: `await ipc.submit(request_id, request, timeout=30.0)`
-  - New: `await ipc.submit(request, timeout=30.0)` (request must have `.id` attribute)
-- FastAPI subprocess mode now uses `ProcessRunner` from the service package instead of the internal
-  `SubprocessManager`. This provides better integration with the service execution framework and
-  enables monitor-based auto-restart.
 
 ### Added
 - HTTP rate limiting middleware for FastAPI servers (`appinfra.app.fastapi.ratelimit`):

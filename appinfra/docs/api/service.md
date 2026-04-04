@@ -359,6 +359,13 @@ runner_factory = RunnerFactory(lg, default_policy=RestartPolicy(max_retries=3))
 result = runner_factory.create_thread_runner_with_channel(service)
 # result.runner, result.channel, result.service_channel
 
+# Inject a custom channel factory
+runner_factory = RunnerFactory(
+    lg,
+    channel_factory=QueueChannelFactory(ChannelConfig(response_timeout=60.0)),
+)
+result = runner_factory.create_thread_runner_with_channel(service)
+
 # Service factory with registry
 svc_factory = ServiceFactory(lg)
 svc_factory.register("worker", WorkerService, with_channel=True)

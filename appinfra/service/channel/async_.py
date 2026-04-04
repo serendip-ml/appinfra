@@ -77,6 +77,8 @@ class AsyncChannel(Generic[TRequest, TResponse]):
         response_timeout: Default timeout for ``submit()`` calls (seconds).
     """
 
+    _MAX_REDELIVERY = 4096
+
     def __init__(
         self,
         transport: AsyncTransport,
@@ -107,9 +109,9 @@ class AsyncChannel(Generic[TRequest, TResponse]):
         """
         Receive next incoming message.
 
-        Checks the redelivery buffer first, then reads from the transport.
-        When closed, attempts to drain one remaining buffered message
-        before raising ``ChannelClosedError``.
+        Checks the redelivery buffer first, then polls the transport
+        with periodic close checks. When closed, attempts to drain one
+        remaining buffered message before raising ``ChannelClosedError``.
         """
         try:
             return cast(TResponse, self._redelivery.get_nowait())
@@ -119,7 +121,7 @@ class AsyncChannel(Generic[TRequest, TResponse]):
         if self.is_closed:
             return await self._drain_or_raise()
 
-        return cast(TResponse, await self._transport.recv(timeout))
+        return await self._recv_poll(timeout)
 
     async def submit(
         self, request: TRequest, timeout: float | None = None
@@ -164,6 +166,30 @@ class AsyncChannel(Generic[TRequest, TResponse]):
 
     # -- internal helpers --------------------------------------------------
 
+    async def _recv_poll(self, timeout: float | None) -> TResponse:
+        """Poll transport with periodic close checks."""
+        poll_interval = 0.1
+        deadline = None if timeout is None else time.monotonic() + timeout
+
+        while True:
+            if self.is_closed:
+                return await self._drain_or_raise()
+
+            wait = poll_interval
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ChannelTimeoutError(
+                        f"Timeout waiting for message ({timeout}s)"
+                    )
+                wait = min(poll_interval, remaining)
+
+            try:
+                return cast(TResponse, await self._transport.recv(wait))
+            except ChannelTimeoutError:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise
+
     async def _drain_or_raise(self) -> TResponse:
         """Try to drain one buffered message from the transport before raising."""
         try:
@@ -199,7 +225,7 @@ class AsyncChannel(Generic[TRequest, TResponse]):
             if hasattr(message, "id") and message.id == request_id:
                 return self._validate_response(message)
 
-            await self._redelivery.put(message)
+            await self._buffer_for_redelivery(message)
 
     async def _poll_for_stream(
         self, request_id: str, timeout: float
@@ -237,7 +263,16 @@ class AsyncChannel(Generic[TRequest, TResponse]):
             if hasattr(message, "id") and message.id == request_id:
                 return self._validate_response(message)
 
-            await self._redelivery.put(message)
+            await self._buffer_for_redelivery(message)
+
+    async def _buffer_for_redelivery(self, message: Any) -> None:
+        """Buffer a message for redelivery, discarding oldest if at capacity."""
+        if self._redelivery.qsize() >= self._MAX_REDELIVERY:
+            try:
+                self._redelivery.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+        await self._redelivery.put(message)
 
     async def _try_recv(self, timeout: float) -> Any | None:
         """Try to receive, returning None on timeout."""
