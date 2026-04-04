@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import queue
+import threading
 import time
 from typing import Any, Generic, Protocol, TypeVar, cast, runtime_checkable
 
@@ -133,6 +134,7 @@ class Channel(Generic[TRequest, TResponse]):
         self._response_timeout = response_timeout
         self._closed = False
         self._redelivery = RedeliveryBuffer()
+        self._lock = threading.Lock()
 
     @property
     def transport(self) -> Transport:
@@ -162,13 +164,16 @@ class Channel(Generic[TRequest, TResponse]):
         Checks the redelivery buffer first, then polls the transport
         with periodic close checks. When closed, attempts to drain one
         remaining buffered message before raising ``ChannelClosedError``.
-        """
-        msg = self._redelivery.pop_any()
-        if msg is not None:
-            return cast(TResponse, msg)
 
-        if self.is_closed:
-            return self._drain_or_raise()
+        Thread-safe: concurrent ``recv()`` / ``submit()`` / ``close()`` calls
+        are guarded by an internal lock around redelivery and state access.
+        """
+        with self._lock:
+            msg = self._redelivery.pop_any()
+            if msg is not None:
+                return cast(TResponse, msg)
+            if self.is_closed:
+                return self._drain_or_raise()
 
         return self._recv_poll(timeout)
 
@@ -187,7 +192,8 @@ class Channel(Generic[TRequest, TResponse]):
 
     def close(self) -> None:
         """Close the channel and its transport."""
-        self._closed = True
+        with self._lock:
+            self._closed = True
         self._transport.close()
 
     # -- internal helpers --------------------------------------------------
@@ -201,6 +207,13 @@ class Channel(Generic[TRequest, TResponse]):
         except Exception as exc:
             raise ChannelClosedError("Channel is closed") from exc
 
+    def _drain_or_timeout(self, timeout: float | None) -> TResponse:
+        """Try one non-blocking recv before raising ChannelTimeoutError."""
+        try:
+            return cast(TResponse, self._transport.recv(0))
+        except Exception:
+            raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
+
     def _recv_poll(self, timeout: float | None) -> TResponse:
         """Poll transport with periodic close checks."""
         poll_interval = 0.1
@@ -208,14 +221,14 @@ class Channel(Generic[TRequest, TResponse]):
 
         while True:
             if self.is_closed:
-                raise ChannelClosedError("Channel is closed")
+                return self._drain_or_raise()
 
             wait_time = self._calc_wait_time(poll_interval, deadline, timeout)
             try:
                 return cast(TResponse, self._transport.recv(wait_time))
             except ChannelTimeoutError:
                 if deadline is not None and time.monotonic() >= deadline:
-                    raise
+                    return self._drain_or_timeout(timeout)
 
     def _poll_for_response(self, request_id: str, timeout: float) -> TResponse:
         """Poll for a response with the given request_id."""
@@ -223,18 +236,20 @@ class Channel(Generic[TRequest, TResponse]):
         poll_interval = 0.05
 
         while True:
-            if self.is_closed:
-                raise ChannelClosedError("Channel closed while waiting for response")
+            with self._lock:
+                if self.is_closed:
+                    raise ChannelClosedError(
+                        "Channel closed while waiting for response"
+                    )
+                message = self._redelivery.check(request_id)
+                if message is not None:
+                    return cast(TResponse, validate_response(message))
 
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ChannelTimeoutError(
                     f"Request {request_id} timed out after {timeout}s"
                 )
-
-            message = self._redelivery.check(request_id)
-            if message is not None:
-                return cast(TResponse, validate_response(message))
 
             message = self._try_recv(min(poll_interval, remaining))
             if message is None:
@@ -243,7 +258,8 @@ class Channel(Generic[TRequest, TResponse]):
             if hasattr(message, "id") and message.id == request_id:
                 return cast(TResponse, validate_response(message))
 
-            self._redelivery.put(message)
+            with self._lock:
+                self._redelivery.put(message)
 
     def _try_recv(self, timeout: float) -> Any | None:
         """Try to receive, returning None on timeout."""

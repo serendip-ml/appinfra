@@ -182,16 +182,21 @@ class AsyncChannel(Generic[TRequest, TResponse]):
             if deadline is not None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise ChannelTimeoutError(
-                        f"Timeout waiting for message ({timeout}s)"
-                    )
+                    return await self._drain_or_timeout(timeout)
                 wait = min(poll_interval, remaining)
 
             try:
                 return cast(TResponse, await self._transport.recv(wait))
             except ChannelTimeoutError:
                 if deadline is not None and time.monotonic() >= deadline:
-                    raise
+                    return await self._drain_or_timeout(timeout)
+
+    async def _drain_or_timeout(self, timeout: float | None) -> TResponse:
+        """Try one non-blocking recv before raising ChannelTimeoutError."""
+        try:
+            return cast(TResponse, await self._transport.recv(0.01))
+        except Exception:
+            raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
 
     async def _drain_or_raise(self) -> TResponse:
         """Try to drain one buffered message from the transport before raising."""
