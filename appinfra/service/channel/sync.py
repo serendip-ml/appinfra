@@ -185,7 +185,7 @@ class Channel(Generic[TRequest, TResponse]):
         """Try to drain one buffered message from the transport before raising."""
         try:
             return cast(TResponse, self._transport.recv(0))
-        except (ChannelTimeoutError, Exception):
+        except Exception:
             raise ChannelClosedError("Channel is closed")
 
     def _recv_poll(self, timeout: float | None) -> TResponse:

@@ -170,7 +170,7 @@ class AsyncChannel(Generic[TRequest, TResponse]):
             # Small epsilon — recv(0) with asyncio.wait_for cancels immediately
             # even when data is available, so use a brief window instead.
             return cast(TResponse, await self._transport.recv(0.01))
-        except (ChannelTimeoutError, Exception):
+        except Exception:
             raise ChannelClosedError("Channel is closed")
 
     async def _poll_for_response(self, request_id: str, timeout: float) -> TResponse:

@@ -6,7 +6,7 @@ services and their runners, or between parent and child processes.
 Architecture:
 - Transport / AsyncTransport: Wire-level protocol (implement for custom transports)
 - Channel / AsyncChannel: Concrete channel with correlation logic (wraps a Transport)
-- ChannelFactory: Creates Channel pairs with built-in transports
+- QueueChannelFactory / ProcessQueueChannelFactory: Create Channel pairs with built-in transports
 
 Custom transport example:
     from appinfra.service import Channel, ChannelTimeoutError, Transport
@@ -21,10 +21,10 @@ Custom transport example:
     channel = Channel(ZMQTransport(socket))
 
 Built-in usage via factory:
-    from appinfra.service import ChannelFactory
+    from appinfra.service import QueueChannelFactory
 
-    factory = ChannelFactory()
-    pair = factory.create_thread_pair()
+    factory = QueueChannelFactory()
+    pair = factory.create_pair()
     pair.parent.send(Message(payload="hello"))
 """
 
