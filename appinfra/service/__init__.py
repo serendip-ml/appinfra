@@ -71,12 +71,14 @@ Scheduled services:
 from .base import ScheduledService, Service
 from .channel import (
     AsyncChannel,
-    AsyncProcessChannel,
-    AsyncThreadChannel,
+    AsyncProcessQueueTransport,
+    AsyncQueueTransport,
+    AsyncTransport,
     Channel,
     Message,
-    ProcessChannel,
-    ThreadChannel,
+    ProcessQueueTransport,
+    QueueTransport,
+    Transport,
 )
 from .errors import (
     ChannelClosedError,
@@ -93,9 +95,13 @@ from .errors import (
 from .factory import (
     AsyncChannelPair,
     AsyncProcessChannelPair,
+    AsyncProcessQueueChannelFactory,
+    AsyncQueueChannelFactory,
     ChannelConfig,
-    ChannelFactory,
     ChannelPair,
+    ChannelPairFactory,
+    ProcessQueueChannelFactory,
+    QueueChannelFactory,
     RunnerFactory,
     RunnerWithChannel,
     ServiceFactory,
@@ -113,25 +119,31 @@ __all__ = [
     "ThreadRunner",
     "ProcessRunner",
     "Manager",
-    # Channel communication (sync)
+    # Transport (wire level)
+    "Transport",
+    "QueueTransport",
+    "ProcessQueueTransport",
+    "AsyncTransport",
+    "AsyncQueueTransport",
+    "AsyncProcessQueueTransport",
+    # Channel (protocol level)
     "Channel",
-    "ThreadChannel",
-    "ProcessChannel",
-    "Message",
-    # Channel communication (async)
     "AsyncChannel",
-    "AsyncThreadChannel",
-    "AsyncProcessChannel",
+    "Message",
     # Channel errors
     "ChannelError",
     "ChannelTimeoutError",
     "ChannelClosedError",
     # Factories
-    "ChannelFactory",
     "ChannelConfig",
     "ChannelPair",
+    "ChannelPairFactory",
+    "QueueChannelFactory",
+    "ProcessQueueChannelFactory",
     "AsyncChannelPair",
     "AsyncProcessChannelPair",
+    "AsyncQueueChannelFactory",
+    "AsyncProcessQueueChannelFactory",
     "RunnerFactory",
     "RunnerWithChannel",
     "ServiceFactory",

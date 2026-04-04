@@ -1,9 +1,10 @@
 """Asynchronous channel implementations.
 
 This module provides:
-- AsyncChannel: Abstract base for async bidirectional channels
-- AsyncThreadChannel: Async channel using asyncio.Queue for coroutine communication
-- AsyncProcessChannel: Async channel wrapping mp.Queue for cross-process IPC
+- AsyncTransport: Protocol for custom async wire transports
+- AsyncChannel: Concrete async channel with submit/recv correlation
+- AsyncQueueTransport: Transport using asyncio.Queue (coroutines)
+- AsyncProcessQueueTransport: Transport wrapping mp.Queue (cross-process)
 """
 
 from __future__ import annotations
@@ -12,105 +13,124 @@ import asyncio
 import multiprocessing as mp
 import queue
 import time
-from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from typing import Any, Generic, TypeVar, cast
+from typing import Any, Generic, Protocol, TypeVar, cast, runtime_checkable
 
-from ..errors import ChannelClosedError, ChannelError, ChannelTimeoutError
+from ..errors import ChannelClosedError, ChannelTimeoutError
+from .base import RedeliveryBuffer, validate_response
 
 TRequest = TypeVar("TRequest")
 TResponse = TypeVar("TResponse")
 
 
-class AsyncChannel(ABC, Generic[TRequest, TResponse]):
+@runtime_checkable
+class AsyncTransport(Protocol):
+    """
+    Async wire-level transport protocol.
+
+    Implement this protocol to plug in a custom async transport. The
+    ``AsyncChannel`` class wraps an AsyncTransport and adds request/response
+    correlation, streaming, redelivery buffering, and close management.
+    """
+
+    async def send(self, message: Any) -> None:
+        """Send a message over the wire."""
+        ...
+
+    async def recv(self, timeout: float | None = None) -> Any:
+        """
+        Receive the next message from the wire.
+
+        Args:
+            timeout: Maximum seconds to wait.
+
+        Raises:
+            ChannelTimeoutError: If no message arrives within timeout.
+        """
+        ...
+
+    async def close(self) -> None:
+        """Release transport resources."""
+        ...
+
+    @property
+    def is_closed(self) -> bool:
+        """True if the transport has been closed."""
+        ...
+
+
+class AsyncChannel(Generic[TRequest, TResponse]):
     """
     Async bidirectional channel for service communication.
 
-    Provides three communication patterns:
-    1. Fire-and-forget: send() without waiting for response
-    2. Receive: recv() to get next incoming message
-    3. Request/response: submit() sends and waits for matching response
+    Wraps an ``AsyncTransport`` and adds request/response correlation,
+    streaming, redelivery buffering, and close management.
 
-    Note:
-        submit() and recv() share the same inbound queue. If using both patterns
-        concurrently, messages may be buffered in redelivery queue. For pure
-        request/response patterns, use submit() exclusively. For pure streaming,
-        use recv() exclusively.
+    Four communication patterns:
+
+    1. Fire-and-forget: ``send()`` without waiting for response
+    2. Receive: ``recv()`` to get next incoming message
+    3. Request/response: ``submit()`` sends and waits for matching response
+    4. Streaming: ``submit_stream()`` yields response chunks until ``is_final``
+
+    Args:
+        transport: The underlying async wire transport.
+        response_timeout: Default timeout for ``submit()`` calls (seconds).
     """
 
-    @abstractmethod
-    async def send(self, message: TRequest) -> None:
-        """Send message without waiting for response."""
-
-    @abstractmethod
-    async def recv(self, timeout: float | None = None) -> TResponse:
-        """Receive next incoming message."""
-
-    @abstractmethod
-    async def submit(
-        self, request: TRequest, timeout: float | None = None
-    ) -> TResponse:
-        """Send request and wait for matching response."""
-
-    @abstractmethod
-    def submit_stream(
-        self, request: TRequest, timeout: float | None = None
-    ) -> AsyncIterator[TResponse]:
-        """
-        Send request and yield streaming response chunks.
-
-        Yields response chunks with matching id until one with is_final=True.
-        Each chunk must have an `id` attribute matching the request.
-        The final chunk must have `is_final=True`.
-
-        Args:
-            request: Request message (must have .id attribute)
-            timeout: Timeout for each chunk (None = use default)
-
-        Yields:
-            Response chunks until is_final=True
-
-        Raises:
-            ChannelTimeoutError: If a chunk is not received within timeout
-            ChannelClosedError: If channel is closed
-            ValueError: If request has no id attribute
-        """
-
-    @abstractmethod
-    async def close(self) -> None:
-        """Close the channel."""
-
-    @property
-    @abstractmethod
-    def is_closed(self) -> bool:
-        """True if channel has been closed."""
-
-
-class _BaseAsyncChannel(AsyncChannel[TRequest, TResponse]):
-    """Base implementation with common async logic."""
-
-    def __init__(self, response_timeout: float = 30.0) -> None:
-        """Initialize channel with timeout configuration."""
+    def __init__(
+        self,
+        transport: AsyncTransport,
+        response_timeout: float = 30.0,
+    ) -> None:
+        self._transport = transport
         self._response_timeout = response_timeout
         self._closed = False
-        self._closed_event = asyncio.Event()
-        self._lock = asyncio.Lock()
-        self._redelivery: asyncio.Queue[Any] = asyncio.Queue()
+        self._redelivery = RedeliveryBuffer()
+
+    @property
+    def transport(self) -> AsyncTransport:
+        """The underlying async wire transport."""
+        return self._transport
+
+    @property
+    def redelivery_drops(self) -> int:
+        """Number of messages dropped due to redelivery buffer overflow."""
+        return self._redelivery.drops
 
     @property
     def is_closed(self) -> bool:
-        """Return True if channel is closed."""
-        return self._closed
+        """True if the channel or its transport has been closed."""
+        return self._closed or self._transport.is_closed
 
-    async def _get_from_queue(self, timeout: float | None) -> Any:
-        """Get message from inbound queue. Implemented by subclasses."""
-        raise NotImplementedError
+    async def send(self, message: TRequest) -> None:
+        """Send message without waiting for response."""
+        if self.is_closed:
+            raise ChannelClosedError("Channel is closed")
+        await self._transport.send(message)
+
+    async def recv(self, timeout: float | None = None) -> TResponse:
+        """
+        Receive next incoming message.
+
+        Checks the redelivery buffer first, then polls the transport
+        with periodic close checks. When closed, attempts to drain one
+        remaining buffered message before raising ``ChannelClosedError``.
+        """
+        msg = self._redelivery.pop_any()
+        if msg is not None:
+            return cast(TResponse, msg)
+
+        if self.is_closed:
+            return await self._drain_or_raise()
+
+        return await self._recv_poll(timeout)
 
     async def submit(
         self, request: TRequest, timeout: float | None = None
     ) -> TResponse:
         """Send request and wait for matching response."""
-        if self._closed:
+        if self.is_closed:
             raise ChannelClosedError("Channel is closed")
         if not hasattr(request, "id"):
             raise ValueError("Request must have an 'id' attribute")
@@ -124,8 +144,13 @@ class _BaseAsyncChannel(AsyncChannel[TRequest, TResponse]):
     async def submit_stream(
         self, request: TRequest, timeout: float | None = None
     ) -> AsyncIterator[TResponse]:
-        """Send request and yield streaming response chunks."""
-        if self._closed:
+        """
+        Send request and yield streaming response chunks.
+
+        Yields response chunks with matching id until one with
+        ``is_final=True``.
+        """
+        if self.is_closed:
             raise ChannelClosedError("Channel is closed")
         if not hasattr(request, "id"):
             raise ValueError("Request must have an 'id' attribute")
@@ -136,6 +161,81 @@ class _BaseAsyncChannel(AsyncChannel[TRequest, TResponse]):
         await self.send(request)
         async for chunk in self._poll_for_stream(request_id, effective_timeout):
             yield chunk
+
+    async def close(self) -> None:
+        """Close the channel and its transport."""
+        self._closed = True
+        await self._transport.close()
+
+    # -- internal helpers --------------------------------------------------
+
+    async def _recv_poll(self, timeout: float | None) -> TResponse:
+        """Poll transport with periodic close checks."""
+        poll_interval = 0.1
+        deadline = None if timeout is None else time.monotonic() + timeout
+
+        while True:
+            if self.is_closed:
+                return await self._drain_or_raise()
+
+            wait = poll_interval
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return await self._drain_or_timeout(timeout)
+                wait = min(poll_interval, remaining)
+
+            try:
+                return cast(TResponse, await self._transport.recv(wait))
+            except ChannelTimeoutError:
+                if deadline is not None and time.monotonic() >= deadline:
+                    return await self._drain_or_timeout(timeout)
+
+    async def _drain_or_timeout(self, timeout: float | None) -> TResponse:
+        """Try one non-blocking recv before raising ChannelTimeoutError."""
+        try:
+            return cast(TResponse, await self._transport.recv(0.01))
+        except Exception:
+            raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
+
+    async def _drain_or_raise(self) -> TResponse:
+        """Try to drain one buffered message from the transport before raising."""
+        try:
+            # Small epsilon — recv(0) with asyncio.wait_for cancels immediately
+            # even when data is available, so use a brief window instead.
+            return cast(TResponse, await self._transport.recv(0.01))
+        except ChannelTimeoutError:
+            raise ChannelClosedError("Channel is closed")
+        except Exception as exc:
+            raise ChannelClosedError("Channel is closed") from exc
+
+    async def _poll_for_response(self, request_id: str, timeout: float) -> TResponse:
+        """Poll for a response with the given request_id."""
+        deadline = time.monotonic() + timeout
+        poll_interval = 0.05
+
+        while True:
+            if self.is_closed:
+                raise ChannelClosedError("Channel closed while waiting for response")
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ChannelTimeoutError(
+                    f"Request {request_id} timed out after {timeout}s"
+                )
+
+            message = self._redelivery.check(request_id)
+            if message is not None:
+                return cast(TResponse, validate_response(message))
+
+            message = await self._try_recv(min(poll_interval, remaining))
+            if message is None:
+                continue
+
+            if hasattr(message, "id") and message.id == request_id:
+                return cast(TResponse, validate_response(message))
+
+            self._redelivery.put(message)
 
     async def _poll_for_stream(
         self, request_id: str, timeout: float
@@ -153,7 +253,7 @@ class _BaseAsyncChannel(AsyncChannel[TRequest, TResponse]):
         poll_interval = 0.05
 
         while True:
-            if self._closed:
+            if self.is_closed:
                 raise ChannelClosedError("Channel closed while waiting for chunk")
 
             remaining = deadline - time.monotonic()
@@ -162,180 +262,111 @@ class _BaseAsyncChannel(AsyncChannel[TRequest, TResponse]):
                     f"Stream {request_id} timed out waiting for chunk"
                 )
 
-            # Check redelivery queue first
-            message = await self._check_redelivery(request_id)
+            message = self._redelivery.check(request_id)
             if message is not None:
-                return self._validate_response(message)
+                return cast(TResponse, validate_response(message))
 
-            message = await self._try_get_message(min(poll_interval, remaining))
+            message = await self._try_recv(min(poll_interval, remaining))
             if message is None:
                 continue
 
             if hasattr(message, "id") and message.id == request_id:
-                return self._validate_response(message)
+                return cast(TResponse, validate_response(message))
 
-            # Not our message - buffer for later
-            await self._redelivery.put(message)
+            self._redelivery.put(message)
 
-    async def _poll_for_response(self, request_id: str, timeout: float) -> TResponse:
-        """Poll for a response with the given request_id."""
-        deadline = time.monotonic() + timeout
-        poll_interval = 0.05
-
-        while True:
-            if self._closed:
-                raise ChannelClosedError("Channel closed while waiting for response")
-
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise ChannelTimeoutError(
-                    f"Request {request_id} timed out after {timeout}s"
-                )
-
-            message = await self._check_redelivery(request_id)
-            if message is not None:
-                return self._validate_response(message)
-
-            message = await self._try_get_message(min(poll_interval, remaining))
-            if message is None:
-                continue
-
-            if hasattr(message, "id") and message.id == request_id:
-                return self._validate_response(message)
-
-            await self._redelivery.put(message)
-
-    async def _try_get_message(self, timeout: float) -> Any | None:
-        """Try to get a message, returning None on timeout."""
+    async def _try_recv(self, timeout: float) -> Any | None:
+        """Try to receive, returning None on timeout."""
         try:
-            return await self._get_from_queue(timeout)
+            return await self._transport.recv(timeout)
         except ChannelTimeoutError:
             return None
 
-    def _validate_response(self, message: Any) -> TResponse:
-        """Validate response and raise ChannelError if it contains an error."""
-        if hasattr(message, "error") and message.error:
-            raise ChannelError(f"Request failed: {message.error}")
-        return cast(TResponse, message)
 
-    async def _check_redelivery(self, request_id: str) -> Any | None:
-        """Check redelivery queue for a matching response."""
-        recheck: list[Any] = []
-        result = None
-
-        while True:
-            try:
-                msg = self._redelivery.get_nowait()
-                if result is None and hasattr(msg, "id") and msg.id == request_id:
-                    result = msg
-                else:
-                    recheck.append(msg)
-            except asyncio.QueueEmpty:
-                break
-
-        for msg in recheck:
-            await self._redelivery.put(msg)
-
-        return result
-
-    async def close(self) -> None:
-        """Close channel and unblock any waiting coroutines."""
-        self._closed = True
-        self._closed_event.set()
+# ---------------------------------------------------------------------------
+# Built-in async transports
+# ---------------------------------------------------------------------------
 
 
-class AsyncThreadChannel(_BaseAsyncChannel[TRequest, TResponse]):
-    """Async channel using asyncio.Queue for coroutine-based communication."""
+class AsyncQueueTransport(Generic[TRequest, TResponse]):
+    """Async transport using ``asyncio.Queue`` for coroutine communication."""
 
     def __init__(
         self,
         outbound: asyncio.Queue[TRequest],
         inbound: asyncio.Queue[TResponse],
-        response_timeout: float = 30.0,
     ) -> None:
-        """Initialize with outbound and inbound asyncio queues."""
-        super().__init__(response_timeout)
         self._outbound = outbound
         self._inbound = inbound
+        self._closed = False
 
     async def send(self, message: TRequest) -> None:
-        """Send message to outbound queue."""
-        if self._closed:
-            raise ChannelClosedError("Channel is closed")
+        """Put message on the outbound asyncio queue."""
         await self._outbound.put(message)
 
-    async def _get_from_queue(self, timeout: float | None) -> Any:
-        """Get message from inbound queue with timeout."""
+    async def recv(self, timeout: float | None = None) -> TResponse:
+        """Get next message from the inbound asyncio queue."""
         try:
             return await asyncio.wait_for(self._inbound.get(), timeout=timeout)
         except TimeoutError:
             raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
 
-    async def recv(self, timeout: float | None = None) -> TResponse:
-        """Receive next message from inbound queue."""
-        try:
-            return cast(TResponse, self._redelivery.get_nowait())
-        except asyncio.QueueEmpty:
-            pass
+    async def close(self) -> None:
+        """Mark as closed."""
+        self._closed = True
 
-        if self._closed:
-            try:
-                return cast(TResponse, self._inbound.get_nowait())
-            except asyncio.QueueEmpty:
-                raise ChannelClosedError("Channel is closed")
-
-        return cast(TResponse, await self._get_from_queue(timeout))
+    @property
+    def is_closed(self) -> bool:
+        """Return True if closed."""
+        return self._closed
 
 
-class AsyncProcessChannel(_BaseAsyncChannel[TRequest, TResponse]):
-    """Async channel wrapping multiprocessing.Queue for cross-process communication."""
+class AsyncProcessQueueTransport(Generic[TRequest, TResponse]):
+    """Async transport wrapping ``multiprocessing.Queue`` for cross-process IPC."""
 
     def __init__(
         self,
         outbound: mp.Queue[TRequest],
         inbound: mp.Queue[TResponse],
-        response_timeout: float = 30.0,
     ) -> None:
-        """Initialize with outbound and inbound multiprocessing queues."""
-        super().__init__(response_timeout)
         self._outbound = outbound
         self._inbound = inbound
+        self._closed = False
 
     async def send(self, message: TRequest) -> None:
-        """Send message to outbound queue via executor."""
-        if self._closed:
-            raise ChannelClosedError("Channel is closed")
+        """Put message on the outbound mp.Queue via executor."""
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._outbound.put, message)
 
-    async def _get_from_queue(self, timeout: float | None) -> Any:
-        """Get message from inbound queue with timeout via executor."""
+    _RECV_CAP = 60.0
+
+    async def recv(self, timeout: float | None = None) -> TResponse:
+        """Get next message from the inbound mp.Queue via executor.
+
+        When timeout is None, caps at ``_RECV_CAP`` (60s) to avoid blocking
+        the executor thread indefinitely — mp.Queue.get(timeout=None) cannot
+        be interrupted by close().  The channel's poll loop retries
+        automatically, so the cap is transparent to callers.
+        """
+        effective = timeout if timeout is not None else self._RECV_CAP
         loop = asyncio.get_running_loop()
         try:
             return await loop.run_in_executor(
-                None, lambda: self._inbound.get(timeout=timeout)
+                None, lambda: self._inbound.get(timeout=effective)
             )
         except queue.Empty:
             raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
 
-    async def recv(self, timeout: float | None = None) -> TResponse:
-        """Receive next message from inbound queue."""
-        try:
-            return cast(TResponse, self._redelivery.get_nowait())
-        except asyncio.QueueEmpty:
-            pass
-
-        # Check closed first to avoid ValueError from closed mp.Queue
-        if self._closed:
-            raise ChannelClosedError("Channel is closed")
-
-        return cast(TResponse, await self._get_from_queue(timeout))
-
     async def close(self) -> None:
-        """Close both queues and mark channel as closed."""
-        await super().close()
+        """Close both multiprocessing queues."""
+        self._closed = True
         try:
             self._outbound.close()
             self._inbound.close()
         except Exception:
             pass
+
+    @property
+    def is_closed(self) -> bool:
+        """Return True if closed."""
+        return self._closed

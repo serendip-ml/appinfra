@@ -6,11 +6,12 @@ from dataclasses import dataclass
 import pytest
 
 from appinfra.service import (
-    AsyncThreadChannel,
+    AsyncChannel,
+    AsyncProcessQueueChannelFactory,
+    AsyncQueueChannelFactory,
     ChannelClosedError,
     ChannelConfig,
     ChannelError,
-    ChannelFactory,
     ChannelTimeoutError,
     Message,
 )
@@ -34,12 +35,12 @@ class Response:
 
 
 class TestAsyncThreadChannel:
-    """Tests for AsyncThreadChannel."""
+    """Tests for AsyncChannel (queue transport)."""
 
     @pytest.mark.asyncio
     async def test_send_recv(self) -> None:
         """Basic async send/recv works."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         await parent.send(Request(id="1", data="hello"))
@@ -52,7 +53,7 @@ class TestAsyncThreadChannel:
     @pytest.mark.asyncio
     async def test_bidirectional(self) -> None:
         """Messages flow in both directions."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         # Parent to child
@@ -68,7 +69,7 @@ class TestAsyncThreadChannel:
     @pytest.mark.asyncio
     async def test_recv_timeout(self) -> None:
         """recv raises ChannelTimeoutError on timeout."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
 
         with pytest.raises(ChannelTimeoutError):
             await pair.parent.recv(timeout=0.1)
@@ -76,7 +77,7 @@ class TestAsyncThreadChannel:
     @pytest.mark.asyncio
     async def test_submit_request_response(self) -> None:
         """submit() sends request and waits for matching response."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         async def responder() -> None:
@@ -94,7 +95,7 @@ class TestAsyncThreadChannel:
     @pytest.mark.asyncio
     async def test_submit_timeout(self) -> None:
         """submit() raises ChannelTimeoutError if no response."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
 
         with pytest.raises(ChannelTimeoutError):
             await pair.parent.submit(Request(id="1", data="test"), timeout=0.1)
@@ -102,7 +103,7 @@ class TestAsyncThreadChannel:
     @pytest.mark.asyncio
     async def test_submit_requires_id(self) -> None:
         """submit() raises ValueError if request has no id."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
 
         with pytest.raises(ValueError, match="id"):
             await pair.parent.submit({"data": "no id"}, timeout=0.1)  # type: ignore
@@ -110,7 +111,7 @@ class TestAsyncThreadChannel:
     @pytest.mark.asyncio
     async def test_close_channel(self) -> None:
         """Closed channel raises ChannelClosedError on send."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
 
         await pair.parent.close()
         assert pair.parent.is_closed
@@ -121,7 +122,7 @@ class TestAsyncThreadChannel:
     @pytest.mark.asyncio
     async def test_submit_on_closed_raises(self) -> None:
         """submit() raises ChannelClosedError on closed channel."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
         await pair.parent.close()
 
         with pytest.raises(ChannelClosedError):
@@ -130,7 +131,7 @@ class TestAsyncThreadChannel:
     @pytest.mark.asyncio
     async def test_concurrent_submits(self) -> None:
         """Multiple concurrent submits get correct responses."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
         results: dict[str, str] = {}
 
@@ -161,7 +162,7 @@ class TestAsyncThreadChannel:
     @pytest.mark.asyncio
     async def test_response_with_error(self) -> None:
         """submit() raises ChannelError if response has error."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         async def responder() -> None:
@@ -176,16 +177,16 @@ class TestAsyncThreadChannel:
         await task
 
 
-class TestAsyncChannelFactory:
-    """Tests for ChannelFactory async methods."""
+class TestAsyncQueueChannelFactory:
+    """Tests for AsyncQueueChannelFactory."""
 
     @pytest.mark.asyncio
     async def test_creates_connected_pair(self) -> None:
         """Creates two connected async channels."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
 
-        assert isinstance(pair.parent, AsyncThreadChannel)
-        assert isinstance(pair.child, AsyncThreadChannel)
+        assert isinstance(pair.parent, AsyncChannel)
+        assert isinstance(pair.child, AsyncChannel)
 
         await pair.parent.send(Message(payload="test"))
         msg = await pair.child.recv(timeout=0.1)
@@ -194,8 +195,8 @@ class TestAsyncChannelFactory:
     @pytest.mark.asyncio
     async def test_custom_timeout(self) -> None:
         """Respects custom response timeout."""
-        factory = ChannelFactory(ChannelConfig(response_timeout=0.05))
-        pair = factory.create_async_thread_pair()
+        factory = AsyncQueueChannelFactory(ChannelConfig(response_timeout=0.05))
+        pair = factory.create_pair()
 
         with pytest.raises(ChannelTimeoutError):
             await pair.parent.submit(Request(id="1", data="x"))
@@ -203,7 +204,7 @@ class TestAsyncChannelFactory:
     @pytest.mark.asyncio
     async def test_async_channel_pair_close(self) -> None:
         """AsyncChannelPair.close() closes both channels."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
 
         await pair.close()
 
@@ -214,8 +215,8 @@ class TestAsyncChannelFactory:
     async def test_async_thread_pair_with_max_queue_size(self) -> None:
         """Async thread pair respects max queue size."""
         config = ChannelConfig(max_queue_size=10)
-        factory = ChannelFactory(config)
-        pair = factory.create_async_thread_pair()
+        factory = AsyncQueueChannelFactory(config)
+        pair = factory.create_pair()
 
         assert pair.parent is not None
         assert pair.child is not None
@@ -224,8 +225,8 @@ class TestAsyncChannelFactory:
     async def test_async_process_pair_with_max_queue_size(self) -> None:
         """Async process pair respects max queue size."""
         config = ChannelConfig(max_queue_size=10)
-        factory = ChannelFactory(config)
-        pair = factory.create_async_process_pair()
+        factory = AsyncProcessQueueChannelFactory(config)
+        pair = factory.create_pair()
 
         assert pair.parent is not None
         assert pair.child is not None
@@ -233,16 +234,16 @@ class TestAsyncChannelFactory:
 
 
 class TestAsyncProcessChannel:
-    """Tests for AsyncProcessChannel."""
+    """Tests for AsyncChannel (process transport)."""
 
     @pytest.mark.asyncio
     async def test_send_recv(self) -> None:
         """Basic async send/recv works with process channel."""
-        pair = ChannelFactory().create_async_process_pair()
+        pair = AsyncProcessQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         await parent.send(Request(id="1", data="hello"))
-        # Child is sync ProcessChannel
+        # Child is sync Channel
         msg = child.recv(timeout=1.0)
 
         assert isinstance(msg, Request)
@@ -254,7 +255,7 @@ class TestAsyncProcessChannel:
     @pytest.mark.asyncio
     async def test_bidirectional(self) -> None:
         """Messages flow in both directions."""
-        pair = ChannelFactory().create_async_process_pair()
+        pair = AsyncProcessQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         # Parent (async) to child (sync)
@@ -272,7 +273,7 @@ class TestAsyncProcessChannel:
     @pytest.mark.asyncio
     async def test_recv_timeout(self) -> None:
         """recv raises ChannelTimeoutError on timeout."""
-        pair = ChannelFactory().create_async_process_pair()
+        pair = AsyncProcessQueueChannelFactory().create_pair()
 
         with pytest.raises(ChannelTimeoutError):
             await pair.parent.recv(timeout=0.1)
@@ -282,7 +283,7 @@ class TestAsyncProcessChannel:
     @pytest.mark.asyncio
     async def test_send_on_closed_raises(self) -> None:
         """send() raises ChannelClosedError on closed channel."""
-        pair = ChannelFactory().create_async_process_pair()
+        pair = AsyncProcessQueueChannelFactory().create_pair()
         await pair.parent.close()
 
         with pytest.raises(ChannelClosedError):
@@ -291,7 +292,7 @@ class TestAsyncProcessChannel:
     @pytest.mark.asyncio
     async def test_close(self) -> None:
         """close() closes the channel and underlying queues."""
-        pair = ChannelFactory().create_async_process_pair()
+        pair = AsyncProcessQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         # Use the channel
@@ -311,8 +312,8 @@ class TestAsyncThreadChannelClosedDrain:
 
     @pytest.mark.asyncio
     async def test_recv_on_closed_drains(self) -> None:
-        """recv() on closed AsyncThreadChannel drains buffered messages."""
-        pair = ChannelFactory().create_async_thread_pair()
+        """recv() on closed AsyncChannel drains buffered messages."""
+        pair = AsyncQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         # Send a message then close child
@@ -343,7 +344,7 @@ class TestAsyncChannelStreaming:
     @pytest.mark.asyncio
     async def test_submit_stream_basic(self) -> None:
         """submit_stream() yields chunks until is_final=True."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         async def responder() -> None:
@@ -368,7 +369,7 @@ class TestAsyncChannelStreaming:
     @pytest.mark.asyncio
     async def test_submit_stream_single_chunk(self) -> None:
         """submit_stream() works with single final chunk."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         async def responder() -> None:
@@ -390,7 +391,7 @@ class TestAsyncChannelStreaming:
     @pytest.mark.asyncio
     async def test_submit_stream_timeout(self) -> None:
         """submit_stream() raises ChannelTimeoutError if chunk not received."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
 
         with pytest.raises(ChannelTimeoutError):
             async for _ in pair.parent.submit_stream(
@@ -401,7 +402,7 @@ class TestAsyncChannelStreaming:
     @pytest.mark.asyncio
     async def test_submit_stream_requires_id(self) -> None:
         """submit_stream() raises ValueError if request has no id."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
 
         with pytest.raises(ValueError, match="id"):
             async for _ in pair.parent.submit_stream({"data": "no id"}, timeout=0.1):  # type: ignore
@@ -410,7 +411,7 @@ class TestAsyncChannelStreaming:
     @pytest.mark.asyncio
     async def test_submit_stream_on_closed_raises(self) -> None:
         """submit_stream() raises ChannelClosedError on closed channel."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
         await pair.parent.close()
 
         with pytest.raises(ChannelClosedError):
@@ -422,7 +423,7 @@ class TestAsyncChannelStreaming:
     @pytest.mark.asyncio
     async def test_submit_stream_with_error(self) -> None:
         """submit_stream() raises ChannelError if chunk has error."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         async def responder() -> None:
@@ -442,7 +443,7 @@ class TestAsyncChannelStreaming:
     @pytest.mark.asyncio
     async def test_submit_stream_default_is_final(self) -> None:
         """Response without is_final attribute defaults to True (single response)."""
-        pair = ChannelFactory().create_async_thread_pair()
+        pair = AsyncQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         async def responder() -> None:

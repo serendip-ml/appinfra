@@ -3,34 +3,52 @@
 Provides both sync and async APIs for request/response patterns between
 services and their runners, or between parent and child processes.
 
-Sync channels (Channel, ThreadChannel, ProcessChannel):
-    Use blocking calls, suitable for threaded code.
+Architecture:
+- Transport / AsyncTransport: Wire-level protocol (implement for custom transports)
+- Channel / AsyncChannel: Concrete channel with correlation logic (wraps a Transport)
+- QueueChannelFactory / ProcessQueueChannelFactory: Create Channel pairs with built-in transports
 
-Async channels (AsyncChannel, AsyncThreadChannel, AsyncProcessChannel):
-    Use async/await, suitable for asyncio code.
+Custom transport example:
+    from appinfra.service import Channel, ChannelTimeoutError, Transport
 
-Use ChannelFactory to create channel pairs:
-    from appinfra.service import ChannelFactory
+    class ZMQTransport:
+        def send(self, message): ...
+        def recv(self, timeout=None): ...
+        def close(self): ...
+        @property
+        def is_closed(self) -> bool: ...
 
-    factory = ChannelFactory()
-    pair = factory.create_thread_pair()
+    channel = Channel(ZMQTransport(socket))
+
+Built-in usage via factory:
+    from appinfra.service import QueueChannelFactory
+
+    factory = QueueChannelFactory()
+    pair = factory.create_pair()
     pair.parent.send(Message(payload="hello"))
 """
 
-from .async_ import AsyncChannel, AsyncProcessChannel, AsyncThreadChannel
+from .async_ import (
+    AsyncChannel,
+    AsyncProcessQueueTransport,
+    AsyncQueueTransport,
+    AsyncTransport,
+)
 from .base import HasId, Message
-from .sync import Channel, ProcessChannel, ThreadChannel
+from .sync import Channel, ProcessQueueTransport, QueueTransport, Transport
 
 __all__ = [
     # Base types
     "Message",
     "HasId",
-    # Sync channels
+    # Sync
+    "Transport",
     "Channel",
-    "ThreadChannel",
-    "ProcessChannel",
-    # Async channels
+    "QueueTransport",
+    "ProcessQueueTransport",
+    # Async
+    "AsyncTransport",
     "AsyncChannel",
-    "AsyncThreadChannel",
-    "AsyncProcessChannel",
+    "AsyncQueueTransport",
+    "AsyncProcessQueueTransport",
 ]
