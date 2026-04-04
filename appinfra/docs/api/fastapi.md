@@ -439,7 +439,7 @@ server.stop()            # Stop subprocess
 ## IPCChannel
 
 Async IPC for FastAPI route handlers to communicate with the main process. Wraps
-`AsyncProcessChannel` from the service package.
+`AsyncChannel` with an `AsyncProcessQueueTransport` from the service package.
 
 ```python
 from fastapi import Request

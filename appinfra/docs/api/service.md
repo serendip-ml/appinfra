@@ -256,16 +256,19 @@ mgr.add(runner, depends_on=["database", "cache"])
 
 For bidirectional communication between services and their runners.
 
+Architecture: Transport handles wire-level send/recv, Channel wraps a Transport with correlation
+logic (request/response matching), and ChannelPairFactory creates connected pairs.
+
 ### Sync Channels
 
 For threaded code with blocking calls:
 
 ```python
-from appinfra.service import ChannelFactory, Message
+from appinfra.service import QueueChannelFactory, Message
 
 # Create paired channels
-factory = ChannelFactory()
-pair = factory.create_thread_pair()
+factory = QueueChannelFactory()
+pair = factory.create_pair()
 
 # Fire-and-forget
 pair.parent.send(Message(payload="hello"))
@@ -283,11 +286,11 @@ pair.child.send(Response(id=msg.id, result="done"))
 For asyncio code with async/await:
 
 ```python
-from appinfra.service import ChannelFactory
+from appinfra.service import AsyncQueueChannelFactory
 
 # Async channels for coroutine communication
-factory = ChannelFactory()
-pair = factory.create_async_thread_pair()
+factory = AsyncQueueChannelFactory()
+pair = factory.create_pair()
 
 # Fire-and-forget (async)
 await pair.parent.send(Message(payload="hello"))
@@ -302,19 +305,39 @@ async for chunk in pair.parent.submit_stream(Request(id="2", data="stream")):
         break  # Automatically stops when is_final=True
 
 # For subprocess communication (async parent, sync child)
-pair = factory.create_async_process_pair()
+from appinfra.service import AsyncProcessQueueChannelFactory
+
+pair = AsyncProcessQueueChannelFactory().create_pair()
 await pair.parent.send(request)  # Parent uses async
 pair.child.recv()                 # Child uses sync in subprocess
 ```
 
-### Channel Types
+### Custom Transports
 
-| Channel | Queue Type | Use Case |
+Implement the `Transport` protocol for custom wire-level communication:
+
+```python
+from appinfra.service import Channel, Transport
+
+class ZMQTransport:
+    """Any object satisfying the Transport protocol."""
+    def send(self, message): ...
+    def recv(self, timeout=None): ...
+    def close(self): ...
+    @property
+    def is_closed(self) -> bool: ...
+
+channel = Channel(ZMQTransport(socket))
+```
+
+### Transports and Channel Types
+
+| Factory | Transport | Use Case |
 |---------|-----------|----------|
-| `ThreadChannel` | `queue.Queue` | Sync thread communication |
-| `ProcessChannel` | `mp.Queue` | Sync cross-process IPC |
-| `AsyncThreadChannel` | `asyncio.Queue` | Async coroutine communication |
-| `AsyncProcessChannel` | `mp.Queue` (async wrapped) | Async parent, sync child subprocess |
+| `QueueChannelFactory` | `QueueTransport` (`queue.Queue`) | Sync thread communication |
+| `ProcessQueueChannelFactory` | `ProcessQueueTransport` (`mp.Queue`) | Sync cross-process IPC |
+| `AsyncQueueChannelFactory` | `AsyncQueueTransport` (`asyncio.Queue`) | Async coroutine communication |
+| `AsyncProcessQueueChannelFactory` | `AsyncProcessQueueTransport` (`mp.Queue`) | Async parent, sync child subprocess |
 
 ## Factories
 
@@ -322,14 +345,14 @@ Centralized creation of service components:
 
 ```python
 from appinfra.service import (
-    ChannelFactory, ChannelConfig,
+    QueueChannelFactory, ChannelConfig,
     RunnerFactory,
     ServiceFactory,
 )
 
 # Channel factory
-ch_factory = ChannelFactory(ChannelConfig(response_timeout=60.0))
-pair = ch_factory.create_thread_pair()
+ch_factory = QueueChannelFactory(ChannelConfig(response_timeout=60.0))
+pair = ch_factory.create_pair()
 
 # Runner factory with channels
 runner_factory = RunnerFactory(lg, default_policy=RestartPolicy(max_retries=3))
@@ -355,26 +378,31 @@ worker = svc_factory.create("worker")
 - `RestartPolicy` - Restart configuration
 - `State` - State enum
 
-### Channel Classes (Sync)
+### Transport Protocols
 
-- `Channel` - Abstract base for sync bidirectional communication
-- `ThreadChannel` - Thread-safe queue-based channel
-- `ProcessChannel` - Multiprocessing queue-based channel
+- `Transport` - Sync wire-level protocol (send, recv, close, is_closed)
+- `AsyncTransport` - Async wire-level protocol
+
+### Built-in Transports
+
+- `QueueTransport` - Wraps `queue.Queue` for in-process sync communication
+- `ProcessQueueTransport` - Wraps `mp.Queue` for cross-process sync communication
+- `AsyncQueueTransport` - Wraps `asyncio.Queue` for async coroutine communication
+- `AsyncProcessQueueTransport` - Wraps `mp.Queue` with async interface
+
+### Channel Classes
+
+- `Channel` - Concrete sync channel wrapping any `Transport`
+- `AsyncChannel` - Concrete async channel wrapping any `AsyncTransport`
 - `Message` - Generic message with id for correlation
-
-### Channel Classes (Async)
-
-- `AsyncChannel` - Abstract base for async bidirectional communication
-- `AsyncThreadChannel` - Async queue-based channel for coroutines
-- `AsyncProcessChannel` - Async wrapper around mp.Queue
 
 ### Factories
 
-- `ChannelFactory` - Creates channel pairs with configuration
-  - `create_thread_pair()` - Create sync ThreadChannel pair
-  - `create_process_pair()` - Create sync ProcessChannel pair
-  - `create_async_thread_pair()` - Create async AsyncThreadChannel pair
-  - `create_async_process_pair()` - Create async parent + sync child pair
+- `ChannelPairFactory` - Protocol for pluggable channel pair creation (`create_pair()`)
+- `QueueChannelFactory` - Creates sync `Channel` pairs over `QueueTransport`
+- `ProcessQueueChannelFactory` - Creates sync `Channel` pairs over `ProcessQueueTransport`
+- `AsyncQueueChannelFactory` - Creates async `AsyncChannel` pairs over `AsyncQueueTransport`
+- `AsyncProcessQueueChannelFactory` - Creates mixed async parent + sync child pairs
 - `ChannelConfig` - Channel configuration (timeout, queue size)
 - `ChannelPair` - Sync channel pair (parent, child)
 - `AsyncChannelPair` - Async channel pair (parent, child)

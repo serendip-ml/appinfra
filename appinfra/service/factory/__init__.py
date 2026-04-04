@@ -7,14 +7,14 @@ Provides centralized creation of service components with:
 
 Example:
     from appinfra.service.factory import (
-        ChannelFactory,
+        QueueChannelFactory,
         RunnerFactory,
         ServiceFactory,
     )
 
     # Channel factory for direct channel creation
-    ch_factory = ChannelFactory(ChannelConfig(response_timeout=60.0))
-    pair = ch_factory.create_thread_pair()
+    ch_factory = QueueChannelFactory(ChannelConfig(response_timeout=60.0))
+    pair = ch_factory.create_pair()
 
     # Runner factory for runner + channel creation
     runner_factory = RunnerFactory(lg, default_policy=RestartPolicy(max_retries=3))
@@ -29,20 +29,28 @@ Example:
 from .channel import (
     AsyncChannelPair,
     AsyncProcessChannelPair,
+    AsyncProcessQueueChannelFactory,
+    AsyncQueueChannelFactory,
     ChannelConfig,
-    ChannelFactory,
     ChannelPair,
+    ChannelPairFactory,
+    ProcessQueueChannelFactory,
+    QueueChannelFactory,
 )
 from .runner import RunnerFactory, RunnerWithChannel
 from .service import ServiceFactory, ServiceRegistration
 
 __all__ = [
-    # Channel factory
-    "ChannelFactory",
+    # Channel factories
     "ChannelConfig",
     "ChannelPair",
+    "ChannelPairFactory",
+    "QueueChannelFactory",
+    "ProcessQueueChannelFactory",
     "AsyncChannelPair",
     "AsyncProcessChannelPair",
+    "AsyncQueueChannelFactory",
+    "AsyncProcessQueueChannelFactory",
     # Runner factory
     "RunnerFactory",
     "RunnerWithChannel",

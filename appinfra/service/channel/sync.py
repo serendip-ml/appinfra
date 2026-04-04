@@ -1,19 +1,44 @@
 """Synchronous channel implementations.
 
 This module provides:
-- Channel: Abstract base for sync bidirectional channels
-- ThreadChannel: Channel using queue.Queue for thread-based communication
-- ProcessChannel: Channel using multiprocessing.Queue for cross-process IPC
+- Transport: Protocol for custom wire transports (implement send/recv/close)
+- Channel: Concrete channel with submit/recv correlation on top of a Transport
+- QueueTransport: Transport using queue.Queue (in-process threads)
+- ProcessQueueTransport: Transport using multiprocessing.Queue (cross-process)
+
+Custom transport example::
+
+    class ZMQTransport:
+        def __init__(self, socket: zmq.Socket) -> None:
+            self._socket = socket
+            self._closed = False
+
+        def send(self, message: Any) -> None:
+            self._socket.send_pyobj(message)
+
+        def recv(self, timeout: float | None = None) -> Any:
+            ms = int((timeout or 0) * 1000)
+            if self._socket.poll(timeout=ms):
+                return self._socket.recv_pyobj()
+            raise ChannelTimeoutError(f"Timeout ({timeout}s)")
+
+        def close(self) -> None:
+            self._closed = True
+            self._socket.close()
+
+        @property
+        def is_closed(self) -> bool:
+            return self._closed
+
+    channel = Channel(ZMQTransport(socket), response_timeout=30.0)
 """
 
 from __future__ import annotations
 
 import multiprocessing as mp
 import queue
-import threading
 import time
-from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar, cast
+from typing import Any, Generic, Protocol, TypeVar, cast, runtime_checkable
 
 from ..errors import ChannelClosedError, ChannelError, ChannelTimeoutError
 
@@ -21,66 +46,124 @@ TRequest = TypeVar("TRequest")
 TResponse = TypeVar("TResponse")
 
 
-class Channel(ABC, Generic[TRequest, TResponse]):
+@runtime_checkable
+class Transport(Protocol):
+    """
+    Wire-level transport protocol.
+
+    Implement this protocol to plug in a custom transport (e.g., ZMQ, gRPC,
+    shared memory). The ``Channel`` class wraps a Transport and adds
+    request/response correlation, redelivery buffering, and close management.
+
+    All four methods must be implemented. No base class required — any object
+    satisfying the protocol is accepted.
+    """
+
+    def send(self, message: Any) -> None:
+        """Send a message over the wire."""
+        ...
+
+    def recv(self, timeout: float | None = None) -> Any:
+        """
+        Receive the next message from the wire.
+
+        Args:
+            timeout: Maximum seconds to wait. None means block indefinitely.
+
+        Returns:
+            The next message.
+
+        Raises:
+            ChannelTimeoutError: If no message arrives within timeout.
+        """
+        ...
+
+    def close(self) -> None:
+        """Release transport resources (sockets, file descriptors, etc.)."""
+        ...
+
+    @property
+    def is_closed(self) -> bool:
+        """True if the transport has been closed."""
+        ...
+
+
+class Channel(Generic[TRequest, TResponse]):
     """
     Bidirectional channel for service communication.
 
-    Provides three communication patterns:
-    1. Fire-and-forget: send() without waiting for response
-    2. Receive: recv() to get next incoming message
-    3. Request/response: submit() sends and waits for matching response
+    Wraps a ``Transport`` and adds:
+    - **Request/response correlation**: ``submit()`` sends a request and waits
+      for a response with a matching ``id`` attribute.
+    - **Redelivery buffering**: Messages received out of order during
+      ``submit()`` are buffered and returned by subsequent ``recv()`` calls.
+    - **Close management**: ``close()`` propagates to the transport and
+      unblocks any waiting ``recv()``/``submit()`` calls.
+
+    Three communication patterns:
+
+    1. Fire-and-forget: ``send()`` without waiting for response
+    2. Receive: ``recv()`` to get next incoming message
+    3. Request/response: ``submit()`` sends and waits for matching response
 
     Note:
-        submit() and recv() share the same inbound queue. If using both patterns
-        concurrently, messages may be buffered in redelivery queue. For pure
-        request/response patterns, use submit() exclusively. For pure streaming,
-        use recv() exclusively.
+        ``submit()`` and ``recv()`` share the same inbound stream. If using
+        both patterns concurrently, messages may be buffered in the redelivery
+        queue. For pure request/response, use ``submit()`` exclusively. For
+        pure streaming, use ``recv()`` exclusively.
+
+    Args:
+        transport: The underlying wire transport.
+        response_timeout: Default timeout for ``submit()`` calls (seconds).
     """
 
-    @abstractmethod
-    def send(self, message: TRequest) -> None:
-        """Send message without waiting for response."""
-
-    @abstractmethod
-    def recv(self, timeout: float | None = None) -> TResponse:
-        """Receive next incoming message."""
-
-    @abstractmethod
-    def submit(self, request: TRequest, timeout: float | None = None) -> TResponse:
-        """Send request and wait for matching response."""
-
-    @abstractmethod
-    def close(self) -> None:
-        """Close the channel."""
-
-    @property
-    @abstractmethod
-    def is_closed(self) -> bool:
-        """True if channel has been closed."""
-
-
-class _BaseChannel(Channel[TRequest, TResponse]):
-    """Base implementation with common logic for submit()."""
-
-    def __init__(self, response_timeout: float = 30.0) -> None:
-        """Initialize channel with timeout configuration."""
+    def __init__(
+        self,
+        transport: Transport,
+        response_timeout: float = 30.0,
+    ) -> None:
+        self._transport = transport
         self._response_timeout = response_timeout
         self._closed = False
-        self._closed_event = threading.Event()
         self._redelivery: queue.Queue[Any] = queue.Queue()
 
     @property
-    def is_closed(self) -> bool:
-        """Return True if channel is closed."""
-        return self._closed
+    def transport(self) -> Transport:
+        """The underlying wire transport."""
+        return self._transport
 
-    def _get_from_queue(self, timeout: float | None) -> Any:
-        """Get message from inbound queue. Implemented by subclasses."""
-        raise NotImplementedError
+    @property
+    def is_closed(self) -> bool:
+        """True if the channel or its transport has been closed."""
+        return self._closed or self._transport.is_closed
+
+    def send(self, message: TRequest) -> None:
+        """Send message without waiting for response."""
+        if self.is_closed:
+            raise ChannelClosedError("Channel is closed")
+        self._transport.send(message)
+
+    def recv(self, timeout: float | None = None) -> TResponse:
+        """
+        Receive next incoming message.
+
+        Checks the redelivery buffer first, then polls the transport
+        with periodic close checks. When closed, attempts to drain one
+        remaining buffered message before raising ``ChannelClosedError``.
+        """
+        try:
+            return cast(TResponse, self._redelivery.get_nowait())
+        except queue.Empty:
+            pass
+
+        if self.is_closed:
+            return self._drain_or_raise()
+
+        return self._recv_poll(timeout)
 
     def submit(self, request: TRequest, timeout: float | None = None) -> TResponse:
         """Send request and wait for matching response."""
-        if self._closed:
+        if self.is_closed:
             raise ChannelClosedError("Channel is closed")
         if not hasattr(request, "id"):
             raise ValueError("Request must have an 'id' attribute")
@@ -90,6 +173,36 @@ class _BaseChannel(Channel[TRequest, TResponse]):
 
         self.send(request)
         return self._poll_for_response(request_id, effective_timeout)
+
+    def close(self) -> None:
+        """Close the channel and its transport."""
+        self._closed = True
+        self._transport.close()
+
+    # -- internal helpers --------------------------------------------------
+
+    def _drain_or_raise(self) -> TResponse:
+        """Try to drain one buffered message from the transport before raising."""
+        try:
+            return cast(TResponse, self._transport.recv(0))
+        except (ChannelTimeoutError, Exception):
+            raise ChannelClosedError("Channel is closed")
+
+    def _recv_poll(self, timeout: float | None) -> TResponse:
+        """Poll transport with periodic close checks."""
+        poll_interval = 0.1
+        deadline = None if timeout is None else time.monotonic() + timeout
+
+        while True:
+            if self.is_closed:
+                raise ChannelClosedError("Channel is closed")
+
+            wait_time = self._calc_wait_time(poll_interval, deadline, timeout)
+            try:
+                return cast(TResponse, self._transport.recv(wait_time))
+            except ChannelTimeoutError:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise
 
     def _poll_for_response(self, request_id: str, timeout: float) -> TResponse:
         """Poll for a response with the given request_id."""
@@ -107,7 +220,7 @@ class _BaseChannel(Channel[TRequest, TResponse]):
             if message is not None:
                 return self._validate_response(message)
 
-            message = self._try_get_message(min(poll_interval, remaining))
+            message = self._try_recv(min(poll_interval, remaining))
             if message is None:
                 continue
 
@@ -116,10 +229,10 @@ class _BaseChannel(Channel[TRequest, TResponse]):
 
             self._redelivery.put(message)
 
-    def _try_get_message(self, timeout: float) -> Any | None:
-        """Try to get a message from the queue, returning None on timeout."""
+    def _try_recv(self, timeout: float) -> Any | None:
+        """Try to receive, returning None on timeout."""
         try:
-            return self._get_from_queue(timeout)
+            return self._transport.recv(timeout)
         except ChannelTimeoutError:
             return None
 
@@ -149,31 +262,6 @@ class _BaseChannel(Channel[TRequest, TResponse]):
 
         return result
 
-    def close(self) -> None:
-        """Close channel and unblock any waiting threads."""
-        self._closed = True
-        self._closed_event.set()
-
-    def _recv_poll(
-        self, inbound: queue.Queue[Any] | mp.Queue[Any], timeout: float | None
-    ) -> TResponse:
-        """Poll inbound queue with short timeouts to observe close()."""
-        poll_interval = 0.1
-        deadline = None if timeout is None else time.monotonic() + timeout
-
-        while True:
-            if self._closed:
-                raise ChannelClosedError("Channel is closed")
-
-            wait_time = self._calc_wait_time(poll_interval, deadline, timeout)
-            try:
-                return cast(TResponse, inbound.get(timeout=wait_time))
-            except queue.Empty:
-                if deadline is not None and time.monotonic() >= deadline:
-                    raise ChannelTimeoutError(
-                        f"Timeout waiting for message ({timeout}s)"
-                    )
-
     def _calc_wait_time(
         self, poll_interval: float, deadline: float | None, timeout: float | None
     ) -> float:
@@ -186,87 +274,77 @@ class _BaseChannel(Channel[TRequest, TResponse]):
         return min(poll_interval, remaining)
 
 
-class ThreadChannel(_BaseChannel[TRequest, TResponse]):
-    """Channel using queue.Queue for thread-based communication."""
+# ---------------------------------------------------------------------------
+# Built-in transports
+# ---------------------------------------------------------------------------
+
+
+class QueueTransport(Generic[TRequest, TResponse]):
+    """Transport using ``queue.Queue`` for in-process thread communication."""
 
     def __init__(
         self,
         outbound: queue.Queue[TRequest],
         inbound: queue.Queue[TResponse],
-        response_timeout: float = 30.0,
     ) -> None:
-        """Initialize with outbound and inbound queues."""
-        super().__init__(response_timeout)
         self._outbound = outbound
         self._inbound = inbound
+        self._closed = False
 
     def send(self, message: TRequest) -> None:
-        """Send message to outbound queue."""
-        if self._closed:
-            raise ChannelClosedError("Channel is closed")
+        """Put message on the outbound queue."""
         self._outbound.put(message)
 
-    def _get_from_queue(self, timeout: float | None) -> Any:
-        """Get message from inbound queue with timeout."""
+    def recv(self, timeout: float | None = None) -> TResponse:
+        """Get next message from the inbound queue."""
         try:
-            return self._inbound.get(timeout=timeout)
+            return cast(TResponse, self._inbound.get(timeout=timeout))
         except queue.Empty:
             raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
 
-    def recv(self, timeout: float | None = None) -> TResponse:
-        """Receive next message from inbound queue."""
-        try:
-            return cast(TResponse, self._redelivery.get_nowait())
-        except queue.Empty:
-            pass
+    def close(self) -> None:
+        """Mark as closed (queue.Queue has no close method)."""
+        self._closed = True
 
-        if self._closed:
-            try:
-                return cast(TResponse, self._inbound.get_nowait())
-            except queue.Empty:
-                raise ChannelClosedError("Channel is closed")
-
-        return self._recv_poll(self._inbound, timeout)
+    @property
+    def is_closed(self) -> bool:
+        """Return True if closed."""
+        return self._closed
 
 
-class ProcessChannel(_BaseChannel[TRequest, TResponse]):
-    """Channel using multiprocessing.Queue for cross-process communication."""
+class ProcessQueueTransport(Generic[TRequest, TResponse]):
+    """Transport using ``multiprocessing.Queue`` for cross-process IPC."""
 
     def __init__(
         self,
         outbound: mp.Queue[TRequest],
         inbound: mp.Queue[TResponse],
-        response_timeout: float = 30.0,
     ) -> None:
-        """Initialize with outbound and inbound multiprocessing queues."""
-        super().__init__(response_timeout)
         self._outbound = outbound
         self._inbound = inbound
+        self._closed = False
 
     def send(self, message: TRequest) -> None:
-        """Send message to outbound queue."""
-        if self._closed:
-            raise ChannelClosedError("Channel is closed")
+        """Put message on the outbound mp.Queue."""
         self._outbound.put(message)
 
     def recv(self, timeout: float | None = None) -> TResponse:
-        """Receive next message from inbound queue."""
+        """Get next message from the inbound mp.Queue."""
         try:
-            return cast(TResponse, self._redelivery.get_nowait())
+            return cast(TResponse, self._inbound.get(timeout=timeout))
         except queue.Empty:
-            pass
-
-        # ProcessChannel.close() closes underlying mp.Queue, so we can't drain
-        if self._closed:
-            raise ChannelClosedError("Channel is closed")
-
-        return self._recv_poll(self._inbound, timeout)
+            raise ChannelTimeoutError(f"Timeout waiting for message ({timeout}s)")
 
     def close(self) -> None:
-        """Close both queues and mark channel as closed."""
-        super().close()
+        """Close both multiprocessing queues."""
+        self._closed = True
         try:
             self._outbound.close()
             self._inbound.close()
         except Exception:
             pass
+
+    @property
+    def is_closed(self) -> bool:
+        """Return True if closed."""
+        return self._closed

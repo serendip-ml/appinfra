@@ -10,6 +10,26 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Added
+- Pluggable transport for `appinfra.service`: `Transport` and `AsyncTransport` protocols define
+  the wire level (`send`/`recv`/`close`/`is_closed`); `Channel` and `AsyncChannel` are now
+  concrete classes that wrap any Transport and provide `submit()`, `recv()` correlation, and
+  redelivery buffering
+- `ChannelPairFactory` protocol and injection points (`channel_factory` on `RunnerFactory`,
+  per-call `channel_pair` on `create_*_with_channel()` methods)
+- Built-in transports: `QueueTransport`, `ProcessQueueTransport`, `AsyncQueueTransport`,
+  `AsyncProcessQueueTransport`
+
+### Changed
+- **Breaking**: `Channel` and `AsyncChannel` are now concrete (composition over inheritance);
+  `ThreadChannel`, `ProcessChannel`, `AsyncThreadChannel`, `AsyncProcessChannel` removed —
+  use `QueueChannelFactory`/`ProcessQueueChannelFactory` or `Channel(transport)` directly
+- **Breaking**: `ChannelFactory` replaced by `QueueChannelFactory`, `ProcessQueueChannelFactory`,
+  `AsyncQueueChannelFactory`, `AsyncProcessQueueChannelFactory` — each with a single
+  `create_pair()` method
+- **Breaking**: `ChannelPairFactory` protocol uses single `create_pair()` method instead of
+  separate `create_thread_pair()`/`create_process_pair()`
+
 ### Fixed
 - `python -m appinfra.version.build_info` now includes `MODIFIED` field, matching setuptools hook
 - `make check` reported `cq.strict` target even when `INFRA_DEV_CQ_STRICT=false`

@@ -7,10 +7,16 @@ from typing import Any
 
 from ...log import Logger
 from ..base import Service
-from ..channel import ProcessChannel, ThreadChannel
+from ..channel.sync import Channel
 from ..runner import ProcessRunner, Runner, ThreadRunner
 from ..state import RestartPolicy
-from .channel import ChannelConfig, ChannelFactory
+from .channel import (
+    ChannelConfig,
+    ChannelPair,
+    ChannelPairFactory,
+    ProcessQueueChannelFactory,
+    QueueChannelFactory,
+)
 
 
 @dataclass
@@ -24,8 +30,8 @@ class RunnerWithChannel:
     """
 
     runner: Runner
-    channel: ThreadChannel[Any, Any] | ProcessChannel[Any, Any]
-    service_channel: ThreadChannel[Any, Any] | ProcessChannel[Any, Any]
+    channel: Channel[Any, Any]
+    service_channel: Channel[Any, Any]
 
 
 class RunnerFactory:
@@ -57,6 +63,7 @@ class RunnerFactory:
         lg: Logger,
         default_policy: RestartPolicy | None = None,
         channel_config: ChannelConfig | None = None,
+        channel_factory: ChannelPairFactory | None = None,
         stop_timeout: float = 5.0,
     ) -> None:
         """
@@ -65,12 +72,16 @@ class RunnerFactory:
         Args:
             lg: Logger for factory operations
             default_policy: Default restart policy for runners
-            channel_config: Configuration for channels
+            channel_config: Configuration for built-in channels (ignored if
+                channel_factory is provided)
+            channel_factory: Custom transport factory. When provided, all
+                channel creation uses this instead of the built-in factories.
             stop_timeout: Default stop timeout for ProcessRunner
         """
         self._lg = lg
         self._default_policy = default_policy
-        self._channel_factory = ChannelFactory(channel_config)
+        self._custom_channel_factory = channel_factory
+        self._channel_config = channel_config
         self._stop_timeout = stop_timeout
 
     def create_thread_runner(
@@ -95,22 +106,21 @@ class RunnerFactory:
         self,
         service: Service,
         policy: RestartPolicy | None = None,
+        channel_pair: ChannelPair | None = None,
     ) -> RunnerWithChannel:
         """
         Create a ThreadRunner with a channel pair for communication.
 
-        The service should accept the service_channel and use it to
-        receive requests and send responses.
-
         Args:
             service: Service to run
             policy: Restart policy (uses default if not provided)
+            channel_pair: Pre-built channel pair (overrides factory).
 
         Returns:
             RunnerWithChannel containing runner and both channels
         """
         runner = self.create_thread_runner(service, policy)
-        pair = self._channel_factory.create_thread_pair()
+        pair = channel_pair or self._create_thread_pair()
 
         return RunnerWithChannel(
             runner=runner,
@@ -148,29 +158,39 @@ class RunnerFactory:
         service: Service,
         policy: RestartPolicy | None = None,
         stop_timeout: float | None = None,
+        channel_pair: ChannelPair | None = None,
     ) -> RunnerWithChannel:
         """
         Create a ProcessRunner with a channel pair for communication.
 
-        The service should accept the service_channel and use it to
-        receive requests and send responses.
-
-        IMPORTANT: Create this BEFORE starting the runner. Pass the
-        service_channel to the service before it's pickled.
+        IMPORTANT: Create this BEFORE starting the runner.
 
         Args:
             service: Service to run (must be picklable)
             policy: Restart policy (uses default if not provided)
             stop_timeout: Stop timeout (uses factory default if not provided)
+            channel_pair: Pre-built channel pair (overrides factory).
 
         Returns:
             RunnerWithChannel containing runner and both channels
         """
         runner = self.create_process_runner(service, policy, stop_timeout)
-        pair = self._channel_factory.create_process_pair()
+        pair = channel_pair or self._create_process_pair()
 
         return RunnerWithChannel(
             runner=runner,
             channel=pair.parent,
             service_channel=pair.child,
         )
+
+    def _create_thread_pair(self) -> ChannelPair:
+        """Create a channel pair for thread runners."""
+        if self._custom_channel_factory is not None:
+            return self._custom_channel_factory.create_pair()
+        return QueueChannelFactory(self._channel_config).create_pair()
+
+    def _create_process_pair(self) -> ChannelPair:
+        """Create a channel pair for process runners."""
+        if self._custom_channel_factory is not None:
+            return self._custom_channel_factory.create_pair()
+        return ProcessQueueChannelFactory(self._channel_config).create_pair()

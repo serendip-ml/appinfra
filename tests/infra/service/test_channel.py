@@ -6,13 +6,14 @@ from dataclasses import dataclass
 import pytest
 
 from appinfra.service import (
+    Channel,
     ChannelClosedError,
     ChannelConfig,
     ChannelError,
-    ChannelFactory,
     ChannelTimeoutError,
     Message,
-    ThreadChannel,
+    ProcessQueueChannelFactory,
+    QueueChannelFactory,
 )
 
 
@@ -64,12 +65,12 @@ class TestMessage:
         assert m.is_final is True
 
 
-class TestThreadChannel:
-    """Tests for ThreadChannel."""
+class TestQueueChannel:
+    """Tests for Channel with QueueTransport."""
 
     def test_send_recv(self) -> None:
         """Basic send/recv works."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         parent.send(Request(id="1", data="hello"))
@@ -81,7 +82,7 @@ class TestThreadChannel:
 
     def test_bidirectional(self) -> None:
         """Messages flow in both directions."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         # Parent to child
@@ -94,7 +95,7 @@ class TestThreadChannel:
 
     def test_recv_timeout(self) -> None:
         """recv raises ChannelTimeoutError on timeout."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         parent = pair.parent
 
         with pytest.raises(ChannelTimeoutError):
@@ -102,7 +103,7 @@ class TestThreadChannel:
 
     def test_submit_request_response(self) -> None:
         """submit() sends request and waits for matching response."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         # Responder thread
@@ -121,7 +122,7 @@ class TestThreadChannel:
 
     def test_submit_timeout(self) -> None:
         """submit() raises ChannelTimeoutError if no response."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         parent = pair.parent
 
         with pytest.raises(ChannelTimeoutError):
@@ -129,7 +130,7 @@ class TestThreadChannel:
 
     def test_submit_requires_id(self) -> None:
         """submit() raises ValueError if request has no id."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         parent = pair.parent
 
         with pytest.raises(ValueError, match="id"):
@@ -137,7 +138,7 @@ class TestThreadChannel:
 
     def test_close_channel(self) -> None:
         """Closed channel raises ChannelClosedError on send."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         parent = pair.parent
 
         parent.close()
@@ -148,7 +149,7 @@ class TestThreadChannel:
 
     def test_close_recv_drains(self) -> None:
         """Closed channel drains buffered messages before raising."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         parent.send(Request(id="1", data="msg1"))
@@ -169,7 +170,7 @@ class TestThreadChannel:
 
     def test_concurrent_submits(self) -> None:
         """Multiple concurrent submits get correct responses."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
         results: dict[str, str] = {}
 
@@ -202,7 +203,7 @@ class TestThreadChannel:
 
     def test_response_with_error(self) -> None:
         """submit() raises ChannelError if response has error."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         def responder() -> None:
@@ -218,15 +219,15 @@ class TestThreadChannel:
         t.join()
 
 
-class TestChannelFactory:
-    """Tests for ChannelFactory."""
+class TestQueueChannelFactory:
+    """Tests for QueueChannelFactory."""
 
     def test_creates_connected_pair(self) -> None:
         """Creates two connected channels."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
 
-        assert isinstance(pair.parent, ThreadChannel)
-        assert isinstance(pair.child, ThreadChannel)
+        assert isinstance(pair.parent, Channel)
+        assert isinstance(pair.child, Channel)
 
         pair.parent.send(Message(payload="test"))
         msg = pair.child.recv(timeout=0.1)
@@ -234,8 +235,8 @@ class TestChannelFactory:
 
     def test_custom_timeout(self) -> None:
         """Respects custom response timeout from config."""
-        factory = ChannelFactory(ChannelConfig(response_timeout=0.05))
-        pair = factory.create_thread_pair()
+        factory = QueueChannelFactory(ChannelConfig(response_timeout=0.05))
+        pair = factory.create_pair()
 
         # submit uses the configured timeout
         with pytest.raises(ChannelTimeoutError):
@@ -247,7 +248,7 @@ class TestSubmitOnClosedChannel:
 
     def test_submit_on_closed_raises(self) -> None:
         """submit() raises ChannelClosedError on closed channel."""
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         pair.parent.close()
 
         with pytest.raises(ChannelClosedError):
@@ -261,7 +262,7 @@ class TestCloseUnblocksRecv:
         """close() unblocks a thread waiting in recv(timeout=None)."""
         import time
 
-        pair = ChannelFactory().create_thread_pair()
+        pair = QueueChannelFactory().create_pair()
         parent = pair.parent
         error_raised: list[Exception] = []
 
@@ -286,12 +287,12 @@ class TestCloseUnblocksRecv:
         assert isinstance(error_raised[0], ChannelClosedError)
 
 
-class TestProcessChannel:
-    """Tests for ProcessChannel."""
+class TestProcessQueueChannel:
+    """Tests for Channel with ProcessQueueTransport."""
 
     def test_send_recv(self) -> None:
         """Basic send/recv works."""
-        pair = ChannelFactory().create_process_pair()
+        pair = ProcessQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         parent.send(Request(id="1", data="hello"))
@@ -305,7 +306,7 @@ class TestProcessChannel:
 
     def test_recv_timeout(self) -> None:
         """recv raises ChannelTimeoutError on timeout."""
-        pair = ChannelFactory().create_process_pair()
+        pair = ProcessQueueChannelFactory().create_pair()
 
         with pytest.raises(ChannelTimeoutError):
             pair.parent.recv(timeout=0.1)
@@ -313,8 +314,8 @@ class TestProcessChannel:
         pair.close()
 
     def test_close_channel(self) -> None:
-        """Closing ProcessChannel closes underlying queues."""
-        pair = ChannelFactory().create_process_pair()
+        """Closing channel closes underlying queues."""
+        pair = ProcessQueueChannelFactory().create_pair()
         parent, child = pair.parent, pair.child
 
         parent.send(Request(id="1", data="msg1"))
@@ -331,7 +332,7 @@ class TestProcessChannel:
 
     def test_send_on_closed_raises(self) -> None:
         """send() raises ChannelClosedError on closed channel."""
-        pair = ChannelFactory().create_process_pair()
+        pair = ProcessQueueChannelFactory().create_pair()
         pair.parent.close()
 
         with pytest.raises(ChannelClosedError):
@@ -340,11 +341,11 @@ class TestProcessChannel:
         pair.child.close()
 
     def test_recv_on_closed_raises(self) -> None:
-        """recv() on closed ProcessChannel raises ChannelClosedError."""
-        pair = ChannelFactory().create_process_pair()
+        """recv() on closed channel raises ChannelClosedError."""
+        pair = ProcessQueueChannelFactory().create_pair()
 
         try:
-            # ProcessChannel.close() closes underlying mp.Queue, so recv raises
+            # Channel.close() closes underlying mp.Queue, so recv raises
             pair.child.close()
             with pytest.raises(ChannelClosedError):
                 pair.child.recv(timeout=0.1)

@@ -1,6 +1,6 @@
 """Queue-based IPC channel using service package infrastructure.
 
-This module provides IPCChannel, a thin wrapper around AsyncProcessChannel
+This module provides IPCChannel, a thin wrapper around AsyncChannel
 that adds application-specific features:
 - max_pending enforcement
 - health_status reporting
@@ -13,7 +13,7 @@ import multiprocessing as mp
 from collections.abc import AsyncIterator
 from typing import Any
 
-from ....service.channel import AsyncProcessChannel
+from ....service.channel import AsyncChannel, AsyncProcessQueueTransport
 from ..config.ipc import IPCConfig
 
 
@@ -21,7 +21,7 @@ class IPCChannel:
     """
     Bidirectional IPC channel for FastAPI subprocess communication.
 
-    Wraps AsyncProcessChannel to provide:
+    Wraps AsyncChannel to provide:
     - max_pending request limiting
     - Health status reporting for /_health endpoint
     - start_polling/stop_polling lifecycle for FastAPI lifespan compatibility
@@ -53,9 +53,8 @@ class IPCChannel:
             response_q: Queue for receiving responses from main process
             config: IPC configuration
         """
-        self._channel: AsyncProcessChannel[Any, Any] = AsyncProcessChannel(
-            outbound=request_q,
-            inbound=response_q,
+        self._channel: AsyncChannel[Any, Any] = AsyncChannel(
+            AsyncProcessQueueTransport(outbound=request_q, inbound=response_q),
             response_timeout=config.response_timeout,
         )
         self._config = config
@@ -152,7 +151,7 @@ class IPCChannel:
         """
         Start the channel (FastAPI lifespan compatibility).
 
-        AsyncProcessChannel polls on-demand, so this is a no-op.
+        AsyncChannel polls on-demand, so this is a no-op.
         Kept for API compatibility with FastAPI adapter lifespan.
         """
         pass
