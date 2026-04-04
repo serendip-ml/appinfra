@@ -11,19 +11,24 @@ For API stability guarantees and deprecation policy, see
 ## [Unreleased]
 
 ### Added
+- `Channel` and `AsyncChannel` are now **protocols** — smart transports (ZMQ, gRPC) can implement
+  the channel interface directly without wrapping in a `BufferedChannel`
+- `BufferedChannel` and `AsyncBufferedChannel` are the concrete implementations that wrap a
+  `Transport`/`AsyncTransport` with request/response correlation and redelivery buffering
 - Pluggable transport for `appinfra.service`: `Transport` and `AsyncTransport` protocols define
-  the wire level (`send`/`recv`/`close`/`is_closed`); `Channel` and `AsyncChannel` are now
-  concrete classes that wrap any Transport and provide `submit()`, `recv()` correlation, and
-  redelivery buffering
+  the wire level (`send`/`recv`/`close`/`is_closed`)
 - `ChannelPairFactory` protocol and injection points (`channel_factory` on `RunnerFactory`,
   per-call `channel_pair` on `create_*_with_channel()` methods)
 - Built-in transports: `QueueTransport`, `ProcessQueueTransport`, `AsyncQueueTransport`,
   `AsyncProcessQueueTransport`
 
 ### Changed
-- **Breaking**: `Channel` and `AsyncChannel` are now concrete (composition over inheritance);
+- **Breaking**: `Channel` and `AsyncChannel` are now **protocols** — smart transports (ZMQ, gRPC)
+  can implement the interface directly; the concrete implementations are `BufferedChannel` and
+  `AsyncBufferedChannel` which wrap a `Transport` with correlation and redelivery;
   `ThreadChannel`, `ProcessChannel`, `AsyncThreadChannel`, `AsyncProcessChannel` removed —
-  use `QueueChannelFactory`/`ProcessQueueChannelFactory` or `Channel(transport)` directly
+  use `QueueChannelFactory`/`ProcessQueueChannelFactory` or `BufferedChannel(transport)`;
+  `isinstance(x, Channel)` still works (`@runtime_checkable`)
 - **Breaking**: `ChannelFactory` replaced by `QueueChannelFactory`, `ProcessQueueChannelFactory`,
   `AsyncQueueChannelFactory`, `AsyncProcessQueueChannelFactory` — each with a single
   `create_pair()` method
