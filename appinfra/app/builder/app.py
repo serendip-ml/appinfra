@@ -428,11 +428,11 @@ class AppBuilder:
             AppBuilder: Self for method chaining
 
         Example:
-            @builder.tool(name="run")
+            app = builder.with_main_tool("run").build()
+
+            @app.tool(name="run")
             def run_proxy(self):
                 ...
-
-            builder.with_main_tool("run")
 
             # Or with tool object:
             builder.with_main_tool(my_tool)

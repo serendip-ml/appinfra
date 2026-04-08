@@ -452,8 +452,7 @@ class DecoratorAPI:
     Provides @tool, @argument, and related decorators that generate
     proper Tool classes while offering a simpler syntax.
 
-    This class is instantiated by App and AppBuilder to provide
-    decorator methods.
+    This class is instantiated by App to provide decorator methods.
 
     Example:
         >>> from appinfra.app import App
