@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from ..config.api import ApiConfig
+from ..ratelimit.interface import RateLimiter
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -57,6 +58,15 @@ class MiddlewareDefinition:
 
     middleware_class: type[Any]
     options: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class RateLimitDefinition:
+    """Definition for rate limiting configuration."""
+
+    limiter: RateLimiter
+    exempt_paths: list[str] = field(default_factory=list)
+    cleanup_interval: float = 60.0
 
 
 @dataclass
@@ -152,9 +162,11 @@ async def _run_startup_callbacks(
     for cb in callbacks:
         name = cb.name or cb.callback.__name__
         if lg is not None:
-            lg.debug(f"running startup callback: {name}")
+            lg.trace("running startup callback...", extra={"callback": name})
         try:
             await cb.callback(app)
+            if lg is not None:
+                lg.debug("startup callback completed", extra={"callback": name})
         except Exception as e:
             raise CallbackError(f"Startup callback '{name}' failed") from e
 
@@ -170,12 +182,17 @@ async def _run_shutdown_callbacks(
     for cb in callbacks:
         name = cb.name or cb.callback.__name__
         if lg is not None:
-            lg.debug(f"running shutdown callback: {name}")
+            lg.trace("running shutdown callback...", extra={"callback": name})
         try:
             await cb.callback(app)
+            if lg is not None:
+                lg.debug("shutdown callback completed", extra={"callback": name})
         except Exception as e:
             if lg is not None:
-                lg.error(f"error in shutdown callback '{name}'", extra={"exception": e})
+                lg.error(
+                    "error in shutdown callback",
+                    extra={"callback": name, "exception": e},
+                )
             raise CallbackError(f"Shutdown callback '{name}' failed") from e
 
 
@@ -258,6 +275,9 @@ class FastAPIAdapter:
         self._response_callbacks: list[ResponseCallbackDefinition] = []
         self._exception_callbacks: list[ExceptionCallbackDefinition] = []
 
+        # Rate limiting
+        self._rate_limiters: list[RateLimitDefinition] = []
+
         # Subprocess logger (injected after unpickling in subprocess mode)
         self._subprocess_lg: Logger | None = None
 
@@ -280,6 +300,10 @@ class FastAPIAdapter:
     def set_cors(self, cors: CORSDefinition) -> None:
         """Set CORS configuration."""
         self._cors = cors
+
+    def add_rate_limiter(self, definition: RateLimitDefinition) -> None:
+        """Add a rate limiter configuration."""
+        self._rate_limiters.append(definition)
 
     def add_startup_callback(self, callback: LifecycleCallbackDefinition) -> None:
         """Add a startup callback."""
@@ -327,6 +351,7 @@ class FastAPIAdapter:
         self._configure_logger_injection(app)
         self._configure_request_response_middleware(app)
         self._configure_middleware(app)
+        self._configure_rate_limiting(app)
         self._configure_exception_handlers(app)
         self._configure_routes(app)
         self._configure_routers(app)
@@ -375,36 +400,29 @@ class FastAPIAdapter:
         """
         Build lifespan context manager from user callbacks and IPC lifecycle.
 
-        If user provided a lifespan, use it directly.
-        Otherwise, wrap startup/shutdown callbacks into a lifespan.
+        If both lifespan and callbacks are provided, callbacks wrap the lifespan.
         If ipc_channel is provided, wrap the result with IPC start/stop.
         Returns None if no lifecycle callbacks configured and no IPC channel.
         """
-        # Get user-provided lifespan or create one from callbacks
-        user_lifespan: LifespanCallable | None = None
-
+        # Start with user-provided lifespan (may be None)
+        result: LifespanCallable | None = None
         if self._lifespan is not None:
-            if self._startup_callbacks or self._shutdown_callbacks:
-                from ..errors import ConfigError
+            result = self._lifespan.lifespan
 
-                raise ConfigError(
-                    "Cannot use both lifespan and startup/shutdown callbacks. "
-                    "Use either with_lifespan() or with_on_startup()/with_on_shutdown(), not both."
-                )
-            user_lifespan = self._lifespan.lifespan
-        elif self._startup_callbacks or self._shutdown_callbacks:
-            user_lifespan = self._create_lifespan_from_callbacks()
+        # Wrap with startup/shutdown callbacks if any
+        if self._startup_callbacks or self._shutdown_callbacks:
+            result = self._wrap_lifespan_with_callbacks(result)
 
-        # If no IPC channel, just return user lifespan (may be None)
-        if ipc_channel is None:
-            return user_lifespan
+        # Wrap with IPC lifecycle if channel provided
+        if ipc_channel is not None:
+            result = self._wrap_lifespan_with_ipc(result, ipc_channel)
 
-        # Wrap with IPC lifecycle - IPC polling must be integrated into lifespan
-        # because FastAPI ignores on_event() handlers when a lifespan is present
-        return self._wrap_lifespan_with_ipc(user_lifespan, ipc_channel)
+        return result
 
-    def _create_lifespan_from_callbacks(self) -> LifespanCallable:
-        """Create a lifespan context manager from startup/shutdown callbacks."""
+    def _wrap_lifespan_with_callbacks(
+        self, inner: LifespanCallable | None
+    ) -> LifespanCallable:
+        """Wrap a lifespan with startup/shutdown callbacks."""
         startup_callbacks = self._startup_callbacks
         shutdown_callbacks = self._shutdown_callbacks
         lg = self._subprocess_lg
@@ -412,8 +430,14 @@ class FastAPIAdapter:
         @asynccontextmanager
         async def lifespan(app: Any) -> AsyncIterator[None]:
             await _run_startup_callbacks(startup_callbacks, app, lg)
-            yield
-            await _run_shutdown_callbacks(shutdown_callbacks, app, lg)
+            try:
+                if inner is not None:
+                    async with inner(app):
+                        yield
+                else:
+                    yield
+            finally:
+                await _run_shutdown_callbacks(shutdown_callbacks, app, lg)
 
         return lifespan
 
@@ -477,6 +501,26 @@ class FastAPIAdapter:
         # Add other middleware
         for mw in self._middleware:
             app.add_middleware(mw.middleware_class, **mw.options)  # type: ignore[arg-type]
+
+    def _configure_rate_limiting(self, app: FastAPI) -> None:
+        """Configure rate limiting middleware on the app.
+
+        Each limiter gets its own middleware layer. Added last among middleware
+        so they run outermost (Starlette applies in reverse order of
+        add_middleware calls). Multiple limiters are checked independently -
+        the first one to deny a request wins.
+        """
+        if not self._rate_limiters:
+            return
+        from ..ratelimit.middleware import RateLimitMiddleware
+
+        for rl in self._rate_limiters:
+            app.add_middleware(
+                RateLimitMiddleware,
+                limiter=rl.limiter,
+                exempt_paths=rl.exempt_paths,
+                cleanup_interval=rl.cleanup_interval,
+            )
 
     def _configure_exception_handlers(self, app: FastAPI) -> None:
         """Configure exception handlers on the app."""

@@ -197,11 +197,15 @@ class RateLimiter:
         self,
         lg: Logger,               # Logger (required, first parameter)
         per_minute: float,        # Operations per minute (e.g., 1/60 for hourly)
+        initial: bool = False,    # True = first call immediate, False = wait first interval
     ): ...
 
     def next(self, respect_max_ticks: bool = True) -> float: ...  # Blocking: wait and return delay
     def try_next(self) -> bool: ...                               # Non-blocking: return True if allowed
 ```
+
+By default, the first call waits one full interval before proceeding. Set `initial=True` for
+immediate first execution (matches `Ticker(initial=...)` semantics).
 
 **Blocking Mode (`next()`):**
 

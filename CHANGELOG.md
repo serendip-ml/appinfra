@@ -10,6 +10,52 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-13
+
+### Added
+- `RateLimiter(initial=...)` parameter — controls whether first call waits or goes through
+  immediately
+- Guide: [Decorator API with Config Files](appinfra/docs/guides/decorator-config-pattern.md)
+- HTTP rate limiting middleware for FastAPI (`appinfra.app.fastapi.ratelimit`) with
+  `TokenBucketLimiter`
+- Service execution framework (`appinfra.service`) — runners, channels, and lifecycle management
+  for background services
+- `Channel` and `AsyncChannel` are now protocols — custom transports can implement the interface
+  directly
+- `Service.lg` property for accessing the logger instance
+
+### Changed
+- **Breaking:** Removed `tool()` and `argument` decorator methods from `AppBuilder`. Use
+  `@app.tool()` / `@app.argument()` on the built `App` instead — build first, then decorate.
+  See [Decorator API with Config Files](appinfra/docs/guides/decorator-config-pattern.md).
+- **Breaking**: `Channel` and `AsyncChannel` are now **protocols** — smart transports (ZMQ, gRPC)
+  can implement the interface directly; the concrete implementations are `BufferedChannel` and
+  `AsyncBufferedChannel` which wrap a `Transport` with correlation and redelivery;
+  `ThreadChannel`, `ProcessChannel`, `AsyncThreadChannel`, `AsyncProcessChannel` removed —
+  use `QueueChannelFactory`/`ProcessQueueChannelFactory` or `BufferedChannel(transport)`;
+  `isinstance(x, Channel)` still works (`@runtime_checkable`)
+- **Breaking**: `ChannelFactory` replaced by `QueueChannelFactory`, `ProcessQueueChannelFactory`,
+  `AsyncQueueChannelFactory`, `AsyncProcessQueueChannelFactory` — each with a single
+  `create_pair()` method
+- **Breaking**: `ChannelPairFactory` protocol uses single `create_pair()` method instead of
+  separate `create_thread_pair()`/`create_process_pair()`
+- **Breaking:** `IPCChannel.submit()` no longer takes a separate `request_id` parameter. The ID is
+  now extracted from the request object's `id` attribute. This simplifies the API and prevents
+  mismatches between the request ID and the request object.
+  - Old: `await ipc.submit(request_id, request, timeout=30.0)`
+  - New: `await ipc.submit(request, timeout=30.0)` (request must have `.id` attribute)
+- FastAPI subprocess mode now uses `ProcessRunner` from the service package instead of the internal
+  `SubprocessManager`. This provides better integration with the service execution framework and
+  enables monitor-based auto-restart.
+
+### Fixed
+- `python -m appinfra.version.build_info` now includes `MODIFIED` field, matching setuptools hook
+- `make check` reported `cq.strict` target even when `INFRA_DEV_CQ_STRICT=false`
+- Documentation index files referenced non-existent `exceptions.md` (renamed to `errors.md` in v0.5.0)
+- Missing API doc reference for `fastapi.md` in `docs/api/index.md`
+- Missing guides in `docs/index.md`: api-stability, framework-integration, pytest-plugin
+- Missing example sections in `docs/index.md` and `examples/README.md` for examples 07-12
+
 ## [0.5.0] - 2026-03-14
 
 ### Fixed
@@ -488,7 +534,8 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/llm-works/appinfra/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/llm-works/appinfra/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/llm-works/appinfra/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/llm-works/appinfra/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/llm-works/appinfra/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/llm-works/appinfra/compare/v0.3.5...v0.4.0

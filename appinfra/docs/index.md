@@ -16,12 +16,16 @@ appinfra docs find <text>        # Search documentation for text
 
 ## Guides
 
+- [Decorator API with Config Files](guides/decorator-config-pattern.md) - Build app, then decorate
 - [Configuration Precedence](guides/configuration-precedence.md) - CLI > Env > YAML override rules
 - [Logging Builder](guides/logging-builder.md) - Fluent API for logging configuration
 - [Config-Based Logging](guides/config-based-logging.md) - YAML-based logging setup
 - [Hot-Reload Logging](guides/hot-reload-logging.md) - Dynamic config reloading without restart
 - [Environment Variables](guides/environment-variables.md) - Override config with env vars
 - [PostgreSQL Test Helper](guides/pg-test-helper.md) - Testing with PostgreSQL
+- [Pytest Plugin](guides/pytest-plugin.md) - Framework pytest plugin and fixtures
+- [Framework Integration](guides/framework-integration.md) - Integrating with external frameworks
+- [API Stability](guides/api-stability.md) - API versioning and stability guarantees
 - [Makefile Customization](guides/makefile-customization.md) - Extending framework Makefiles
 - [Virtual Environment](guides/virtual-environment.md) - Development environment setup
 - [Test Naming Standards](guides/test-naming-standards.md) - Test naming conventions
@@ -37,7 +41,7 @@ appinfra docs find <text>        # Search documentation for text
 - [Database Layer](api/database.md) - PostgreSQL interface
 - [Time & Scheduling](api/time.md) - Ticker, scheduler, utilities
 - [Utilities](api/utilities.md) - DotDict, Config, rate limiting
-- [Exceptions](api/exceptions.md) - Exception hierarchy
+- [Exceptions](api/errors.md) - Exception hierarchy
 
 ## Examples
 
@@ -47,7 +51,12 @@ appinfra docs find <text>        # Search documentation for text
 - [04_configuration](../examples/04_configuration/) - Configuration patterns
 - [05_database](../examples/05_database/) - Database usage
 - [06_advanced](../examples/06_advanced/) - Advanced patterns
+- [07_fastapi](../examples/07_fastapi/) - FastAPI server integration
 - [08_decorators](../examples/08_decorators/) - Decorator-based tool definitions
+- [09_ui](../examples/09_ui/) - Interactive UI components
+- [10_plugins](../examples/10_plugins/) - Plugin system examples
+- [11_docs](../examples/11_docs/) - Documentation generation
+- [12_version_tracking](../examples/12_version_tracking/) - Version and commit tracking
 
 ## Other
 

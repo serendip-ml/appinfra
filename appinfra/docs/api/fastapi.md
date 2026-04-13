@@ -169,6 +169,54 @@ server = (ServerBuilder(lg, "myapi")
     .build())
 ```
 
+### Rate Limiting
+
+Add per-IP or global rate limiting via `with_rate_limiter()`. Uses a raw ASGI middleware (not
+BaseHTTPMiddleware) for correct behavior with streaming and background tasks.
+
+```python
+from appinfra.app.fastapi.ratelimit import TokenBucketLimiter
+
+server = (ServerBuilder(lg, "myapi")
+    .with_rate_limiter(
+        TokenBucketLimiter(rate="60/min", burst=10),
+        exempt_paths=["/health"],
+    )
+    .routes.with_route("/health", health).done()
+    .build())
+```
+
+**TokenBucketLimiter options:**
+
+| Option | Description |
+|--------|-------------|
+| `rate` | Max requests per window. String (`"60/min"`) or int (requires `window`). |
+| `window` | Window in seconds (default: 60). Ignored when rate is a string. |
+| `burst` | Max burst capacity (default: same as rate). |
+| `proxy_header` | Header for real client IP (e.g., `"X-Forwarded-For"`, `"CF-Connecting-IP"`). |
+| `key_func` | Custom key extraction: `Callable[[scope], str]`. Overrides proxy_header. |
+| `stale_ttl` | Seconds before idle entries are cleaned up (default: window * 2). |
+
+**Multiple limiters** can be chained. Each runs independently - first to deny wins:
+
+```python
+server = (ServerBuilder(lg, "myapi")
+    # Global: 1000 req/min across all clients
+    .with_rate_limiter(
+        TokenBucketLimiter(rate="1000/min", key_func=lambda s: "global"),
+        exempt_paths=["/health"],
+    )
+    # Per-IP: 60 req/min per client
+    .with_rate_limiter(
+        TokenBucketLimiter(rate="60/min"),
+        exempt_paths=["/health"],
+    )
+    .build())
+```
+
+Denied requests receive a `429 Too Many Requests` response with `Retry-After` header. Allowed
+responses include `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers.
+
 ### Lifecycle Callbacks
 
 Register callbacks for application lifecycle events:
@@ -390,7 +438,8 @@ server.stop()            # Stop subprocess
 
 ## IPCChannel
 
-Async IPC for FastAPI route handlers to communicate with the main process.
+Async IPC for FastAPI route handlers to communicate with the main process. Wraps
+`AsyncChannel` with an `AsyncProcessQueueTransport` from the service package.
 
 ```python
 from fastapi import Request
@@ -399,9 +448,9 @@ async def process_handler(request: Request):
     ipc: IPCChannel = request.app.state.ipc_channel
 
     # Submit request and wait for response
+    # Request object must have an `id` attribute for routing
     response = await ipc.submit(
-        request_id="unique-id",
-        request={"data": "..."},
+        request=WorkRequest(id="unique-id", data="..."),
         timeout=30.0  # Optional, defaults to config
     )
 
@@ -417,7 +466,7 @@ async def stream_handler(request: Request):
     ipc: IPCChannel = request.app.state.ipc_channel
 
     async def generate():
-        async for chunk in ipc.submit_streaming("req-id", {"prompt": "..."}):
+        async for chunk in ipc.submit_stream(WorkRequest(id="req-id", prompt="...")):
             yield chunk.data
             if chunk.is_final:
                 break
@@ -473,12 +522,11 @@ router = APIRouter()
 async def generate(body: GenerateRequest, request: Request):
     ipc = request.app.state.ipc_channel
 
-    # Create request with unique ID
-    req_id = str(uuid4())
-    work_request = WorkRequest(id=req_id, prompt=body.prompt, max_tokens=body.max_tokens)
+    # Create request with unique ID (id attribute required for routing)
+    work_request = WorkRequest(id=str(uuid4()), prompt=body.prompt, max_tokens=body.max_tokens)
 
     # Submit and wait for response
-    response = await ipc.submit(req_id, work_request, timeout=60.0)
+    response = await ipc.submit(work_request, timeout=60.0)
 
     if response.error:
         raise HTTPException(status_code=500, detail=response.error)
@@ -493,11 +541,10 @@ from fastapi.responses import StreamingResponse
 @router.post("/stream")
 async def stream(body: GenerateRequest, request: Request):
     ipc = request.app.state.ipc_channel
-    req_id = str(uuid4())
-    work_request = WorkRequest(id=req_id, prompt=body.prompt, max_tokens=body.max_tokens)
+    work_request = WorkRequest(id=str(uuid4()), prompt=body.prompt, max_tokens=body.max_tokens)
 
     async def generate():
-        async for chunk in ipc.submit_streaming(req_id, work_request):
+        async for chunk in ipc.submit_stream(work_request):
             yield chunk.data
             if chunk.is_final:
                 break

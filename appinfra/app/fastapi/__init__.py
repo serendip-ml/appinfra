@@ -67,6 +67,7 @@ from .config.uvicorn import UvicornConfig
 
 # Error classes are always available
 from .errors import CallbackError, ConfigError
+from .ratelimit import RateLimiter, RateLimitMiddleware, TokenBucketLimiter
 
 _INSTALL_MSG = "FastAPI is not installed. Install with: pip install appinfra[fastapi]"
 
@@ -148,6 +149,10 @@ __all__ = [
     # Exception handlers (subprocess support)
     "ExceptionHandler",
     "LoggerInjectable",
+    # Rate limiting (always available)
+    "RateLimiter",
+    "RateLimitMiddleware",
+    "TokenBucketLimiter",
     # Errors (always available)
     "CallbackError",
     "ConfigError",
