@@ -2580,6 +2580,129 @@ config: !include "{services_file}"
 
 
 # =============================================================================
+# Deep Include Override Tests (!deep !include)
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestDeepIncludeOverride:
+    """Test !deep !include for overlay pattern where include wins over document."""
+
+    def test_deep_include_override_basic(self, tmp_path):
+        """Test !deep !include? makes included values win over document values."""
+        overlay_file = tmp_path / "overlay.yaml"
+        overlay_file.write_text("""
+config:
+  key1: overlay_value
+  nested:
+    b: 20
+    c: 3
+""")
+        main_content = f"""
+config:
+  key1: base_value
+  key2: base_value
+  nested:
+    a: 1
+    b: 2
+
+<<: !deep !include? "{overlay_file}"
+"""
+        result = load(StringIO(main_content), current_file=tmp_path / "main.yaml")
+
+        # overlay wins for key1
+        assert result["config"]["key1"] == "overlay_value"
+        # document-only key preserved
+        assert result["config"]["key2"] == "base_value"
+        # nested: overlay wins for b, document provides a, overlay adds c
+        assert result["config"]["nested"]["a"] == 1
+        assert result["config"]["nested"]["b"] == 20
+        assert result["config"]["nested"]["c"] == 3
+
+    def test_deep_include_override_missing_file(self, tmp_path):
+        """Test !deep !include? returns empty for missing file."""
+        main_content = """
+config:
+  key1: base_value
+
+<<: !deep !include? "nonexistent.yaml"
+"""
+        result = load(StringIO(main_content), current_file=tmp_path / "main.yaml")
+        # Document value preserved when include is missing
+        assert result["config"]["key1"] == "base_value"
+
+    def test_deep_include_required(self, tmp_path):
+        """Test !deep !include (required) raises for missing file."""
+        main_content = """
+config:
+  key1: base_value
+
+<<: !deep !include "nonexistent.yaml"
+"""
+        with pytest.raises(yaml.YAMLError, match="Include file not found"):
+            load(StringIO(main_content), current_file=tmp_path / "main.yaml")
+
+    def test_deep_include_with_section(self, tmp_path):
+        """Test !deep !include with section selector."""
+        overlay_file = tmp_path / "overlay.yaml"
+        overlay_file.write_text("""
+overrides:
+  config:
+    key1: override_value
+    nested:
+      x: 10
+""")
+        main_content = f"""
+config:
+  key1: base_value
+  nested:
+    y: 20
+
+<<: !deep !include "{overlay_file}#overrides"
+"""
+        result = load(StringIO(main_content), current_file=tmp_path / "main.yaml")
+
+        # Override wins
+        assert result["config"]["key1"] == "override_value"
+        assert result["config"]["nested"]["x"] == 10
+        assert result["config"]["nested"]["y"] == 20
+
+    def test_deep_include_preserves_anchor_behavior(self, tmp_path):
+        """Test that regular !deep *anchor still has document-wins semantics."""
+        content = """
+defaults: &defaults
+  timeout: 30
+  options:
+    retries: 3
+
+config:
+  <<: !deep *defaults
+  timeout: 60
+  options:
+    cache: true
+"""
+        result = load(StringIO(content))
+
+        # Document wins for anchors (timeout overridden to 60)
+        assert result["config"]["timeout"] == 60
+        # Deep merge preserves anchor values, adds document values
+        assert result["config"]["options"]["retries"] == 3
+        assert result["config"]["options"]["cache"] is True
+
+    def test_preprocessing_transforms_syntax(self):
+        """Test that !deep !include is correctly preprocessed."""
+        from appinfra.yaml.loader import preprocess_deep_tags
+
+        content = '<<: !deep !include? "./overlay.yaml"'
+        result = preprocess_deep_tags(content)
+        assert result == '<<: !deep-include? "./overlay.yaml"'
+
+        content2 = "<<: !deep !include './base.yaml'"
+        result2 = preprocess_deep_tags(content2)
+        assert result2 == "<<: !deep-include './base.yaml'"
+
+
+# =============================================================================
 # Reset Tag Tests
 # =============================================================================
 

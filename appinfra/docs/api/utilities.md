@@ -532,6 +532,26 @@ services:
 <<: !include "./base.yaml"
 ```
 
+**`!deep !include` (overlay pattern)** - Include where included values win:
+
+```yaml
+# Normal !include: document values override included values (inheritance)
+# !deep !include: included values override document values (overlay)
+
+config:
+  factory: default_backend
+  options:
+    timeout: 30
+
+<<: !deep !include? "./.env.yaml"  # Overlay wins for conflicts
+```
+
+If `.env.yaml` contains `config: {factory: custom_backend}`, the result is
+`factory: custom_backend` (overlay wins), while `options: {timeout: 30}` is preserved from the
+document.
+
+Use this pattern for local config overrides that should take precedence over checked-in defaults.
+
 **`!reset`** - Bypass deep merge for specific keys:
 
 ```yaml
