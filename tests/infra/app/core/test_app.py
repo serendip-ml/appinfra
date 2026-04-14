@@ -902,8 +902,8 @@ class TestDeferredConfigLoading:
         result = app._load_deferred_config()
         assert result is None
 
-    def test_load_deferred_config_returns_none_for_missing_file(self):
-        """Test that _load_deferred_config returns None gracefully when file doesn't exist."""
+    def test_load_deferred_config_raises_for_missing_required_file(self):
+        """Test that _load_deferred_config raises FileNotFoundError for missing required file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             etc_dir = Path(tmpdir) / "etc"
             etc_dir.mkdir()
@@ -912,6 +912,25 @@ class TestDeferredConfigLoading:
             app = App()
             app._config_path = "nonexistent.yaml"  # type: ignore[attr-defined]
             app._config_from_etc_dir = True  # type: ignore[attr-defined]
+            app._config_optional = False  # type: ignore[attr-defined]
+            app.create_args()
+
+            with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
+                app._parsed_args = app.parser.parse_args()
+                with pytest.raises(FileNotFoundError, match="nonexistent.yaml"):
+                    app._load_deferred_config()
+
+    def test_load_deferred_config_returns_none_for_missing_optional_file(self):
+        """Test that _load_deferred_config returns None for missing optional file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+            # Don't create the config file
+
+            app = App()
+            app._config_path = "nonexistent.yaml"  # type: ignore[attr-defined]
+            app._config_from_etc_dir = True  # type: ignore[attr-defined]
+            app._config_optional = True  # type: ignore[attr-defined]
             app.create_args()
 
             with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
@@ -920,6 +939,9 @@ class TestDeferredConfigLoading:
 
             # Should return None, not raise
             assert result is None
+            # Warning should be stored for later logging
+            assert hasattr(app, "_config_load_warnings")
+            assert len(app._config_load_warnings) == 1
 
     def test_load_deferred_config_handles_generic_exception(self):
         """Test that _load_deferred_config handles generic exceptions gracefully."""

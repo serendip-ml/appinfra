@@ -181,6 +181,7 @@ def _initialize_foundation(app: App, builder: AppBuilder) -> None:
     """Initialize app foundation: flags and metadata."""
     app._config_path = builder._config_path  # type: ignore[attr-defined, assignment]
     app._config_from_etc_dir = builder._config_from_etc_dir  # type: ignore[attr-defined]
+    app._config_optional = builder._config_optional  # type: ignore[attr-defined]
     # Copy etc_dir and config_file for hot-reload support (set for absolute paths)
     if hasattr(builder, "_etc_dir"):
         app._etc_dir = builder._etc_dir  # type: ignore[attr-defined]
@@ -307,6 +308,7 @@ class AppBuilder:
             None  # Track config file path for hot-reload
         )
         self._config_from_etc_dir: bool = False  # Whether to resolve from --etc-dir
+        self._config_optional: bool = False  # Whether config file is optional
         self._server_config: ServerConfig | None = None
         self._logging_config: LoggingConfig | None = None
         self._tools: list[Tool] = []
@@ -341,7 +343,7 @@ class AppBuilder:
         return self
 
     def with_config_file(
-        self, path: str | None = None, from_etc_dir: bool = True
+        self, path: str | None = None, from_etc_dir: bool = True, optional: bool = False
     ) -> Self:
         """
         Load configuration from a YAML file.
@@ -355,6 +357,9 @@ class AppBuilder:
             from_etc_dir: If True (default), resolve relative paths from --etc-dir.
                           If False, resolve relative paths from current working directory.
                           Absolute paths ignore this parameter.
+            optional: If True, silently skip loading if the file doesn't exist.
+                      If False (default), raise an error if the file is missing.
+                      Note: Syntax errors in existing files still raise.
 
         Returns:
             Self for method chaining
@@ -377,6 +382,11 @@ class AppBuilder:
             app = (AppBuilder("myapp")
                 .with_config_file("./local.yaml", from_etc_dir=False)
                 .build())
+
+            # Optional config overlay (skip if missing)
+            app = (AppBuilder("myapp")
+                .with_config_file(".env.yaml", from_etc_dir=False, optional=True)
+                .build())
         """
         import os
         from pathlib import Path
@@ -389,18 +399,23 @@ class AppBuilder:
         is_absolute = os.path.isabs(path)
 
         if is_absolute or not from_etc_dir:
-            # Load immediately
+            # Load immediately (or skip if optional and missing)
+            path_obj = Path(path).resolve()
+            if optional and not path_obj.exists():
+                # Skip loading optional missing file
+                return self
+
             self._config = Config(path)
             self._config_path = path
             self._config_from_etc_dir = False
             # Set etc_dir and config_file for hot-reload support
-            path_obj = Path(path).resolve()
             self._etc_dir = str(path_obj.parent)
             self._config_file = path_obj.name
         else:
             # Defer loading - will be resolved from --etc-dir at runtime
             self._config_path = path
             self._config_from_etc_dir = True
+            self._config_optional = optional
 
         return self
 

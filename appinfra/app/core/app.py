@@ -392,12 +392,16 @@ class App(Traceable):
         return load_result
 
     def _log_config_loading(self, load_result: dict | None) -> None:
-        """
-        Log configuration loading results.
+        """Log configuration loading results."""
+        # Log any deferred config loading info (e.g., optional missing files)
+        for filename, message in getattr(self, "_config_load_warnings", []):
+            self.lg.debug(
+                "optional config file skipped",
+                extra={"file": filename, "reason": message},
+            )
+        if hasattr(self, "_config_load_warnings"):
+            self._config_load_warnings.clear()
 
-        Args:
-            load_result: Result from loading config file
-        """
         # Log any deferred config loading errors
         for filename, error in getattr(self, "_config_load_errors", []):
             self.lg.warning(
@@ -410,10 +414,7 @@ class App(Traceable):
         if load_result:
             self.lg.debug(
                 "loaded config from etc",
-                extra={
-                    "etc_dir": load_result["etc_dir"],
-                    "file": load_result["file"],
-                },
+                extra={"etc_dir": load_result["etc_dir"], "file": load_result["file"]},
             )
 
     def _check_tool_selection(self) -> None:
@@ -490,6 +491,12 @@ class App(Traceable):
             self._config_load_errors: list[tuple[str, Exception]] = []
         self._config_load_errors.append((filename, error))
 
+    def _add_config_warning(self, filename: str, message: str) -> None:
+        """Store a config loading warning to be logged later."""
+        if not hasattr(self, "_config_load_warnings"):
+            self._config_load_warnings: list[tuple[str, str]] = []
+        self._config_load_warnings.append((filename, message))
+
     def _store_config_paths(self, etc_dir: str, filename: str, full_path: Path) -> None:
         """Store config paths for hot-reload watcher and backwards compat."""
         self._etc_dir = etc_dir  # type: ignore[attr-defined]
@@ -504,18 +511,24 @@ class App(Traceable):
         if not config_filename:
             return None
 
-        try:
-            custom_etc_dir = getattr(self._parsed_args, "etc_dir", None)
-            etc_dir = str(resolve_etc_dir(custom_etc_dir))
-            config_path = Path(etc_dir) / config_filename
+        is_optional = getattr(self, "_config_optional", False)
+        custom_etc_dir = getattr(self._parsed_args, "etc_dir", None)
+        etc_dir = str(resolve_etc_dir(custom_etc_dir))
+        config_path = Path(etc_dir) / config_filename
 
+        # Check existence and handle missing files
+        if not config_path.exists():
+            if is_optional:
+                # Store warning for later logging (logger not available yet)
+                self._add_config_warning(config_filename, f"not found: {config_path}")
+                return None
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+
+        try:
             loaded_config = create_config(file_path=str(config_path), lg=None)
             self.config = self._merge_loaded_and_programmatic_config(loaded_config)
             self._store_config_paths(etc_dir, config_filename, config_path)
-
             return {"etc_dir": etc_dir, "file": config_filename}
-        except FileNotFoundError:
-            return None  # Config file doesn't exist - expected for optional configs
         except Exception as e:
             self._add_config_error(config_filename, e)  # Store for later logging
             return None

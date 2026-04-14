@@ -376,6 +376,72 @@ other: value
 
 
 # =============================================================================
+# Optional Include Tests
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestOptionalInclude:
+    """Test !include? optional include directive."""
+
+    def test_optional_include_returns_empty_dict_for_missing_file(self, tmp_path):
+        """Test that !include? returns {} when file is missing."""
+        yaml_content = """
+name: test
+data: !include? "./nonexistent.yaml"
+"""
+        result = load(StringIO(yaml_content), current_file=tmp_path / "test.yaml")
+        assert result["name"] == "test"
+        assert result["data"] == {}
+
+    def test_optional_include_loads_existing_file(self, tmp_path):
+        """Test that !include? loads file normally when it exists."""
+        (tmp_path / "exists.yaml").write_text("key: value\n")
+        yaml_content = """
+data: !include? "./exists.yaml"
+"""
+        result = load(StringIO(yaml_content), current_file=tmp_path / "test.yaml")
+        assert result["data"]["key"] == "value"
+
+    def test_optional_include_with_section_anchor(self, tmp_path):
+        """Test that !include? with section anchor returns {} when file missing."""
+        yaml_content = """
+data: !include? "./nonexistent.yaml#section"
+"""
+        result = load(StringIO(yaml_content), current_file=tmp_path / "test.yaml")
+        assert result["data"] == {}
+
+    def test_optional_include_still_validates_circular(self, tmp_path):
+        """Test that !include? still detects circular includes for existing files."""
+        (tmp_path / "circular.yaml").write_text('data: !include? "./circular.yaml"\n')
+        yaml_content = """
+data: !include? "./circular.yaml"
+"""
+        with pytest.raises(yaml.YAMLError, match="Circular include detected"):
+            load(StringIO(yaml_content), current_file=tmp_path / "circular.yaml")
+
+    def test_document_level_optional_include_missing(self, tmp_path):
+        """Test document-level !include? returns empty when file missing."""
+        yaml_content = """!include? "./nonexistent.yaml"
+
+name: test
+"""
+        result = load(StringIO(yaml_content), current_file=tmp_path / "test.yaml")
+        assert result["name"] == "test"
+
+    def test_document_level_optional_include_existing(self, tmp_path):
+        """Test document-level !include? loads and merges existing file."""
+        (tmp_path / "base.yaml").write_text("base_key: base_value\n")
+        yaml_content = """!include? "./base.yaml"
+
+name: test
+"""
+        result = load(StringIO(yaml_content), current_file=tmp_path / "test.yaml")
+        assert result["name"] == "test"
+        assert result["base_key"] == "base_value"
+
+
+# =============================================================================
 # Circular Dependency Tests
 # =============================================================================
 

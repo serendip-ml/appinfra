@@ -47,11 +47,14 @@ class IncludeContext(ErrorContext):
 ENV_VAR_PATTERN = re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$")
 
 # Pattern for document-level !include directives (at column 0)
-# Matches: !include "./path.yaml" or !include './path.yaml' or !include path.yaml
+# Matches: !include "./path.yaml" or !include '/path.yaml' or !include path.yaml
+# Also matches: !include? for optional includes (return {} if file missing)
 # Optionally with section anchor: !include "./path.yaml#section"
 # Optionally with trailing comment: !include "./path.yaml"  # comment
+# Groups: (1) optional marker '?', (2) double-quoted path, (3) single-quoted path,
+#         (4) unquoted path
 DOCUMENT_INCLUDE_PATTERN = re.compile(
-    r"^!include\s+"
+    r"^!include(\??)\s+"  # Capture optional '?' marker
     r'(?:"([^"]+)"|\'([^\']+)\'|(\S+?))'  # Quoted or unquoted path
     r"\s*(?:#.*)?$"  # Optional trailing comment
 )

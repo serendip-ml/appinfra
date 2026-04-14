@@ -331,17 +331,41 @@ class Loader(yaml.SafeLoader):
 
         return include_path.resolve()
 
-    def _validate_include(self, include_path: Path, ctx: IncludeContext) -> None:
+    def _file_exists(self, include_path: Path) -> bool:
+        """Check if include file exists (no error raised)."""
+        try:
+            return include_path.exists()
+        except (PermissionError, OSError):
+            return False
+
+    def _check_project_root_security(
+        self, include_path: Path, ctx: IncludeContext
+    ) -> None:
+        """Raise error if include path is outside project root."""
+        if ctx.project_root is None:
+            return
+        try:
+            include_path.relative_to(ctx.project_root)
+        except (ValueError, TypeError):
+            location = ctx.format_location()
+            raise yaml.YAMLError(
+                f"Security: Include path '{include_path}' is outside project root "
+                f"'{ctx.project_root}'. This could be a path traversal attack. ({location})"
+            )
+
+    def _validate_include(
+        self, include_path: Path, ctx: IncludeContext, optional: bool = False
+    ) -> bool:
         """
         Validate include path for circular dependencies, existence, and security.
 
-        Args:
-            include_path: Path to validate
-            ctx: Include context for error reporting
-
-        Raises:
-            yaml.YAMLError: If circular include detected, file not found, or path traversal detected
+        Returns:
+            True if file exists and passes validation, False if optional and missing.
         """
+        # For optional includes, check existence first
+        if optional and not self._file_exists(include_path):
+            return False
+
         location = ctx.format_location()
 
         # Check for circular includes
@@ -351,27 +375,12 @@ class Loader(yaml.SafeLoader):
                 f"Circular include detected: {chain_str} -> {include_path} ({location})"
             )
 
-        # Check if file exists
-        try:
-            file_exists = include_path.exists()
-        except (PermissionError, OSError):
-            # If we can't check existence due to permissions, treat as not found
+        # Check if file exists (for required includes)
+        if not optional and not self._file_exists(include_path):
             raise yaml.YAMLError(f"Include file not found: {include_path} ({location})")
 
-        if not file_exists:
-            raise yaml.YAMLError(f"Include file not found: {include_path} ({location})")
-
-        # Security: Validate path stays within project root if specified
-        if ctx.project_root is not None:
-            try:
-                # is_relative_to() raises ValueError if not relative (Python 3.9+)
-                # Use try/except for compatibility
-                include_path.relative_to(ctx.project_root)
-            except (ValueError, TypeError):
-                raise yaml.YAMLError(
-                    f"Security: Include path '{include_path}' is outside project root "
-                    f"'{ctx.project_root}'. This could be a path traversal attack. ({location})"
-                )
+        self._check_project_root_security(include_path, ctx)
+        return True
 
     def _store_include_source_map(self, data: Any, loader: Loader) -> None:
         """Store source map from included file for later merging (complex types only)."""
@@ -495,6 +504,46 @@ class Loader(yaml.SafeLoader):
             max_include_depth=self.max_include_depth,
         )
 
+    def _construct_include(self, node: Any, optional: bool = False) -> Any:
+        """
+        Core include logic shared by !include and !include? constructors.
+
+        Args:
+            node: YAML node containing the include path
+            optional: If True, return {} for missing files instead of raising
+
+        Returns:
+            Content from the included file, {} if optional and missing
+        """
+        # Create context for error reporting
+        ctx = self._create_include_context(node)
+
+        # Parse include path and optional section anchor
+        include_spec = self.construct_scalar(node)
+
+        # Split on '#' to separate file path from section path
+        if "#" in include_spec:
+            include_path_str, section_path = include_spec.split("#", 1)
+        else:
+            include_path_str = include_spec
+            section_path = ""
+
+        # Simple pipeline: resolve → validate → load → extract section
+        include_path = self._resolve_include_path(include_path_str, ctx)
+
+        # Validation returns False for optional missing files
+        file_exists = self._validate_include(include_path, ctx, optional=optional)
+        if not file_exists:
+            return {}
+
+        data = self._load_included_file(include_path, ctx)
+
+        # Extract specific section if requested
+        if section_path:
+            data = self._extract_section_from_data(data, section_path, ctx)
+
+        return self._wrap_include_for_deep_merge(data)
+
     def include_constructor(self, node: Any) -> Any:
         """
         Construct included content from !include tag.
@@ -520,29 +569,29 @@ class Loader(yaml.SafeLoader):
             !include "config.yaml#database"       # Include only 'database' section
             !include "config.yaml#app.settings"   # Include nested 'app.settings' section
         """
-        # Create context for error reporting
-        ctx = self._create_include_context(node)
+        return self._construct_include(node, optional=False)
 
-        # Parse include path and optional section anchor
-        include_spec = self.construct_scalar(node)
+    def include_optional_constructor(self, node: Any) -> Any:
+        """
+        Construct included content from !include? tag (optional include).
 
-        # Split on '#' to separate file path from section path
-        if "#" in include_spec:
-            include_path_str, section_path = include_spec.split("#", 1)
-        else:
-            include_path_str = include_spec
-            section_path = ""
+        Same as !include, but returns {} if the file is missing instead of raising.
+        Syntax errors in existing files still raise.
 
-        # Simple pipeline: resolve → validate → load → extract section
-        include_path = self._resolve_include_path(include_path_str, ctx)
-        self._validate_include(include_path, ctx)
-        data = self._load_included_file(include_path, ctx)
+        Args:
+            node: YAML node containing the include path
 
-        # Extract specific section if requested
-        if section_path:
-            data = self._extract_section_from_data(data, section_path, ctx)
+        Returns:
+            Content from the included file, or {} if file is missing
 
-        return self._wrap_include_for_deep_merge(data)
+        Raises:
+            yaml.YAMLError: If circular include detected, syntax error, or section not found
+
+        Examples:
+            !include? ".env.yaml"                  # Returns {} if missing
+            !include? "local.yaml#overrides"       # Returns {} if file missing
+        """
+        return self._construct_include(node, optional=True)
 
     def _wrap_include_for_deep_merge(self, data: Any) -> Any:
         """Wrap dict data in DeepMergeDict and update source map tracking."""
@@ -1013,6 +1062,7 @@ class Loader(yaml.SafeLoader):
 
 # Register tag constructors with the Loader class
 Loader.add_constructor("!include", Loader.include_constructor)
+Loader.add_constructor("!include?", Loader.include_optional_constructor)
 Loader.add_constructor("!secret", Loader.secret_constructor)
 Loader.add_constructor("!path", Loader.path_constructor)
 Loader.add_constructor("!reset", Loader.reset_constructor)

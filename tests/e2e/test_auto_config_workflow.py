@@ -273,8 +273,8 @@ class TestConfigFileWorkflow:
             assert app.config.from_custom_etc is True
             assert app.config.logging.level == "trace"
 
-    def test_missing_config_file_fails_gracefully(self):
-        """Test that missing config file doesn't crash the app."""
+    def test_missing_required_config_file_raises(self):
+        """Test that missing required config file raises FileNotFoundError."""
         with tempfile.TemporaryDirectory() as tmpdir:
             etc_dir = Path(tmpdir) / "etc"
             etc_dir.mkdir()
@@ -286,11 +286,36 @@ class TestConfigFileWorkflow:
                 app.create_args()
                 app._parsed_args = app.parser.parse_args()
 
-                # Should not raise - loading handles missing files gracefully
+                # Should raise - required config file must exist
+                with pytest.raises(FileNotFoundError, match="nonexistent.yaml"):
+                    app._load_and_merge_config()
+
+    def test_missing_optional_config_file_skips_silently(self):
+        """Test that missing optional config file skips without error."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            etc_dir = Path(tmpdir) / "etc"
+            etc_dir.mkdir()
+            # Don't create any config files
+
+            app = (
+                AppBuilder("test-app")
+                .with_config_file("nonexistent.yaml", optional=True)
+                .build()
+            )
+
+            with patch.object(sys, "argv", ["test", "--etc-dir", str(etc_dir)]):
+                app.create_args()
+                app._parsed_args = app.parser.parse_args()
+
+                # Should not raise - optional config can be missing
                 result = app._load_and_merge_config()
 
             # App should still work with default config
             assert app.config is not None
+            # Warning should be stored for later logging
+            assert hasattr(app, "_config_load_warnings")
+            assert len(app._config_load_warnings) == 1
+            assert app._config_load_warnings[0][0] == "nonexistent.yaml"
 
     def test_yaml_with_all_logging_options(self):
         """Test comprehensive YAML config with all logging options."""
