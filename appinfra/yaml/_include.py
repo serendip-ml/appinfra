@@ -219,15 +219,20 @@ def _validate_include_standalone(
 def _extract_section_data(
     data: Any,
     section_path: str,
-    include_path: Path,
+    location: str,
+    resolve_variables: bool = True,
 ) -> Any:
     """
     Extract a specific section from data using dot-notation path.
 
+    Shared implementation used by both document-level includes (_include.py)
+    and inline includes (loader.py).
+
     Args:
         data: Data to extract from
         section_path: Dot-separated path (e.g., "server.http")
-        include_path: Path to included file (for error messages)
+        location: Human-readable location for error messages (file path or context)
+        resolve_variables: If True, resolve ${var} references before extraction
 
     Returns:
         Data at the specified section path
@@ -235,9 +240,12 @@ def _extract_section_data(
     Raises:
         yaml.YAMLError: If section path is invalid or not found
     """
+    if not section_path:
+        return data
+
     # Resolve variables within the full file context BEFORE extraction
     # This allows ${sibling.key} references to resolve before the section is extracted
-    if isinstance(data, dict):
+    if resolve_variables and isinstance(data, dict):
         data = _resolve_variables_in_data(data, data, pass_through_undefined=True)
 
     current = data
@@ -246,17 +254,17 @@ def _extract_section_data(
     for i, part in enumerate(parts):
         if not isinstance(current, dict):
             traversed = ".".join(parts[:i])
-            msg = (
+            raise yaml.YAMLError(
                 f"Cannot navigate to '{section_path}': "
-                f"'{traversed}' is not a mapping (got {type(current).__name__})"
+                f"'{traversed}' is not a mapping (got {type(current).__name__}) "
+                f"({location})"
             )
-            raise yaml.YAMLError(msg)
         if part not in current:
-            msg = (
-                f"Section '{section_path}' not found in included file '{include_path}'. "
-                f"Available keys at this level: {list(current.keys())}"
+            raise yaml.YAMLError(
+                f"Section '{section_path}' not found in included file. "
+                f"Available keys at this level: {list(current.keys())} "
+                f"({location})"
             )
-            raise yaml.YAMLError(msg)
         current = current[part]
 
     return current

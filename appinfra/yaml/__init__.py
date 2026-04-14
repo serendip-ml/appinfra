@@ -87,7 +87,7 @@ def _apply_section_filter(
     """Extract section from data and filter source map if applicable."""
     if not section_path or data is None:
         return data, source_map
-    data = _extract_section_data(data, section_path, include_path)
+    data = _extract_section_data(data, section_path, str(include_path))
     if track_sources:
         source_map = _filter_source_map_for_section(source_map, section_path)
     return data, source_map

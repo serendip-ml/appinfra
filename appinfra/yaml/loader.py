@@ -22,7 +22,7 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
-from ._include import _resolve_variables_in_data
+from ._include import _extract_section_data
 from .types import (
     ENV_VAR_PATTERN,
     DeepMergeDict,
@@ -450,6 +450,8 @@ class Loader(yaml.SafeLoader):
         """
         Extract a specific section from loaded data using dot notation.
 
+        Delegates to the shared _extract_section_data helper.
+
         Args:
             data: Loaded YAML data (typically a dict)
             section_path: Dot-separated path to section (e.g., "pgserver" or "database.postgres")
@@ -461,36 +463,7 @@ class Loader(yaml.SafeLoader):
         Raises:
             yaml.YAMLError: If section path is invalid or not found
         """
-        if not section_path:
-            return data
-
-        # Resolve ${var} references before extraction so sibling sections are accessible
-        if isinstance(data, dict):
-            data = _resolve_variables_in_data(data, data, pass_through_undefined=True)
-
-        location = ctx.format_location()
-        current = data
-        parts = section_path.split(".")
-
-        for i, part in enumerate(parts):
-            if not isinstance(current, dict):
-                traversed = ".".join(parts[:i])
-                raise yaml.YAMLError(
-                    f"Cannot navigate to '{section_path}': "
-                    f"'{traversed}' is not a mapping (got {type(current).__name__}) "
-                    f"({location})"
-                )
-
-            if part not in current:
-                raise yaml.YAMLError(
-                    f"Section '{section_path}' not found in included file. "
-                    f"Available keys at this level: {list(current.keys())} "
-                    f"({location})"
-                )
-
-            current = current[part]
-
-        return current
+        return _extract_section_data(data, section_path, ctx.format_location())
 
     def _create_error_context(self, node: Any) -> ErrorContext:
         """Create an ErrorContext from the current loader state and node position."""
@@ -521,10 +494,11 @@ class Loader(yaml.SafeLoader):
 
         Args:
             node: YAML node containing the include path
-            optional: If True, return {} for missing files instead of raising
+            optional: If True, return DeepMergeDict({}) for missing files
 
         Returns:
-            Content from the included file, {} if optional and missing
+            Content from the included file wrapped in DeepMergeDict,
+            or DeepMergeDict({}) if optional and missing
         """
         # Create context for error reporting
         ctx = self._create_include_context(node)
@@ -545,7 +519,7 @@ class Loader(yaml.SafeLoader):
         # Validation returns False for optional missing files
         file_exists = self._validate_include(include_path, ctx, optional=optional)
         if not file_exists:
-            return {}
+            return DeepMergeDict({})  # Consistent wrapping for missing optional
 
         data = self._load_included_file(include_path, ctx)
 
@@ -875,6 +849,14 @@ class Loader(yaml.SafeLoader):
         dicts are recursively merged.
 
         Override mode (!deep !include): included values win over document values.
+
+        Algorithm flow (distributed across helper methods):
+          1. _extract_merge_keys: Scan pairs, separate merge keys from regular keys.
+             Build merge_base (document wins) and override_base (include wins).
+          2. _process_deep_merge_pairs: For keys in both regular pairs and bases,
+             perform deep merge. Document keys merge with merge_base, then override_base
+             applies on top.
+          3. _build_final_pairs: Assemble final node.value from bases + merged + remaining.
 
         Args:
             node: YAML MappingNode to process

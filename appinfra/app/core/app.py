@@ -505,6 +505,8 @@ class App(Traceable):
 
     def _load_deferred_config(self) -> dict | None:
         """Load deferred config file from etc directory (for from_etc_dir=True)."""
+        import yaml
+
         from .config import create_config, resolve_etc_dir
 
         config_filename = getattr(self, "_config_path", None)
@@ -516,21 +518,20 @@ class App(Traceable):
         etc_dir = str(resolve_etc_dir(custom_etc_dir))
         config_path = Path(etc_dir) / config_filename
 
-        # Check existence and handle missing files
-        if not config_path.exists():
-            if is_optional:
-                # Store warning for later logging (logger not available yet)
-                self._add_config_warning(config_filename, f"not found: {config_path}")
-                return None
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-
+        # Load atomically via try/except (avoids TOCTOU race with exists() check)
         try:
             loaded_config = create_config(file_path=str(config_path), lg=None)
             self.config = self._merge_loaded_and_programmatic_config(loaded_config)
             self._store_config_paths(etc_dir, config_filename, config_path)
             return {"etc_dir": etc_dir, "file": config_filename}
-        except Exception as e:
-            self._add_config_error(config_filename, e)  # Store for later logging
+        except FileNotFoundError:
+            if is_optional:
+                self._add_config_warning(config_filename, f"not found: {config_path}")
+                return None
+            raise FileNotFoundError(f"Config file not found: {config_path}") from None
+        except yaml.YAMLError as e:
+            # YAML errors (!include failures, syntax errors) are stored for later logging
+            self._add_config_error(config_filename, e)
             return None
 
     def run_no_tool(self) -> int:

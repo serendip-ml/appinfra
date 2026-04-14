@@ -342,6 +342,24 @@ class AppBuilder:
         self._version = version
         return self
 
+    def _load_config_immediately(self, path: str, optional: bool) -> bool:
+        """Load config file immediately. Returns True if loaded, False if skipped."""
+        from pathlib import Path
+
+        path_obj = Path(path).resolve()
+        try:
+            self._config = Config(path)
+        except FileNotFoundError:
+            if optional:
+                return False
+            raise FileNotFoundError(f"Config file not found: {path_obj}") from None
+
+        self._config_path = path
+        self._config_from_etc_dir = False
+        self._etc_dir = str(path_obj.parent)
+        self._config_file = path_obj.name
+        return True
+
     def with_config_file(
         self, path: str | None = None, from_etc_dir: bool = True, optional: bool = False
     ) -> Self:
@@ -389,28 +407,14 @@ class AppBuilder:
                 .build())
         """
         import os
-        from pathlib import Path
 
         from ...config import DEFAULT_CONFIG_FILENAME
 
         if path is None:
             path = DEFAULT_CONFIG_FILENAME
 
-        is_absolute = os.path.isabs(path)
-
-        if is_absolute or not from_etc_dir:
-            # Load immediately (or skip if optional and missing)
-            path_obj = Path(path).resolve()
-            if optional and not path_obj.exists():
-                # Skip loading optional missing file
-                return self
-
-            self._config = Config(path)
-            self._config_path = path
-            self._config_from_etc_dir = False
-            # Set etc_dir and config_file for hot-reload support
-            self._etc_dir = str(path_obj.parent)
-            self._config_file = path_obj.name
+        if os.path.isabs(path) or not from_etc_dir:
+            self._load_config_immediately(path, optional)
         else:
             # Defer loading - will be resolved from --etc-dir at runtime
             self._config_path = path
