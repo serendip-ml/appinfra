@@ -610,12 +610,14 @@ class TestAppBuilderFluentMethods:
 
     def test_with_config_file_uses_default_when_none(self):
         """Test that with_config_file() uses default config filename when path is None."""
+        from appinfra.config import DEFAULT_CONFIG_FILENAME
+
         builder = AppBuilder("test")
 
         result = builder.with_config_file()
 
         assert len(builder._config_files) == 1
-        assert builder._config_files[0].path == "infra.yaml"
+        assert builder._config_files[0].path == DEFAULT_CONFIG_FILENAME
         assert builder._config_files[0].from_etc_dir is True
         assert result is builder
 

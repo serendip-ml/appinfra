@@ -465,29 +465,16 @@ class App(Traceable):
             self._config_load_warnings: list[tuple[str, str]] = []
         self._config_load_warnings.append((filename, message))
 
-    def _store_config_paths(self, etc_dir: str, filename: str, full_path: Path) -> None:
-        """Store config paths for hot-reload watcher.
-
-        Tracks all loaded config files in _loaded_config_paths list.
-        The first loaded file sets _etc_dir and _config_file for simple API access.
-        """
-        # Track all loaded config paths for hot-reload of multiple files
-        if not hasattr(self, "_loaded_config_paths"):
-            self._loaded_config_paths: list[tuple[str, str, str]] = []
-        self._loaded_config_paths.append((etc_dir, filename, str(full_path)))
-
-        # First loaded file sets the primary for simple API (create_config_watcher)
-        if not hasattr(self, "_etc_dir"):
-            self._etc_dir = etc_dir  # type: ignore[attr-defined]
-            self._config_file = filename  # type: ignore[attr-defined]
-
     def _get_deferred_config_specs(self) -> list:
         """Get deferred config specs from _config_files."""
         config_files = getattr(self, "_config_files", [])
         return [s for s in config_files if s.from_etc_dir]
 
     def _load_deferred_configs(self) -> dict | None:
-        """Load deferred config files from etc directory (for from_etc_dir=True)."""
+        """Load deferred config files from etc directory (for from_etc_dir=True).
+
+        Uses local accumulators to avoid leaving partial state if a required file fails.
+        """
         from .config import resolve_etc_dir
 
         deferred_specs = self._get_deferred_config_specs()
@@ -496,37 +483,73 @@ class App(Traceable):
 
         custom_etc_dir = getattr(self._parsed_args, "etc_dir", None)
         etc_dir = str(resolve_etc_dir(custom_etc_dir))
-
-        # Save programmatic config to re-apply after file loading
         programmatic_config = self.config
-        self.config = DotDict()
 
-        loaded_files: list[str] = []
-        for spec in deferred_specs:
-            config_path = Path(etc_dir) / spec.path
-            if self._load_single_deferred_config(
-                spec.path, config_path, spec.optional, etc_dir
-            ):
-                loaded_files.append(spec.path)
+        # Load all files into local accumulators (raises on required file failure)
+        local_config, local_loaded_paths, loaded_files = self._load_all_deferred_specs(
+            deferred_specs, etc_dir
+        )
 
         # Re-apply programmatic config (highest precedence after CLI args)
         if programmatic_config and dict(programmatic_config):
-            self.config = self._merge_config_layers(self.config, programmatic_config)
+            local_config = self._merge_config_layers(local_config, programmatic_config)
 
+        # Commit atomically after all required files loaded successfully
+        self._commit_loaded_configs(local_config, local_loaded_paths)
         return {"etc_dir": etc_dir, "files": loaded_files} if loaded_files else None
 
-    def _load_single_deferred_config(
-        self, filename: str, config_path: Path, optional: bool, etc_dir: str
-    ) -> bool:
+    def _load_all_deferred_specs(
+        self, deferred_specs: list, etc_dir: str
+    ) -> tuple[DotDict, list[tuple[str, str, str]], list[str]]:
+        """Load all deferred specs into local accumulators."""
+        local_config: DotDict = DotDict()
+        local_loaded_paths: list[tuple[str, str, str]] = []
+        loaded_files: list[str] = []
+
+        for spec in deferred_specs:
+            config_path = Path(etc_dir) / spec.path
+            result = self._load_single_deferred_config_to_local(
+                spec.path,
+                config_path,
+                spec.optional,
+                etc_dir,
+                local_config,
+                local_loaded_paths,
+            )
+            if result is not None:
+                local_config = result
+                loaded_files.append(spec.path)
+
+        return local_config, local_loaded_paths, loaded_files
+
+    def _commit_loaded_configs(
+        self, local_config: DotDict, local_loaded_paths: list[tuple[str, str, str]]
+    ) -> None:
+        """Commit loaded configs to self atomically."""
+        self.config = local_config
+        if not hasattr(self, "_loaded_config_paths"):
+            self._loaded_config_paths: list[tuple[str, str, str]] = []
+        self._loaded_config_paths.extend(local_loaded_paths)
+
+        # Set primary config path from first loaded file
+        if local_loaded_paths and not hasattr(self, "_etc_dir"):
+            self._etc_dir = local_loaded_paths[0][0]  # type: ignore[attr-defined]
+            self._config_file = local_loaded_paths[0][1]  # type: ignore[attr-defined]
+
+    def _load_single_deferred_config_to_local(
+        self,
+        filename: str,
+        config_path: Path,
+        optional: bool,
+        etc_dir: str,
+        local_config: DotDict,
+        local_loaded_paths: list[tuple[str, str, str]],
+    ) -> DotDict | None:
         """
-        Load a single deferred config file.
+        Load a single deferred config file into local accumulators.
 
-        Returns True if loaded, False if skipped (optional and missing/invalid).
-
-        Note:
-            Only FileNotFoundError and yaml.YAMLError are handled gracefully for
-            optional files. Required files raise on any error for fail-fast behavior.
-            Other errors (PermissionError, file too large, etc.) always propagate.
+        Returns merged config if loaded, None if skipped (optional and missing/invalid).
+        Raises on required file errors for fail-fast behavior.
         """
         import yaml
 
@@ -534,20 +557,18 @@ class App(Traceable):
 
         try:
             loaded_config = create_config(file_path=str(config_path), lg=None)
-            # For layered configs: new file overrides existing (later wins)
-            self.config = self._merge_config_layers(self.config, loaded_config)
-            self._store_config_paths(etc_dir, filename, config_path)
-            return True
+            merged = self._merge_config_layers(local_config, loaded_config)
+            local_loaded_paths.append((etc_dir, filename, str(config_path)))
+            return merged
         except FileNotFoundError:
             if optional:
                 self._add_config_warning(filename, f"not found: {config_path}")
-                return False
+                return None
             raise FileNotFoundError(f"Config file not found: {config_path}") from None
         except yaml.YAMLError as e:
             if optional:
-                # Optional files: log and continue
                 self._add_config_error(filename, e)
-                return False
+                return None
             raise  # Required files: fail fast on YAML errors
 
     def _merge_config_layers(self, base: DotDict | None, overlay: DotDict) -> DotDict:

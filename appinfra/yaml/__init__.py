@@ -432,14 +432,17 @@ def load_file(
         optional_config = load_file('overrides.yaml', optional=True)
     """
     path = Path(path)
-    if optional and not path.exists():
-        return ({}, {}) if track_sources else {}
-    with open(path, encoding="utf-8") as f:
-        return load(
-            f,
-            current_file=path,
-            merge_strategy=merge_strategy,
-            track_sources=track_sources,
-            project_root=project_root,
-            max_include_depth=max_include_depth,
-        )
+    try:
+        with open(path, encoding="utf-8") as f:
+            return load(
+                f,
+                current_file=path,
+                merge_strategy=merge_strategy,
+                track_sources=track_sources,
+                project_root=project_root,
+                max_include_depth=max_include_depth,
+            )
+    except FileNotFoundError:
+        if optional:
+            return ({}, {}) if track_sources else {}
+        raise

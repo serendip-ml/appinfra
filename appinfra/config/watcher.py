@@ -284,18 +284,27 @@ class ConfigWatcher:
         serialized = json.dumps(config_dict, sort_keys=True, default=str)
         return hashlib.md5(serialized.encode(), usedforsecurity=False).hexdigest()
 
-    def _load_and_merge_configs(self) -> tuple[dict[str, Any], Any]:
-        """Load all config files and merge them. Returns (merged_dict, last_config)."""
+    def _load_and_merge_configs(self) -> tuple[dict[str, Any] | None, Any]:
+        """Load all config files and merge them.
+
+        Returns:
+            (merged_dict, last_config) where merged_dict is None if no files loaded,
+            or a dict (possibly empty {}) if at least one file was loaded.
+        """
         from ..yaml import deep_merge
         from .config import Config
 
-        merged_dict: dict[str, Any] = {}
+        merged_dict: dict[str, Any] | None = None
         last_config: Any = None
 
         for config_path in self._config_paths:
             try:
                 config = Config(str(config_path))
-                merged_dict = deep_merge(merged_dict, config.dict())
+                config_dict = config.dict()
+                if merged_dict is None:
+                    merged_dict = config_dict
+                else:
+                    merged_dict = deep_merge(merged_dict, config_dict)
                 last_config = config
             except FileNotFoundError:
                 self._lg.debug(
@@ -311,8 +320,8 @@ class ConfigWatcher:
 
         try:
             merged_dict, last_config = self._load_and_merge_configs()
-            if not merged_dict:
-                return
+            if merged_dict is None:
+                return  # Use `is None` - empty dict {} is a valid config
 
             # Content-based change detection: skip if unchanged
             new_hash = self._compute_config_hash(merged_dict)

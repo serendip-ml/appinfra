@@ -434,10 +434,10 @@ class AppBuilder:
                 .with_config_file("./local.yaml", from_etc_dir=False)
                 .build())
 
-            # Layered config: base + optional environment overlay
+            # Layered config: base + optional environment overlay (both from etc-dir)
             app = (AppBuilder("myapp")
                 .with_config_file("config.yaml")
-                .with_config_file(".env.yaml", from_etc_dir=False, optional=True)
+                .with_config_file(".env.yaml", optional=True)
                 .build())
         """
         import os

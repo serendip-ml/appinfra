@@ -367,6 +367,8 @@ class TestSubprocessContextUnit:
 
     def test_start_config_watcher_with_valid_files(self):
         """Test _start_config_watcher sets up watcher with config files."""
+        pytest.importorskip("watchdog")
+
         from appinfra.log import LoggerFactory
         from appinfra.log.config import LogConfig
         from appinfra.subprocess import SubprocessContext

@@ -55,8 +55,8 @@ ENV_VAR_PATTERN = re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$")
 #         (4) unquoted path
 DOCUMENT_INCLUDE_PATTERN = re.compile(
     r"^!include(\??)\s+"  # Capture optional '?' marker
-    r'(?:"([^"]+)"|\'([^\']+)\'|(\S+?))'  # Quoted or unquoted path
-    r"\s*(?:#.*)?$"  # Optional trailing comment
+    r'(?:"([^"]+)"|\'([^\']+)\'|(\S+))'  # Quoted or unquoted path (greedy to include #fragment)
+    r"\s*(?:#.*)?$"  # Optional trailing comment (for quoted paths; unquoted paths capture # as part of path)
 )
 
 

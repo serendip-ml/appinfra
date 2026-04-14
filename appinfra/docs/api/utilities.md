@@ -547,8 +547,8 @@ config:
 ```
 
 If `.env.yaml` contains `config: {factory: custom_backend}`, the result is
-`factory: custom_backend` (overlay wins), while `options: {timeout: 30}` is preserved from the
-document.
+`config.factory == "custom_backend"` (overlay wins), while `config.options.timeout == 30` is
+preserved from the document (deep merge preserves nested keys not present in the overlay).
 
 Use this pattern for local config overrides that should take precedence over checked-in defaults.
 

@@ -166,11 +166,11 @@ app = (
     .build()
 )
 
-# Layered config: base + optional environment overlay
+# Layered config: base + optional environment overlay (both from etc-dir)
 app = (
     AppBuilder("myapp")
-    .with_config_file("config.yaml")                              # Required base
-    .with_config_file(".env.yaml", from_etc_dir=False, optional=True)  # Optional overlay
+    .with_config_file("config.yaml")                        # Required base from etc-dir
+    .with_config_file(".env.yaml", optional=True)           # Optional overlay from etc-dir
     .build()
 )
 ```

@@ -1041,13 +1041,10 @@ class Loader(yaml.SafeLoader):
         data: dict[str, Any],
         pairs: list[tuple[yaml.Node, yaml.Node]],
         skip_keys: set[str],
-        override_base: dict[str, Any] | None = None,
     ) -> None:
         """Add dict entries as YAML pairs, skipping keys in skip_keys."""
         for key, value in data.items():
             if key not in skip_keys:
-                if override_base and key in override_base:
-                    value = override_base[key]
                 key_node = yaml.ScalarNode(tag="tag:yaml.org,2002:str", value=str(key))
                 pairs.append((key_node, self._value_to_node(value)))
 
@@ -1071,7 +1068,6 @@ class Loader(yaml.SafeLoader):
             merge_base,
             new_pairs,
             regular_keys | set(override_base.keys()),
-            override_base,
         )
         # override_base: skip keys in regular_dict (regular_dict has the merged result)
         self._add_dict_as_pairs(override_base, new_pairs, regular_keys)
