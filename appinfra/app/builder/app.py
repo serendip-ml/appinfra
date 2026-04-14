@@ -397,6 +397,19 @@ class AppBuilder:
         By default, relative paths are resolved from --etc-dir at runtime.
         Absolute paths are always loaded immediately.
 
+        Precedence Rules:
+            Configs are loaded in two phases:
+            1. **Immediate**: Absolute paths or from_etc_dir=False - loaded at build time
+            2. **Deferred**: Relative paths with from_etc_dir=True - loaded at runtime
+
+            Within each phase, later calls override earlier ones. However, immediate
+            configs always take precedence over deferred configs because they are
+            merged into the programmatic config that gets re-applied after deferred
+            loading.
+
+            **Recommendation**: Keep all config files in the same mode (all immediate
+            or all deferred) to ensure call order matches merge order.
+
         Hot-reload:
             When using create_config_watcher() or subprocess_context(), all loaded
             config files are watched. Changes to any file trigger a reload that
