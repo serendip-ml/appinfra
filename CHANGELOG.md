@@ -10,6 +10,18 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+### Added
+- `!include?` YAML tag for optional includes — returns `{}` if file is missing instead of raising
+- `!deep !include` / `!deep !include?` syntax for overlay pattern — included values win over
+  document values (opposite of `!deep *anchor` where document wins)
+- `AppBuilder.with_config_file(optional=True)` parameter — skips missing config files instead of
+  raising
+- `load_file(path)` convenience function — loads YAML with automatic file context for includes
+
+### Changed
+- **Breaking:** `with_config_file()` now raises `FileNotFoundError` if the config file is missing.
+  Previously, missing files were silently ignored. Use `optional=True` for the old behavior.
+
 ## [0.6.0] - 2026-04-13
 
 ### Added
