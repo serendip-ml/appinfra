@@ -202,6 +202,7 @@ class RateLimiter:
 
     def next(self, respect_max_ticks: bool = True) -> float: ...  # Blocking: wait and return delay
     def try_next(self) -> bool: ...                               # Non-blocking: return True if allowed
+    def time_until_next(self, now: float | None = None) -> float: ...  # Seconds until next slot
 ```
 
 By default, the first call waits one full interval before proceeding. Set `initial=True` for
@@ -234,6 +235,22 @@ while running:
     if limiter.try_next():
         do_rate_limited_operation()
     # If rate limited, skip this cycle and retry on next iteration
+```
+
+**Event Loop with Timeout (`time_until_next()`):**
+
+For event loops that need to multiplex rate limiting with other event sources:
+
+```python
+limiter = RateLimiter(lg, per_minute=60)
+
+while running:
+    timeout = limiter.time_until_next()  # Seconds until next slot
+    msg = channel.recv(timeout=timeout)  # Block until message or timeout
+    if msg:
+        handle_message(msg)
+    if limiter.try_next():
+        do_rate_limited_operation()
 ```
 
 **Bypass Mode:**
