@@ -37,11 +37,11 @@ def _visual_len(text: str) -> int:
 
 
 def _get_cache_key(
-    value: Any, col: str, bold: str, name: str, quote: bool
-) -> tuple[Any, str, str, str, bool] | None:
+    value: Any, col: str, bold: str, name: str, quote: bool, is_timing: bool
+) -> tuple[Any, str, str, str, bool, bool] | None:
     """Generate cache key for simple, cacheable values."""
     if isinstance(value, (str, int, float, bool)) and not isinstance(value, dict):
-        return (value, col, bold, name, quote)
+        return (value, col, bold, name, quote, is_timing)
     return None
 
 
@@ -92,7 +92,7 @@ def _format_value(
 
 
 def _cache_result(
-    formatter: Any, cache_key: tuple[Any, str, str, str, bool] | None, result: str
+    formatter: Any, cache_key: tuple[Any, str, str, str, bool, bool] | None, result: str
 ) -> None:
     """Cache result with LRU eviction when cache is full."""
     if cache_key is None:
@@ -121,6 +121,22 @@ def _escape_percent(s: str) -> str:
     return s.replace("%", "%%")
 
 
+def _format_value_without_colors(value: Any) -> str:
+    """Format a value without colors, recursively handling nested dicts.
+
+    For nested dicts, all keys (including 'after') are treated as normal field names.
+    """
+    if isinstance(value, dict):
+        # Recursively format nested dict - no special keys at nested level
+        parts = []
+        for k, v in value.items():
+            parts.append(f"{k}:{_format_value_without_colors(v)}")
+        return "{" + ",".join(parts) + "}"
+    if isinstance(value, list):
+        return ",".join(_format_value_without_colors(v) for v in value)
+    return str(value)
+
+
 def _format_extra_without_colors(record: logging.LogRecord) -> str:
     """Format extra fields without colors."""
     extra = getattr(record, "__infra__extra", None)
@@ -131,7 +147,7 @@ def _format_extra_without_colors(record: logging.LogRecord) -> str:
     if not isinstance(extra, collections.OrderedDict):
         keys = sorted(keys)
 
-    # Keys that get special handling
+    # Keys that get special handling at top level only
     special_keys = {"after", "exception", "exception_formatted"}
 
     extra_parts = []
@@ -139,7 +155,8 @@ def _format_extra_without_colors(record: logging.LogRecord) -> str:
         if key in special_keys:
             continue
         value = extra[key]
-        extra_parts.append(f"[{key}:{_escape_percent(str(value))}]")
+        formatted = _format_value_without_colors(value)
+        extra_parts.append(f"[{key}:{_escape_percent(formatted)}]")
 
     result = " " + " ".join(extra_parts) if extra_parts else ""
 
@@ -335,7 +352,7 @@ class FieldFormatter:
             Formatted field string with colors and brackets
         """
         # Check cache for simple, frequently repeated values
-        cache_key = _get_cache_key(value, col, bold, name, quote)
+        cache_key = _get_cache_key(value, col, bold, name, quote, is_timing)
         if cache_key and cache_key in self._format_cache:
             # Move to end to mark as recently used (LRU)
             self._format_cache.move_to_end(cache_key)

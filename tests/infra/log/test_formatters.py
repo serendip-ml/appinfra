@@ -72,23 +72,31 @@ class TestHelperFunctions:
 
     def test_get_cache_key_with_cacheable_value(self):
         """Test cache key generation for cacheable values."""
-        key = _get_cache_key("test", "col", "bold", "name", False)
-        assert key == ("test", "col", "bold", "name", False)
+        key = _get_cache_key("test", "col", "bold", "name", False, False)
+        assert key == ("test", "col", "bold", "name", False, False)
 
     def test_get_cache_key_with_int(self):
         """Test cache key generation for integers."""
-        key = _get_cache_key(123, "col", "bold", "name", True)
-        assert key == (123, "col", "bold", "name", True)
+        key = _get_cache_key(123, "col", "bold", "name", True, False)
+        assert key == (123, "col", "bold", "name", True, False)
 
     def test_get_cache_key_with_dict_returns_none(self):
         """Test cache key returns None for dict."""
-        key = _get_cache_key({"key": "value"}, "col", "bold", "name", False)
+        key = _get_cache_key({"key": "value"}, "col", "bold", "name", False, False)
         assert key is None
 
     def test_get_cache_key_with_list_returns_none(self):
         """Test cache key returns None for list."""
-        key = _get_cache_key([1, 2, 3], "col", "bold", "name", False)
+        key = _get_cache_key([1, 2, 3], "col", "bold", "name", False, False)
         assert key is None
+
+    def test_get_cache_key_includes_is_timing(self):
+        """Test cache key includes is_timing to differentiate timing vs normal fields."""
+        key_normal = _get_cache_key(1.5, "col", "bold", "after", True, False)
+        key_timing = _get_cache_key(1.5, "col", "bold", "after", True, True)
+        assert key_normal != key_timing
+        assert key_normal == (1.5, "col", "bold", "after", True, False)
+        assert key_timing == (1.5, "col", "bold", "after", True, True)
 
     def test_visual_len_plain_text(self):
         """Test visual length for plain text without ANSI codes."""
@@ -874,6 +882,32 @@ class TestMissingCoverage:
 
         # Should use micro rule width (different spacing)
         assert isinstance(result, str)
+
+    def test_format_extra_without_colors_nested_after(self):
+        """Test that 'after' in nested dicts is preserved in non-colored output."""
+        from appinfra.log.formatters import _format_extra_without_colors
+
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="/test.py",
+            lineno=10,
+            msg="test",
+            args=(),
+            exc_info=None,
+        )
+        # Nested dict with 'after' key - should be preserved as field name
+        setattr(
+            record, "__infra__extra", {"nested": {"after": "cursor_id", "limit": 100}}
+        )
+
+        result = _format_extra_without_colors(record)
+
+        # The nested 'after' should appear as a field name, not be omitted
+        assert "after" in result
+        assert "cursor_id" in result
+        assert "limit" in result
+        assert "100" in result
 
     def test_format_exception_with_percent_placeholders_no_colors(self):
         """Test formatting exception with %-style placeholders doesn't crash.
