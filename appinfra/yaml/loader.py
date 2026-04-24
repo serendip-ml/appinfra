@@ -1140,6 +1140,11 @@ class Loader(yaml.SafeLoader):
 
         if ":" in value:
             var_name, default = value.split(":", 1)
+            if not var_name:
+                ctx = self._create_error_context(node)
+                raise yaml.YAMLError(
+                    f"Empty environment variable name ({ctx.format_location()})"
+                )
             return os.environ.get(var_name, default)
 
         result = os.environ.get(value)
