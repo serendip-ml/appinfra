@@ -362,8 +362,9 @@ class FieldFormatter:
         head = _format_header(col, name, is_timing=is_timing)
         mid = _format_value(self, value, col, bold, name, is_timing=is_timing)
 
-        # Escape % characters to prevent logging format errors
-        if quote:
+        # Escape % characters to prevent logging format errors.
+        # Skip for dicts - nested format_field calls already escape their values.
+        if quote and not isinstance(value, dict):
             mid = mid.replace("%", "%%")
 
         tail = ColorManager.RESET + col + "]"

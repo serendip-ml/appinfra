@@ -1035,3 +1035,56 @@ class TestMissingCoverage:
         # The extra field value should appear in output
         assert "user_id" in result
         assert "query" in result
+
+    def test_nested_dict_percent_not_double_escaped(self):
+        """Test that % in nested dict values is not double-escaped.
+
+        Regression test: Nested dict values containing % were being escaped
+        twice (once by nested format_field call, again by parent), resulting
+        in %% appearing in output instead of %.
+        """
+        config = LogConfig(location=0, micros=False, colors=True)
+        formatter = LogFormatter(config)
+
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.INFO,
+            pathname="/test.py",
+            lineno=42,
+            msg="test message",
+            args=(),
+            exc_info=None,
+        )
+
+        # Nested dict with % in value
+        setattr(record, "__infra__extra", {"costs": {"remaining": "99%"}})
+
+        result = formatter.format(record)
+
+        # Should show 99%, not 99%%
+        assert "99%" in result
+        assert "99%%" not in result
+
+    def test_list_of_dicts_with_percent(self):
+        """Test that % in dicts inside lists is handled correctly."""
+        config = LogConfig(location=0, micros=False, colors=True)
+        formatter = LogFormatter(config)
+
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.INFO,
+            pathname="/test.py",
+            lineno=42,
+            msg="test message",
+            args=(),
+            exc_info=None,
+        )
+
+        # List containing dict with % in value
+        setattr(record, "__infra__extra", {"items": [{"pct": "50%"}]})
+
+        result = formatter.format(record)
+
+        # Should show 50%, not 50%%
+        assert "50%" in result
+        assert "50%%" not in result

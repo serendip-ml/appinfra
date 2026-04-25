@@ -19,6 +19,8 @@ For API stability guarantees and deprecation policy, see
 ### Fixed
 - `after` field in log `extra` dict is now only treated as timing at top level; nested dicts with
   an `after` key are formatted normally (field name preserved, no time conversion)
+- `%` characters in nested dict values are no longer double-escaped; `{'costs': {'pct': '99%'}}`
+  now correctly logs as `99%` instead of `99%%`
 
 ## [0.6.1] - 2026-04-14
 
