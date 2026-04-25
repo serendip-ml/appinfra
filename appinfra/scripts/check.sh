@@ -224,27 +224,46 @@ update_line() {
 display_failures() {
     [ -f "${STATUS_DIR}/failures" ] || return 0
 
+    # Max lines to show inline (prevents overwhelming output)
+    local MAX_INLINE_LINES=30
+
     while IFS='|' read -r name make_target fix_target logfile extra; do
         echo -e "${RED}ERROR: ${name} failed${RESET}"
         [ -n "$extra" ] && echo -e "→ ${extra}"
         [ -n "$make_target" ] && echo -e "→ To investigate: ${YELLOW}make ${make_target}${RESET}"
         [ -n "$fix_target" ] && echo -e "→ To fix: ${YELLOW}make ${fix_target}${RESET}"
-        if [ "$FAIL_FAST" = true ] && [ -n "$logfile" ] && [ -f "$logfile" ]; then
-            echo ""
-            # Show FAILED/ERROR lines (pytest short test summary)
-            local failed_lines
-            failed_lines=$(grep -E "^(FAILED|ERROR) " "$logfile" 2>/dev/null || true)
-            if [ -n "$failed_lines" ]; then
-                echo -e "${GRAY}Failed tests:${RESET}"
-                echo "$failed_lines"
+        if [ -n "$logfile" ] && [ -f "$logfile" ]; then
+            local total_lines
+            total_lines=$(wc -l < "$logfile" 2>/dev/null || echo "0")
+
+            if [ "$total_lines" -gt 0 ]; then
                 echo ""
-            fi
-            # Show error lines (pytest prefixes errors with "E ")
-            local error_lines
-            error_lines=$(grep -E "^E\s+" "$logfile" 2>/dev/null | head -5 || true)
-            if [ -n "$error_lines" ]; then
-                echo -e "${GRAY}Errors:${RESET}"
-                echo "$error_lines"
+                # Check if this is pytest output (has FAILED/ERROR lines)
+                local failed_lines
+                failed_lines=$(grep -E "^(FAILED|ERROR) " "$logfile" 2>/dev/null || true)
+                if [ -n "$failed_lines" ]; then
+                    # Pytest-specific: show failed test names and error details
+                    echo -e "${GRAY}Failed tests:${RESET}"
+                    echo "$failed_lines"
+                    echo ""
+                    local error_lines
+                    error_lines=$(grep -E "^E\s+" "$logfile" 2>/dev/null | head -10 || true)
+                    if [ -n "$error_lines" ]; then
+                        echo -e "${GRAY}Errors:${RESET}"
+                        echo "$error_lines"
+                    fi
+                else
+                    # Non-pytest: show last N lines of output
+                    echo -e "${GRAY}Output:${RESET}"
+                    if [ "$total_lines" -le "$MAX_INLINE_LINES" ]; then
+                        cat "$logfile"
+                    else
+                        local shown=$((MAX_INLINE_LINES - 1))
+                        local hidden=$((total_lines - shown))
+                        echo -e "${GRAY}... ($hidden lines hidden)${RESET}"
+                        tail -n "$shown" "$logfile"
+                    fi
+                fi
             fi
         fi
         echo ""

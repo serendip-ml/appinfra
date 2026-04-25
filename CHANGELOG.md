@@ -16,6 +16,10 @@ For API stability guarantees and deprecation policy, see
 - `RateLimiter.time_until_next()` — returns seconds until next slot is available, for event loops
   that need timeout values without consuming a slot (matches `Ticker.time_until_next_tick()`)
 
+### Changed
+- `make check` now shows error output inline when a check fails, eliminating the need to run a
+  separate `make <target>` command to see what broke
+
 ### Fixed
 - `after` field in log `extra` dict is now only treated as timing at top level; nested dicts with
   an `after` key are formatted normally (field name preserved, no time conversion)
