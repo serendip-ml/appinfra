@@ -243,10 +243,9 @@ format_log_output() {
         if [ "$total_lines" -le "$max_lines" ]; then
             cat "$logfile"
         else
-            local shown=$((max_lines - 1))
-            local hidden=$((total_lines - shown))
+            local hidden=$((total_lines - max_lines))
             echo -e "${GRAY}... ($hidden lines hidden)${RESET}"
-            tail -n "$shown" "$logfile"
+            tail -n "$max_lines" "$logfile"
         fi
     fi
 }

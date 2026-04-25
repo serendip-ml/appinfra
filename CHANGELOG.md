@@ -18,7 +18,7 @@ For API stability guarantees and deprecation policy, see
 
 ### Changed
 - `make check` now shows error output inline for non-pytest failures (last 30 lines), in addition
-  to the existing pytest failure summary
+  to the existing pytest failure summary; fail-fast behavior is preserved
 
 ### Fixed
 - `after` field in log `extra` dict is now only treated as timing at top level; nested dicts with
