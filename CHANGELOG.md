@@ -18,6 +18,8 @@ For API stability guarantees and deprecation policy, see
   `message`, `levelname`) are used in log `extra` dict, preventing silent overwrites
 - `RateLimiter.time_until_next()` — returns seconds until next slot is available, for event loops
   that need timeout values without consuming a slot (matches `Ticker.time_until_next_tick()`)
+- `make reinstall` target — runs uninstall then install to clean orphaned files after removing
+  source files from a package
 
 ### Changed
 - `Config` internal attributes (`_enable_env_overrides`, `_config_path`, etc.) are now stored as
