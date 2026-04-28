@@ -12,7 +12,8 @@ For API stability guarantees and deprecation policy, see
 
 ### Added
 - `DotDict` is now generic — use `DotDict[V]` for type-safe homogeneous value collections (e.g.,
-  `DotDict[float]`); unparameterized `DotDict` remains `DotDict[Any]` for backward compatibility
+  `DotDict[float]`); unparameterized `DotDict` defaults to `DotDict[Any]` via PEP 696, so bare
+  `DotDict` works with strict mypy without requiring explicit `DotDict[Any]`
 - `ReservedKeyError` exception — raised immediately when reserved LogRecord keys (e.g., `name`,
   `message`, `levelname`) are used in log `extra` dict, preventing silent overwrites
 - `RateLimiter.time_until_next()` — returns seconds until next slot is available, for event loops

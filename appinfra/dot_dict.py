@@ -8,12 +8,14 @@ dot-notation path traversal.
 
 import builtins
 import datetime
-from typing import Any, Self, TypeVar
+from typing import Any, Self
+
+from typing_extensions import TypeVar
 
 from . import time as timeutils
 from .dict import DictInterface
 
-V = TypeVar("V")
+V = TypeVar("V", default=Any)
 
 
 class DotDict(dict[str, V], DictInterface):
