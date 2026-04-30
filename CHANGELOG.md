@@ -22,6 +22,10 @@ For API stability guarantees and deprecation policy, see
   source files from a package
 
 ### Changed
+- **Breaking:** `LifecycleCallbackDefinition` now has `after_lifespan: bool = True` — startup
+  callbacks run AFTER user lifespan enters by default, so user dependencies (database, message
+  queues) are initialized before "server started" logs; set `after_lifespan=False` for the old
+  behavior where callbacks run before lifespan
 - `Config` internal attributes (`_enable_env_overrides`, `_config_path`, etc.) are now stored as
   true object attributes rather than dict entries — they no longer appear in `keys()` or iteration
 - `make check` now shows error output inline for non-pytest failures (last 30 lines), in addition
