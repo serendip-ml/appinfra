@@ -301,9 +301,12 @@ class AppBuilder:
     def build(self) -> App:
         """Build the application with all configured components.
 
-        Builds once, a failed build included: the hook and plugin managers
-        are handed to the App, and plugins configure the builder in place,
-        so a second App from the same builder would share their state.
+        Builds once: the hook and plugin managers are handed to the App, and
+        plugins configure the builder in place, so a second App from the
+        same builder would share their state. A build that fails after the
+        pre-checks below consumes the builder too. The pre-checks themselves
+        change nothing, so a builder they reject stays usable: close the
+        block they name and build again.
 
         Plugins run first, so what they set on any block is realized like
         the app's own declarations: the version tracker and flag, the App's
@@ -312,7 +315,7 @@ class AppBuilder:
         if self._built:
             raise ValueError(
                 "build() was already called on this AppBuilder; it builds "
-                "once, a failed build included, so create a new one"
+                "once, so create a new one"
             )
         self._check_blocks_closed()
         self._built = True

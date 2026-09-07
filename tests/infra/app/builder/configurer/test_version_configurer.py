@@ -396,6 +396,15 @@ class TestVersionConfigurer:
         assert app_builder._version_tracker is not None
         assert not app_builder._hooks.has_hooks("startup")
 
+    def test_call_startup_log_true_re_enables(self, app_builder):
+        """The keyword form applies both states of startup_log."""
+        app_builder.version.with_package("pytest").without_startup_log().done()
+        app_builder.version(startup_log=True)
+
+        app_builder.build()
+
+        assert len(_startup_hooks(app_builder)) == 1
+
 
 class TestVersionFlag:
     """The cli block's ``version`` flag exposes ``-v/--version`` at build()."""

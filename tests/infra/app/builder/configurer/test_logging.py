@@ -281,6 +281,11 @@ class TestKeywordForm:
         with pytest.raises(TypeError, match="level cannot be None"):
             AppBuilder("test").logging(level=None)
 
+    def test_call_rejects_non_boolean_runtime_updates(self):
+        """A truthy string must not switch the level manager into runtime mode."""
+        with pytest.raises(TypeError, match="runtime_updates must be a boolean"):
+            AppBuilder("test").logging(runtime_updates="false")
+
     def test_call_sets_options_and_returns_builder(self):
         """Display options land in the programmatic layer."""
         builder = AppBuilder("test")

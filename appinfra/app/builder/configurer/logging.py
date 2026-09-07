@@ -143,5 +143,10 @@ class LoggingScope(LoggingBuilder):
             if "topic_levels" in fields:
                 self.with_topic_levels(fields["topic_levels"])
             if "runtime_updates" in fields:
+                if not isinstance(fields["runtime_updates"], bool):
+                    raise TypeError(
+                        "runtime_updates must be a boolean, got "
+                        f"{type(fields['runtime_updates']).__name__}"
+                    )
                 self.with_runtime_updates(fields["runtime_updates"])
         return self.done()

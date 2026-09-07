@@ -890,6 +890,17 @@ class TestPluginContributedTools:
         with pytest.raises(ValueError, match="already called"):
             builder.build()
 
+    def test_rejected_precheck_leaves_the_builder_usable(self):
+        """An open block fails before anything is realized, so closing it and building works."""
+        builder = AppBuilder("myapp")
+        block = builder.tools
+        with pytest.raises(ValueError, match="still open"):
+            builder.build()
+
+        block.done()
+
+        assert builder.build() is not None
+
     def test_plugin_leaving_a_block_open_is_named(self):
         """The error carries the plugin's name and the line that opened the block."""
 

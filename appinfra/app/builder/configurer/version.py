@@ -199,6 +199,9 @@ class VersionConfigurer:
             elif package is not None:
                 for name in package:
                     self.with_package(name)
-            if fields.get("startup_log") is False:
-                self.without_startup_log()
+            if "startup_log" in fields:
+                if fields["startup_log"]:
+                    self.with_startup_log()
+                else:
+                    self.without_startup_log()
         return self.done()
