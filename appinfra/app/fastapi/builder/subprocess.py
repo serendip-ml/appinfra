@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar
 
-from ..config.api import ApiConfig
 from ..config.ipc import IPCConfig
 
 if TYPE_CHECKING:
@@ -17,8 +17,6 @@ if TYPE_CHECKING:
 # The parent's concrete type, so done() on a subclass of ServerBuilder
 # (the AppBuilder server scope) returns that subclass.
 P = TypeVar("P", bound="ServerBuilder")
-
-_API_DEFAULTS = ApiConfig()
 
 
 class SubprocessConfigurer(Generic[P]):
@@ -39,7 +37,7 @@ class SubprocessConfigurer(Generic[P]):
             .subprocess
                 .with_ipc(request_q, response_q)
                 .with_log_file("/var/log/api.log")
-                .with_auto_restart(enabled=True, max_restarts=10)
+                .with_auto_restart(True).with_max_restarts(10)
                 .done()
             .build())
     """
@@ -155,31 +153,28 @@ class SubprocessConfigurer(Generic[P]):
         self._ipc().enable_health_reporting = enabled
         return self
 
-    def with_auto_restart(
-        self,
-        enabled: bool = True,
-        delay: float = _API_DEFAULTS.restart_delay,
-        max_restarts: int = _API_DEFAULTS.max_restarts,
-    ) -> Self:
-        """
-        Configure automatic restart on crash.
+    def with_auto_restart(self, enabled: bool = True) -> Self:
+        """Restart the subprocess when it crashes (the default).
 
-        Args:
-            enabled: Enable auto-restart (default: True)
-            delay: Seconds to wait before restart (default: 1.0)
-            max_restarts: Max restart attempts (default: 5, 0=unlimited)
-
-        Returns:
-            Self for method chaining
+        The delay and the attempt limit are separate settings, so toggling
+        this leaves them as configured.
         """
         self._parent._api.auto_restart = enabled
-        self._parent._api.restart_delay = delay
-        self._parent._api.max_restarts = max_restarts
+        return self
+
+    def with_restart_delay(self, seconds: float) -> Self:
+        """Seconds to wait before a restart."""
+        self._parent._api.restart_delay = seconds
+        return self
+
+    def with_max_restarts(self, count: int) -> Self:
+        """Restart attempts before giving up; 0 means unlimited."""
+        self._parent._api.max_restarts = count
         return self
 
     def with_config(self, config: IPCConfig) -> Self:
         """Set entire IPC config at once."""
-        self._parent._api.ipc = config
+        self._parent._api.ipc = replace(config)
         return self
 
     def done(self) -> P:

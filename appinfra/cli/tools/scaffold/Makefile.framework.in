@@ -34,8 +34,9 @@ include $(INFRA_ROOT)/scripts/make/Makefile.utils
 include $(INFRA_ROOT)/scripts/make/Makefile.clean
 include $(INFRA_ROOT)/scripts/make/Makefile.dev
 include $(INFRA_ROOT)/scripts/make/Makefile.pytest
-# Uncomment if using PostgreSQL:
-# pg_docker_cfg := $(INFRA_DEV_PKG_NAME)/etc/pg.yaml
+# Uncomment if using PostgreSQL; the pg targets read the pgserver section of
+# $(ETC_DIR)/$(INFRA_DEFAULT_CONFIG_FILE), which the scaffold keeps inside the package:
+# ETC_DIR := $(CURDIR)/$(INFRA_DEV_PKG_NAME)/etc
 # include $(INFRA_ROOT)/scripts/make/Makefile.pg
 
 ##@ Application

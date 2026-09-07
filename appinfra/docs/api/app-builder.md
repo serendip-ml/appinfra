@@ -251,8 +251,11 @@ app = AppBuilder("myapp").logging(level="info", location=1).build()
 Keyword fields: `level`, `location`, `micros`, `colors`, `location_color`, `topic_levels`,
 `runtime_updates`. Handlers and `with_extra` are chained only; handlers become
 `logging.handlers` entries and extra fields become `logging.extra`, so the app's root logger gets
-both. `with_runtime_updates()` is the one scope-only method; everything else is the standalone
-builder's.
+both. Handlers from the block are keyed `builder_0`, `builder_1` and so on, so they never merge
+into a handler the config file names. A handler with no config form, a database handler or a
+console handler on a stream other than stdout/stderr, fails at `done()`; add such a handler to
+the root logger from a startup hook instead. `with_runtime_updates()` is the one scope-only
+method; everything else is the standalone builder's.
 
 ## server block
 
@@ -348,9 +351,9 @@ app = AppBuilder("myapp").lifecycle(startup=on_startup, shutdown=on_shutdown).bu
 
 `with_hook(event, callback, priority=0)` registers one callback; higher priority runs first.
 `with_hook_builder(HookBuilder)` registers every hook of a builder, keeping priority, `once` and
-conditions. Event names are those of `HookManager`: `startup`, `shutdown`, `tool_start`,
-`tool_end`, `error`, `before_parse`, `after_parse`, `before_setup`, `after_setup`, and custom
-names.
+conditions. The standard events are `startup`, `shutdown`, `tool_start`, `tool_end`, `error`,
+`before_parse`, `after_parse`, `before_setup` and `after_setup`; the keyword form accepts only
+those, so a misspelled name fails at the call. Custom event names go through `with_hook`.
 
 ## version block
 

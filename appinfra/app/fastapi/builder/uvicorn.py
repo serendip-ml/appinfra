@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import fields, replace
 from typing import TYPE_CHECKING, Generic, Self, TypedDict, TypeVar, Unpack
 
 from ..config.uvicorn import UvicornConfig
@@ -109,8 +109,8 @@ class UvicornConfigurer(Generic[P]):
 
     def with_config(self, config: UvicornConfig) -> Self:
         """Set entire uvicorn config at once."""
-        self._parent._api.uvicorn = config
-        self._config = config
+        self._parent._api.uvicorn = replace(config)
+        self._config = self._parent._api.uvicorn
         return self
 
     def done(self) -> P:

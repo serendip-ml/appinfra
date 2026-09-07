@@ -136,10 +136,11 @@ class LoggerFactory:
 
         # An existing logger keeps its config and handlers; extra is per-record
         # data and follows the latest request, so a repeated setup is not
-        # silently missing fields.
+        # silently missing fields. The name may hold a plain stdlib logger
+        # created by a library, which has no extra to set.
         existing = LoggerFactory._check_existing_logger(name)
         if existing:
-            if extra is not None:
+            if extra is not None and isinstance(existing, Logger):
                 existing.set_extra(extra)
             return existing
 

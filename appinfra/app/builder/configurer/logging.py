@@ -18,8 +18,7 @@ from typing import TYPE_CHECKING, Any, Self, TypedDict, Unpack
 
 from ....log.builder.builder import LoggingBuilder
 from ....log.logger import Logger
-from .block import check_fields
-from .config import ConfigConfigurer
+from .block import check_fields, close_on_error
 
 if TYPE_CHECKING:
     from ..app import AppBuilder
@@ -59,7 +58,7 @@ class LoggingScope(LoggingBuilder):
     changes fails at ``AppBuilder.build()``.
     """
 
-    block = "logging"
+    block_name = "logging"
 
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
@@ -99,9 +98,7 @@ class LoggingScope(LoggingBuilder):
         """Write explicit options, handlers and extra into ``logging``. Idempotent."""
         values = self._values()
         if values:
-            # Direct construction: the property would open the config block
-            # while this block is the open one.
-            ConfigConfigurer(self._app_builder).with_overrides({"logging": values})
+            self._app_builder._merge_overrides({"logging": values})
         self._folded = values
 
     def _pending(self) -> bool:
@@ -140,10 +137,11 @@ class LoggingScope(LoggingBuilder):
 
     def __call__(self, **fields: Unpack[LoggingFields]) -> AppBuilder:
         """Keyword form of the block; returns the AppBuilder."""
-        check_fields("logging", fields, LoggingFields.__annotations__)
-        self.with_options({k: v for k, v in fields.items() if k in _OPTION_KEYS})
-        if "topic_levels" in fields:
-            self.with_topic_levels(fields["topic_levels"])
-        if "runtime_updates" in fields:
-            self.with_runtime_updates(fields["runtime_updates"])
+        with close_on_error(self._app_builder, self):
+            check_fields("logging", fields, LoggingFields.__annotations__)
+            self.with_options({k: v for k, v in fields.items() if k in _OPTION_KEYS})
+            if "topic_levels" in fields:
+                self.with_topic_levels(fields["topic_levels"])
+            if "runtime_updates" in fields:
+                self.with_runtime_updates(fields["runtime_updates"])
         return self.done()

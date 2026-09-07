@@ -61,12 +61,12 @@ class TestWithFlags:
 
     def test_invalid_flag_name_raises(self):
         """Unknown names are rejected with the valid set listed."""
-        with pytest.raises(ValueError, match="Unknown CLI flag: 'invalid_arg'"):
+        with pytest.raises(TypeError, match="Unknown CLI flag: 'invalid_arg'"):
             AppBuilder("test").cli.with_flags(**{"invalid_arg": False})
 
     def test_non_boolean_value_raises(self):
         """Values must be booleans."""
-        with pytest.raises(ValueError, match="Value for 'etc_dir' must be a boolean"):
+        with pytest.raises(TypeError, match="Value for 'etc_dir' must be a boolean"):
             AppBuilder("test").cli.with_flags(**{"etc_dir": "not_a_bool"})
 
     def test_returns_block_for_chaining(self):
@@ -106,7 +106,7 @@ class TestWithFlags:
 
     def test_log_alias_rejects_non_boolean(self):
         """The alias value is validated like any other."""
-        with pytest.raises(ValueError, match="Value for 'log' must be a boolean"):
+        with pytest.raises(TypeError, match="Value for 'log' must be a boolean"):
             AppBuilder("test").cli.with_flags(**{"log": 1})
 
     def test_version_is_a_flag(self):
@@ -177,8 +177,16 @@ class TestKeywordForm:
         with pytest.raises(ValueError, match="at least one flag"):
             AppBuilder("test").cli()
 
+    def test_failed_call_leaves_no_block_open(self):
+        """A rejected keyword form closes its block, so the builder stays usable."""
+        builder = AppBuilder("test")
+        with pytest.raises(ValueError, match="at least one flag"):
+            builder.cli()
+
+        assert builder.tools.done() is builder
+
     def test_call_unknown_keyword_raises(self):
-        """The keyword form fails like the other blocks; with_flags keeps ValueError."""
+        """The keyword form and with_flags fail the same way on an unknown name."""
         with pytest.raises(TypeError, match="unknown cli field\\(s\\): foo"):
             AppBuilder("test").cli(foo=True)
 
@@ -231,7 +239,7 @@ class TestWithFlag:
 
     def test_invalid_name_rejected(self):
         """Unknown flag names are rejected."""
-        with pytest.raises(ValueError, match="Unknown CLI flag"):
+        with pytest.raises(TypeError, match="Unknown CLI flag"):
             AppBuilder("test").cli.with_flag("not_a_real_arg", help="x")
 
     def test_log_alias_rejected(self):

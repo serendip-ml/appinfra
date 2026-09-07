@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Self
 from ...tools.base import Tool
 from ..plugin import Plugin
 from ..tool import ToolBuilder
+from .block import close_on_error
 
 if TYPE_CHECKING:
     from ..app import AppBuilder
@@ -28,7 +29,7 @@ class ToolConfigurer:
     following the Single Responsibility Principle.
     """
 
-    block = "tools"
+    block_name = "tools"
 
     def __init__(self, app_builder: AppBuilder):
         """
@@ -171,8 +172,9 @@ class ToolConfigurer:
         main: str | Tool | None = None,
     ) -> AppBuilder:
         """Keyword form of the block: tools by position, plugins and main by keyword."""
-        self.with_tools(*tools)
-        self.with_plugins(*plugins)
-        if main is not None:
-            self.with_main(main)
+        with close_on_error(self._app_builder, self):
+            self.with_tools(*tools)
+            self.with_plugins(*plugins)
+            if main is not None:
+                self.with_main(main)
         return self.done()

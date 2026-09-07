@@ -16,11 +16,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Self, TypedDict, Unpack
 
-from ..hook import HookManager
-from .block import check_fields
+from ....version import BuildInfo, PackageVersionInfo, PackageVersionTracker
+from ..hook import HookContext, HookManager
+from .block import check_fields, close_on_error
 
 if TYPE_CHECKING:
-    from ....version import BuildInfo, PackageVersionInfo, PackageVersionTracker
     from ..app import AppBuilder
 
 
@@ -77,13 +77,12 @@ def _log_package_info(lg: logging.Logger, info: PackageVersionInfo) -> None:
         lg.debug("package", extra=extra)
 
 
-def register_startup_hook(
+def _register_startup_hook(
     hooks: HookManager,
     tracker: PackageVersionTracker | None,
     build_info: BuildInfo | None,
 ) -> None:
     """Register the startup hook that logs build info and tracked packages."""
-    from ..hook import HookContext
 
     def log_versions(context: HookContext) -> None:
         if not hasattr(context.application, "lg"):
@@ -115,7 +114,7 @@ class VersionConfigurer:
         AppBuilder("myapp").version(semver="1.0.0", build_info=True, package="mylib")
     """
 
-    block = "version"
+    block_name = "version"
 
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
@@ -139,8 +138,6 @@ class VersionConfigurer:
         Returns:
             Self for method chaining
         """
-        from ....version import BuildInfo
-
         if path is None:
             path = self._find_build_info_path()
         elif isinstance(path, str):
@@ -187,20 +184,21 @@ class VersionConfigurer:
 
     def __call__(self, **fields: Unpack[VersionFields]) -> AppBuilder:
         """Keyword form of the block; returns the AppBuilder."""
-        check_fields("version", fields, VersionFields.__annotations__)
-        if "semver" in fields:
-            self.with_semver(fields["semver"])
-        build_info = fields.get("build_info")
-        if build_info is True:
-            self.with_build_info()
-        elif isinstance(build_info, str | Path):
-            self.with_build_info(build_info)
-        package = fields.get("package")
-        if isinstance(package, str):
-            self.with_package(package)
-        elif package is not None:
-            for name in package:
-                self.with_package(name)
-        if fields.get("startup_log") is False:
-            self.without_startup_log()
+        with close_on_error(self._app_builder, self):
+            check_fields("version", fields, VersionFields.__annotations__)
+            if "semver" in fields:
+                self.with_semver(fields["semver"])
+            build_info = fields.get("build_info")
+            if build_info is True:
+                self.with_build_info()
+            elif isinstance(build_info, str | Path):
+                self.with_build_info(build_info)
+            package = fields.get("package")
+            if isinstance(package, str):
+                self.with_package(package)
+            elif package is not None:
+                for name in package:
+                    self.with_package(name)
+            if fields.get("startup_log") is False:
+                self.without_startup_log()
         return self.done()

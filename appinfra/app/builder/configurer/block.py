@@ -5,7 +5,8 @@
 
 import inspect
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -15,11 +16,34 @@ _BUILDER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 class Block(Protocol):
     """A block of the AppBuilder: opened by a property, closed by ``done()``."""
 
-    block: str
+    block_name: str
 
-    def done(self) -> Any:
+    def done(self) -> object:
         """Close the block and return to the AppBuilder."""
         ...
+
+
+class BlockOwner(Protocol):
+    """What opens and closes blocks: the AppBuilder."""
+
+    def _close(self, block: Block) -> None:
+        """Close ``block`` if it is the open one."""
+        ...
+
+
+@contextmanager
+def close_on_error(owner: BlockOwner, block: Block) -> Iterator[None]:
+    """Close ``block`` if the body raises.
+
+    The keyword forms validate before ``done()`` runs; without this a
+    rejected call would leave the block open, and the next block access on
+    the same builder would fail for a line that already failed.
+    """
+    try:
+        yield
+    except BaseException:
+        owner._close(block)
+        raise
 
 
 @dataclass(frozen=True)
@@ -32,13 +56,15 @@ class OpenBlock:
     @property
     def name(self) -> str:
         """The block's name, for messages."""
-        return self.block.block
+        return self.block.block_name
 
 
 def caller_location() -> str:
     """``file:line`` of the nearest frame outside the builder package."""
     frame = inspect.currentframe()
-    while frame is not None and frame.f_code.co_filename.startswith(_BUILDER_DIR):
+    while frame is not None and frame.f_code.co_filename.startswith(
+        _BUILDER_DIR + os.sep
+    ):
         frame = frame.f_back
     if frame is None:
         return "<unknown>"

@@ -124,6 +124,21 @@ class TestLoggerExists:
         if hasattr(logger, "handlers"):
             logger.handlers.clear()
 
+    def test_create_with_extra_over_stdlib_logger_does_not_crash(
+        self, log_config, unique_logger_name
+    ):
+        """A library's plain logger under the name has no extra to set."""
+        existing_logger = logging.getLogger(unique_logger_name)
+
+        logger = LoggerFactory.create(
+            unique_logger_name, log_config, extra={"service": "api"}
+        )
+
+        assert logger is existing_logger
+
+        # Cleanup
+        existing_logger.handlers.clear()
+
 
 # =============================================================================
 # Test create_child method - Lines 107-122

@@ -130,6 +130,23 @@ class HookManager:
             self._hook_metadata.clear()
 
 
+# The events the framework fires; ``HookBuilder`` has one ``on_*`` per name.
+# Custom events are registered by name through ``HookManager.register_hook``.
+STANDARD_EVENTS = frozenset(
+    {
+        "startup",
+        "shutdown",
+        "tool_start",
+        "tool_end",
+        "error",
+        "before_parse",
+        "after_parse",
+        "before_setup",
+        "after_setup",
+    }
+)
+
+
 class HookBuilder:
     """Builder for registering hooks."""
 

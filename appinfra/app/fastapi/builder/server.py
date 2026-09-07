@@ -44,6 +44,19 @@ from .subprocess import SubprocessConfigurer
 from .uvicorn import UvicornConfigurer
 
 
+def _copy_api(config: ApiConfig) -> ApiConfig:
+    """A copy of ``config`` with its nested objects copied as well.
+
+    ``ApiConfig`` holds ``UvicornConfig`` and ``IPCConfig`` by reference, so a
+    plain ``replace`` would leave those shared between two owners.
+    """
+    return replace(
+        config,
+        uvicorn=replace(config.uvicorn),
+        ipc=replace(config.ipc) if config.ipc is not None else None,
+    )
+
+
 class ServerBuilder:
     """
     Fluent builder for FastAPI servers with optional subprocess isolation.
@@ -75,7 +88,7 @@ class ServerBuilder:
                 .done()
             .subprocess
                 .with_ipc(request_q, response_q)
-                .with_auto_restart(enabled=True, max_restarts=10)
+                .with_auto_restart(True).with_max_restarts(10)
                 .done()
             .uvicorn
                 .with_workers(4)
@@ -159,9 +172,11 @@ class ServerBuilder:
         """
         Set entire API configuration at once.
 
-        Useful when loading config from file or environment.
+        Useful when loading config from file or environment. The builder
+        works on its own copy, so later setters and facets leave the given
+        object alone and several builders can share one loaded config.
         """
-        self._api = config
+        self._api = _copy_api(config)
         return self
 
     # Lifecycle callback methods
@@ -405,13 +420,9 @@ class ServerBuilder:
     # Build
 
     def _build_config(self) -> ApiConfig:
-        """A copy of the builder's config, nested objects included, so the
-        Server owns its own and later facet calls cannot reach it."""
-        return replace(
-            self._api,
-            uvicorn=replace(self._api.uvicorn),
-            ipc=replace(self._api.ipc) if self._api.ipc is not None else None,
-        )
+        """A copy of the builder's config, so the Server owns its own and
+        later facet calls cannot reach it."""
+        return _copy_api(self._api)
 
     def _configure_adapter(self, adapter: FastAPIAdapter) -> None:
         """Configure adapter with routes, middleware, handlers, and lifecycle callbacks."""

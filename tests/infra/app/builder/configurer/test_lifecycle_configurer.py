@@ -105,6 +105,17 @@ class TestKeywordForm:
         assert builder._hooks._hooks["startup"] == [start]
         assert builder._hooks._hooks["shutdown"] == [stop]
 
+    def test_call_rejects_unknown_event(self):
+        """A misspelled standard event fails instead of registering a dead hook."""
+        with pytest.raises(TypeError, match="unknown lifecycle field\\(s\\): shutdwn"):
+            AppBuilder("test").lifecycle(startup=Mock(), shutdwn=Mock())
+
+    def test_custom_event_goes_through_with_hook(self):
+        """Custom event names are registered by the chained form."""
+        builder = AppBuilder("test").lifecycle.with_hook("deploy", Mock()).done()
+
+        assert builder._hooks.has_hooks("deploy")
+
 
 # =============================================================================
 # Integration with the App

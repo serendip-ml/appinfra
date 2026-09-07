@@ -391,6 +391,11 @@ class TestVersionConfigurer:
         assert app_builder._version_packages == ["pytest", "packaging"]
         assert app_builder._version_startup_log is False
 
+        app_builder.build()
+
+        assert app_builder._version_tracker is not None
+        assert not app_builder._hooks.has_hooks("startup")
+
 
 class TestVersionFlag:
     """The cli block's ``version`` flag exposes ``-v/--version`` at build()."""

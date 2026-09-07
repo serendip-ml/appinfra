@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Self, TypedDict, Unpack
 
 from ...core.app import DEFAULT_STANDARD_ARGS
-from .block import check_fields
+from .block import check_fields, close_on_error
 
 if TYPE_CHECKING:
     from ..app import AppBuilder
@@ -69,7 +69,7 @@ class CliConfigurer:
     of the ``.version`` block at build time.
     """
 
-    block = "cli"
+    block_name = "cli"
 
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
@@ -82,7 +82,8 @@ class CliConfigurer:
         alias.
 
         Raises:
-            ValueError: for no flags, an unknown name, or a non-boolean value.
+            TypeError: for an unknown name or a non-boolean value.
+            ValueError: for no flags at all.
         """
         if not flags:
             raise ValueError(
@@ -118,7 +119,8 @@ class CliConfigurer:
         args by a fixed attribute name.
 
         Raises:
-            ValueError: for an unknown or aliased name, or a rejected key.
+            TypeError: for an unknown name.
+            ValueError: for the ``log`` alias, ``help``, or a rejected key.
         """
         _check_flag_name(name)
         if name == "log":
@@ -145,15 +147,16 @@ class CliConfigurer:
 
     def __call__(self, **flags: Unpack[CliFlags]) -> AppBuilder:
         """Keyword form of the block; same arguments as ``with_flags``."""
-        check_fields("cli", flags, CliFlags.__annotations__)
-        self.with_flags(**flags)
+        with close_on_error(self._app_builder, self):
+            check_fields("cli", flags, CliFlags.__annotations__)
+            self.with_flags(**flags)
         return self.done()
 
 
 def _check_flag_name(name: str) -> None:
     """Reject names outside the standard-flag set and the ``log`` alias."""
     if name not in _FLAG_NAMES:
-        raise ValueError(
+        raise TypeError(
             f"Unknown CLI flag: {name!r}. Valid flags: {', '.join(sorted(_FLAG_NAMES))}"
         )
 
@@ -161,6 +164,6 @@ def _check_flag_name(name: str) -> None:
 def _check_bool(name: str, value: Any) -> None:
     """Reject non-boolean flag values."""
     if not isinstance(value, bool):
-        raise ValueError(
+        raise TypeError(
             f"Value for {name!r} must be a boolean, got {type(value).__name__}"
         )

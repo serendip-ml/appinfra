@@ -13,7 +13,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Self
 
-from ..hook import HookBuilder
+from ..hook import STANDARD_EVENTS, HookBuilder
+from .block import check_fields, close_on_error
 
 if TYPE_CHECKING:
     from ..app import AppBuilder
@@ -35,7 +36,7 @@ class LifecycleConfigurer:
     ``after_parse``, ``before_setup``, ``after_setup`` and custom names).
     """
 
-    block = "lifecycle"
+    block_name = "lifecycle"
 
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
@@ -58,11 +59,17 @@ class LifecycleConfigurer:
         return self._app_builder
 
     def __call__(self, **hooks: Callable) -> AppBuilder:
-        """Keyword form of the block: one callback per event name.
+        """Keyword form of the block: one callback per standard event.
 
-        Any name is accepted as an event, so a misspelled standard event
-        registers a hook that nothing fires.
+        Only the events the framework fires are accepted, so a misspelled
+        name fails here instead of registering a hook nothing runs. Custom
+        event names go through ``with_hook``.
+
+        Raises:
+            TypeError: for a keyword that is not a standard event.
         """
-        for event, callback in hooks.items():
-            self.with_hook(event, callback)
+        with close_on_error(self._app_builder, self):
+            check_fields("lifecycle", hooks, STANDARD_EVENTS)
+            for event, callback in hooks.items():
+                self.with_hook(event, callback)
         return self.done()

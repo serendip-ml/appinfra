@@ -392,8 +392,10 @@ class LoggingBuilder(LoggingBuilderInterface):
         """
         Serialize builder configuration to a picklable dictionary.
 
-        Used for passing logging configuration to subprocesses.
-        Database handlers are excluded (they cannot be serialized).
+        Used for passing logging configuration to subprocesses. Handlers
+        without a config form are excluded: database handlers, and console
+        handlers on a stream other than ``sys.stdout`` / ``sys.stderr``.
+        Neither can follow into another process.
 
         Returns:
             Dictionary with all configuration parameters

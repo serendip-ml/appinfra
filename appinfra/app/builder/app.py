@@ -19,11 +19,15 @@ or called with keywords, which returns the AppBuilder directly::
 ``.logging`` and ``.server`` are the standalone ``LoggingBuilder`` and
 FastAPI ``ServerBuilder`` bound to the AppBuilder, so every method of
 those builders is available on the block without re-declaration.
+
+One block is open at a time: ``build()``, opening another block, or a
+plugin returning from ``configure()`` with a block open raises, naming
+the block and the line that opened it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Self
 
@@ -40,7 +44,7 @@ from .configurer.config import ConfigConfigurer
 from .configurer.lifecycle import LifecycleConfigurer
 from .configurer.logging import LoggingScope
 from .configurer.tool import ToolConfigurer
-from .configurer.version import VersionConfigurer, register_startup_hook
+from .configurer.version import VersionConfigurer, _register_startup_hook
 from .hook import HookManager
 from .plugin import PluginManager
 
@@ -165,17 +169,11 @@ def _initialize_foundation(app: App, builder: AppBuilder) -> None:
 
 
 def _register_components(app: App, builder: AppBuilder) -> None:
-    """Register all app components: plugins, tools, lifecycle, arguments."""
-    # Plugins first: configure() may add tools, hooks, routes and middleware
-    # to the builder, and those must exist before the tool registry is
-    # populated from it. The server plugin is registered last, so it builds
-    # the server after the other plugins have configured it.
-    builder._plugins.configure_all(builder)
-    if builder._server_scope is not None and not builder._server_registered:
-        raise ValueError(
-            "a plugin configured .server but the app declared no server; "
-            "declare .server on the builder to expose it"
-        )
+    """Register tools, lifecycle managers and arguments on the built App.
+
+    Plugins have already configured the builder by now, so the tool list,
+    hooks and custom arguments include their contributions.
+    """
     _register_tools_and_commands(app, builder._tools, builder._commands)
     if builder._main_tool:
         app.set_main_tool(builder._main_tool)
@@ -282,6 +280,13 @@ class AppBuilder:
         self._main_cls = cls
         return self
 
+    def _merge_overrides(self, values: Mapping[str, Any]) -> None:
+        """Deep-merge a mapping into the programmatic config layer."""
+        if self._config is None:
+            self._config = values if isinstance(values, DotDict) else DotDict(**values)
+        else:
+            self._config = self._merge_configs(self._config, DotDict(**values))
+
     def _merge_configs(
         self, base: Config | DotDict, override: Config | DotDict
     ) -> DotDict:
@@ -296,13 +301,34 @@ class AppBuilder:
     def build(self) -> App:
         """Build the application with all configured components.
 
-        Builds once: the hook and plugin managers are handed to the App, so
-        a second App from the same builder would share their state.
+        Builds once, a failed build included: the hook and plugin managers
+        are handed to the App, and plugins configure the builder in place,
+        so a second App from the same builder would share their state.
+
+        Plugins run first, so what they set on any block is realized like
+        the app's own declarations: the version tracker and flag, the App's
+        config snapshot and its standard flags all come after ``configure()``.
         """
         if self._built:
             raise ValueError(
-                "build() was already called on this AppBuilder; create a new one"
+                "build() was already called on this AppBuilder; it builds "
+                "once, a failed build included, so create a new one"
             )
+        self._check_blocks_closed()
+        self._built = True
+        self._register_server()
+        self._configure_plugins()
+        self._check_blocks_closed()
+        self._register_version()
+        self._add_version_flag()
+        app = _create_base_app(self._main_cls, self._config)
+        _initialize_foundation(app, self)
+        _register_components(app, self)
+        _configure_hooks(app, self._hooks)
+        return app
+
+    def _check_blocks_closed(self) -> None:
+        """Refuse to build over an open block or an unfolded logging scope."""
         if self._open_block is not None:
             raise ValueError(
                 f"the {self._open_block.name} block opened at "
@@ -313,15 +339,19 @@ class AppBuilder:
                 "the logging block has changes made after done(); "
                 "close it again so they reach the config"
             )
-        self._register_server()
-        self._register_version()
-        self._add_version_flag()
-        app = _create_base_app(self._main_cls, self._config)
-        _initialize_foundation(app, self)
-        _register_components(app, self)
-        _configure_hooks(app, self._hooks)
-        self._built = True
-        return app
+
+    def _configure_plugins(self) -> None:
+        """Let every plugin configure the builder, the server plugin last.
+
+        The server plugin is registered last, so it builds the server after
+        the other plugins have added their routes and middleware.
+        """
+        self._plugins.configure_all(self)
+        if self._server_scope is not None and not self._server_registered:
+            raise ValueError(
+                "a plugin configured .server but the app declared no server; "
+                "declare .server on the builder to expose it"
+            )
 
     def _register_server(self) -> None:
         """Register the plugin that builds the declared server and adds ``serve``.
@@ -347,7 +377,7 @@ class AppBuilder:
             self._version_tracker = PackageVersionTracker()
             self._version_tracker.track(*self._version_packages)
         if self._version_startup_log and (self._build_info or self._version_tracker):
-            register_startup_hook(self._hooks, self._version_tracker, self._build_info)
+            _register_startup_hook(self._hooks, self._version_tracker, self._build_info)
 
     def _add_version_flag(self) -> None:
         """Expose ``-v/--version`` from the version block when the cli flag is on."""
@@ -383,7 +413,7 @@ class AppBuilder:
             raise ValueError(
                 f"the {self._open_block.name} block opened at "
                 f"{self._open_block.where} is still open; close it with done() "
-                f"before opening {block.block}"
+                f"before opening {block.block_name}"
             )
         self._open_block = OpenBlock(block, caller_location())
 

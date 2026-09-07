@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Self, TypedDict, Unpack
 
 from ....config import AUTO, Auto, ConfigSpec
 from ....dot_dict import DotDict
-from .block import check_fields
+from .block import check_fields, close_on_error
 
 if TYPE_CHECKING:
     from ..app import AppBuilder
@@ -51,7 +51,7 @@ class ConfigConfigurer:
         AppBuilder("myapp").config(namespace="myorg", name="myapp", hot_reload=True)
     """
 
-    block = "config"
+    block_name = "config"
 
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
@@ -95,13 +95,7 @@ class ConfigConfigurer:
         in-process hosts). Any mapping works, a plain ``dict`` included;
         repeated calls deep-merge.
         """
-        builder = self._app_builder
-        if builder._config is None:
-            builder._config = (
-                values if isinstance(values, DotDict) else DotDict(**values)
-            )
-        else:
-            builder._config = builder._merge_configs(builder._config, DotDict(**values))
+        self._app_builder._merge_overrides(values)
         return self
 
     def with_value(self, key: str, value: Any) -> Self:
@@ -154,23 +148,26 @@ class ConfigConfigurer:
         to the methods of the same name; ``debounce_ms`` only with
         ``hot_reload``.
         """
-        check_fields("config", fields, ConfigFields.__annotations__)
-        spec_keys = {"namespace", "name", "origin", "etc_dir", "filename", "path"}
-        if spec_keys & fields.keys():
-            if "namespace" not in fields or "name" not in fields:
-                raise ValueError("namespace and name are required together")
-            self.with_spec(
-                fields["namespace"],
-                fields["name"],
-                origin=fields.get("origin", AUTO),
-                etc_dir=fields.get("etc_dir", "etc"),
-                filename=fields.get("filename", AUTO),
-                path=fields.get("path"),
-            )
-        if "overrides" in fields:
-            self.with_overrides(fields["overrides"])
-        if "debounce_ms" in fields and "hot_reload" not in fields:
-            raise ValueError("debounce_ms requires hot_reload")
-        if "hot_reload" in fields:
-            self.with_hot_reload(fields["hot_reload"], fields.get("debounce_ms", 500))
+        with close_on_error(self._app_builder, self):
+            check_fields("config", fields, ConfigFields.__annotations__)
+            spec_keys = {"namespace", "name", "origin", "etc_dir", "filename", "path"}
+            if spec_keys & fields.keys():
+                if "namespace" not in fields or "name" not in fields:
+                    raise ValueError("namespace and name are required together")
+                self.with_spec(
+                    fields["namespace"],
+                    fields["name"],
+                    origin=fields.get("origin", AUTO),
+                    etc_dir=fields.get("etc_dir", "etc"),
+                    filename=fields.get("filename", AUTO),
+                    path=fields.get("path"),
+                )
+            if "overrides" in fields:
+                self.with_overrides(fields["overrides"])
+            if "debounce_ms" in fields and "hot_reload" not in fields:
+                raise ValueError("debounce_ms requires hot_reload")
+            if "hot_reload" in fields:
+                self.with_hot_reload(
+                    fields["hot_reload"], fields.get("debounce_ms", 500)
+                )
         return self.done()

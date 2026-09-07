@@ -837,3 +837,75 @@ class TestPluginContributedTools:
         app = AppBuilder("myapp").tools.with_plugin(ToolPlugin()).done().build()
 
         assert app.registry.get_tool("from-plugin") is not None
+
+    def test_version_set_in_configure_is_realized(self):
+        """Plugins run before the tracker and startup hook are created."""
+
+        class VersionPlugin(Plugin):
+            def configure(self, builder):
+                builder.version.with_package("pytest").done()
+
+        builder = AppBuilder("myapp").tools.with_plugin(VersionPlugin()).done()
+        builder.build()
+
+        assert builder._version_tracker is not None
+        assert "pytest" in builder._version_tracker.get_all()
+        assert len(builder._hooks.get_hooks("startup")) == 1
+
+    def test_config_and_logging_set_in_configure_reach_the_app(self):
+        """Plugins run before the App takes its config snapshot."""
+
+        class ConfigPlugin(Plugin):
+            def configure(self, builder):
+                builder.config.with_value("db.host", "plugin").done()
+                builder.logging(level="error")
+
+        app = AppBuilder("myapp").tools.with_plugin(ConfigPlugin()).done().build()
+
+        assert app.config.db.host == "plugin"
+        assert app.config.logging.level == "error"
+
+    def test_cli_flag_set_in_configure_reaches_the_app(self):
+        """Plugins run before the standard flags are copied to the App."""
+
+        class FlagPlugin(Plugin):
+            def configure(self, builder):
+                builder.cli(etc_dir=True)
+
+        app = AppBuilder("myapp").tools.with_plugin(FlagPlugin()).done().build()
+
+        assert app._standard_args["etc_dir"] is True
+
+    def test_failed_build_consumes_the_builder(self):
+        """A build that fails inside a plugin cannot be retried on the same builder."""
+
+        class BrokenPlugin(Plugin):
+            def configure(self, builder):
+                raise RuntimeError("plugin failed")
+
+        builder = AppBuilder("myapp").tools.with_plugin(BrokenPlugin()).done()
+        with pytest.raises(RuntimeError, match="plugin failed"):
+            builder.build()
+
+        with pytest.raises(ValueError, match="already called"):
+            builder.build()
+
+    def test_plugin_leaving_a_block_open_is_named(self):
+        """The error carries the plugin's name and the line that opened the block."""
+
+        class SloppyPlugin(Plugin):
+            def __init__(self):
+                super().__init__("sloppy")
+
+            def configure(self, builder):
+                builder.tools.with_tool_builder(
+                    ToolBuilder("dangling").with_run_function(lambda tool, **kw: 0)
+                )  # no done()
+
+        builder = AppBuilder("myapp").tools.with_plugin(SloppyPlugin()).done()
+
+        with pytest.raises(
+            ValueError,
+            match=r"plugin 'sloppy' left the tools block opened at .*test_app_builder.py:\d+",
+        ):
+            builder.build()

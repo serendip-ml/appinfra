@@ -322,13 +322,25 @@ class TestSubprocessConfigurer:
         from appinfra.app.fastapi.builder.server import ServerBuilder
 
         builder = ServerBuilder(mock_lg, "test-api")
-        builder.subprocess.with_auto_restart(
-            enabled=True, delay=2.0, max_restarts=10
-        ).done()
+        builder.subprocess.with_auto_restart(True).with_restart_delay(
+            2.0
+        ).with_max_restarts(10).done()
 
         assert builder._api.auto_restart is True
         assert builder._api.restart_delay == 2.0
         assert builder._api.max_restarts == 10
+
+    def test_toggling_auto_restart_keeps_delay_and_limit(self, mock_fastapi, mock_lg):
+        """Each restart setting is its own setter; toggling one leaves the others."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        builder = ServerBuilder(mock_lg, "test-api").with_config(
+            ApiConfig(restart_delay=5.0, max_restarts=20)
+        )
+        builder.subprocess.with_auto_restart(True).done()
+
+        assert builder._api.restart_delay == 5.0
+        assert builder._api.max_restarts == 20
 
     def test_log_file_configuration(self, mock_fastapi, mock_lg):
         """Test log file configuration."""
@@ -367,7 +379,8 @@ class TestSubprocessConfigurer:
             ipc_config
         ).done()
 
-        assert builder._api.ipc is ipc_config
+        assert builder._api.ipc == ipc_config
+        assert builder._api.ipc is not ipc_config
         assert builder._api.ipc.max_pending == 500
 
     def test_poll_interval(self, mock_fastapi, mock_lg):
@@ -481,6 +494,21 @@ class TestUvicornConfigurer:
         assert builder._api.uvicorn.access_log is False
         assert builder._build_config().uvicorn.workers == 4
 
+    def test_with_config_leaves_the_callers_object_alone(self, mock_fastapi, mock_lg):
+        """Two builders can share one loaded config without cross-talk."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        shared = ApiConfig(port=8000)
+        first = ServerBuilder(mock_lg, "a").with_config(shared).with_port(8001)
+        second = ServerBuilder(mock_lg, "b").with_config(shared).with_port(8002)
+        first.uvicorn.with_workers(9).done()
+
+        assert shared.port == 8000
+        assert shared.uvicorn.workers == 1
+        assert first._build_config().port == 8001
+        assert second._build_config().port == 8002
+        assert second._build_config().uvicorn.workers == 1
+
     def test_built_config_is_independent_of_later_facet_calls(
         self, mock_fastapi, mock_lg
     ):
@@ -552,7 +580,8 @@ class TestUvicornConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.uvicorn.with_config(config).done()
 
-        assert builder._api.uvicorn is config
+        assert builder._api.uvicorn == config
+        assert builder._api.uvicorn is not config
 
     def test_timeout_keep_alive(self, mock_fastapi, mock_lg):
         """Test timeout_keep_alive configuration."""

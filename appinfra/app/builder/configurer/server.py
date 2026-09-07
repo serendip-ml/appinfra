@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 from ....log.logger import Logger
 from ...fastapi.builder.server import ServerBuilder
 from ...fastapi.runtime.server import Server
-from .block import check_fields
+from .block import check_fields, close_on_error
 
 if TYPE_CHECKING:
     from ..app import AppBuilder
@@ -57,7 +57,7 @@ class ServerScope(ServerBuilder):
     with ``done()``.
     """
 
-    block = "server"
+    block_name = "server"
 
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
@@ -79,19 +79,20 @@ class ServerScope(ServerBuilder):
 
     def __call__(self, **fields: Unpack[ServerFields]) -> AppBuilder:
         """Keyword form of the block; ``uvicorn`` takes ``UvicornFields``."""
-        check_fields("server", fields, ServerFields.__annotations__)
-        setters: dict[str, Any] = {
-            "host": self.with_host,
-            "port": self.with_port,
-            "title": self.with_title,
-            "description": self.with_description,
-            "version": self.with_version,
-            "timeout": self.with_timeout,
-        }
-        uvicorn = fields.get("uvicorn")
-        if uvicorn is not None:
-            self.uvicorn(**uvicorn)
-        for key, value in fields.items():
-            if key != "uvicorn":
-                setters[key](value)
+        with close_on_error(self._app_builder, self):
+            check_fields("server", fields, ServerFields.__annotations__)
+            setters: dict[str, Any] = {
+                "host": self.with_host,
+                "port": self.with_port,
+                "title": self.with_title,
+                "description": self.with_description,
+                "version": self.with_version,
+                "timeout": self.with_timeout,
+            }
+            uvicorn = fields.get("uvicorn")
+            if uvicorn is not None:
+                self.uvicorn(**uvicorn)
+            for key, value in fields.items():
+                if key != "uvicorn":
+                    setters[key](value)
         return self.done()

@@ -12,7 +12,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any, cast
 
-from ...log import LogConfig, LoggerFactory
+from ...log import LogConfig, LogConfigError, LoggerFactory
 from ...log.handler_factory import HandlerRegistry
 
 
@@ -116,8 +116,6 @@ def _add_extra_override(overrides: dict[str, Any], infra_config: Any) -> None:
     if hasattr(extra, "to_dict"):
         extra = extra.to_dict()
     if not isinstance(extra, Mapping):
-        from ...log.handler_factory import LogConfigError
-
         raise LogConfigError(
             f"logging.extra must be a mapping, got {type(extra).__name__}"
         )
@@ -329,8 +327,6 @@ def _load_handlers_from_config(
     if not handlers:
         return
     if not hasattr(handlers, "items"):
-        from ...log.handler_factory import LogConfigError
-
         raise LogConfigError(
             f"Handlers configuration must be a dictionary, got {type(handlers)}"
         )
