@@ -37,11 +37,18 @@ while [[ $# -gt 0 ]]; do
             FAIL_FAST=true
             shift
             ;;
+        --raw-parallel)
+            RAW=true
+            PARALLEL=false
+            FAIL_FAST=true
+            # Keep PYTEST_PARALLEL at default for parallel pytest
+            shift
+            ;;
         --summary) SUMMARY=true; shift ;;
         --skip-tests) SKIP_TESTS=true; shift ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--sequential] [--coverage-target <percentage>] [--fail-fast] [--raw] [--summary] [--skip-tests]"
+            echo "Usage: $0 [--sequential] [--coverage-target <percentage>] [--fail-fast] [--raw] [--raw-parallel] [--summary] [--skip-tests]"
             exit 1
             ;;
     esac

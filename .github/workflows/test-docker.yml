@@ -513,8 +513,8 @@ jobs:
           python -m pip install --upgrade pip
           make setup
 
-      - name: Run make check (raw mode for hang diagnosis)
-        run: make check.raw
+      - name: Run make check (raw-parallel for readable logs)
+        run: bash appinfra/scripts/check.sh --raw-parallel
 
       - name: Stop postgres
         if: always()
