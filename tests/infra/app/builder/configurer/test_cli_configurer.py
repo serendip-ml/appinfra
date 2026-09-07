@@ -154,6 +154,100 @@ class TestWithoutFlags:
 
 
 # =============================================================================
+# with_all_flags
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestWithAllFlags:
+    """with_all_flags enables every standard flag, help included."""
+
+    def test_enables_every_flag_except_version_without_config(self):
+        """Every key except version goes True when no version configured."""
+        builder = AppBuilder("test")
+
+        builder.cli.with_all_flags().done()
+
+        for name in DEFAULT_STANDARD_ARGS:
+            if name == "version":
+                assert builder._standard_args[name] is False, "version stays off"
+            else:
+                assert builder._standard_args[name] is True, name
+
+    def test_enables_version_when_configured(self):
+        """version flag enabled when version block is configured first."""
+        builder = AppBuilder("test")
+
+        builder.version.with_semver("1.0.0").done()
+        builder.cli.with_all_flags().done()
+
+        assert builder._standard_args["version"] is True
+
+    def test_after_without_flags_restores_full_set_except_version(self):
+        """without_flags then with_all_flags reinstates flags (version needs config)."""
+        builder = AppBuilder("test")
+
+        builder.cli.without_flags().with_all_flags().done()
+
+        for name in DEFAULT_STANDARD_ARGS:
+            if name == "version":
+                assert builder._standard_args[name] is False
+            else:
+                assert builder._standard_args[name] is True
+
+    def test_returns_block_for_chaining(self):
+        """with_all_flags returns the block."""
+        block = AppBuilder("test").cli
+
+        assert block.with_all_flags() is block
+
+
+# =============================================================================
+# without_flag
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestWithoutFlag:
+    """without_flag disables one standard flag."""
+
+    def test_disables_named_flag(self):
+        """The named flag goes False; others keep their value."""
+        builder = AppBuilder("test")
+        builder.cli.with_all_flags().done()
+
+        builder.cli.without_flag("log_json").done()
+
+        assert builder._standard_args["log_json"] is False
+        assert builder._standard_args["log_level"] is True
+        assert builder._standard_args["etc_dir"] is True
+
+    def test_accepts_help(self):
+        """help is a standard flag key; without_flag can turn it off."""
+        builder = AppBuilder("test")
+
+        builder.cli.without_flag("help").done()
+
+        assert builder._standard_args["help"] is False
+
+    def test_log_alias_rejected(self):
+        """log is a bulk alias; the message points at with_flags(log=False)."""
+        with pytest.raises(ValueError, match="'log' is an alias"):
+            AppBuilder("test").cli.without_flag("log")
+
+    def test_unknown_name_raises(self):
+        """Unknown names are rejected with the valid set listed."""
+        with pytest.raises(TypeError, match="Unknown CLI flag: 'invalid_arg'"):
+            AppBuilder("test").cli.without_flag("invalid_arg")
+
+    def test_returns_block_for_chaining(self):
+        """without_flag returns the block."""
+        block = AppBuilder("test").cli
+
+        assert block.without_flag("etc_dir") is block
+
+
+# =============================================================================
 # Keyword form
 # =============================================================================
 
