@@ -26,8 +26,31 @@ For API stability guarantees and deprecation policy, see
 - `make examples.check`: runs every script under `examples/` (or `<pkg>/examples/`) and
   fails on errors or timeouts. Per-file `# ci-run:` / `# ci-stop:` / `# ci-timeout:` /
   `# ci-skip:` comments declare the cases. CI runs it in the container lane.
+- Faceted `AppBuilder`: `.cli` (standard flags, presentation, custom arguments), `.lifecycle`
+  (hooks), `.tools.with_main`, and a keyword form on every block; `.logging` and `.server` are
+  the standalone `LoggingBuilder` and FastAPI `ServerBuilder` bound to the app, so their whole
+  API is available there. One block is open at a time; a block left open fails `build()` with
+  the block name and the line that opened it. See [AppBuilder](appinfra/docs/api/app-builder.md).
+- `LoggingBuilder.with_topic_level` / `with_topic_levels`, `LoggerFactory.create_root(extra=)`,
+  and a keyword form on `ServerBuilder.uvicorn`.
+- `Logger.set_extra(fields)` replaces a logger's pre-populated extra fields; a repeated
+  `LoggerFactory.create_root(extra=)` applies them to the existing root.
+- `HookManager.iter_hooks()` yields every hook with its event and registration metadata.
 
 ### Changed
+- `-v/--version` is the `.cli` block's `version` flag and prints the `.version` block's text;
+  `.version.with_semver` no longer adds the argument on its own.
+- `LoggingBuilder.with_config(dict)` is `with_options(dict)`, and a `None` value is rejected
+  with `TypeError`; leave the key out to keep the config file's value.
+- `AppBuilder.build()` runs once; a second call on the same builder raises `ValueError`.
+- `.cli.with_flag(name, **presentation)` enables the flag it presents; the removed
+  `with_standard_arg` only overrode presentation and was ignored for a disabled flag.
+- `ConsoleHandlerConfig.to_dict()` raises `NotImplementedError` for a stream other than
+  `sys.stdout` / `sys.stderr`; `LoggingBuilder.to_dict()` skips such a handler for the
+  subprocess instead of recording it as stdout.
+- `ServerBuilder.subprocess.with_auto_restart(enabled)` sets only the switch; the delay and
+  the attempt limit are `with_restart_delay(seconds)` and `with_max_restarts(count)`.
+- `with_hook_builder` keeps each hook's priority, `once` and condition.
 - `AppBuilder.with_config_spec(namespace, package, base_config)` is
   `.config.with_spec(namespace, name)`; the packaged base is derived from the name and
   each layout deviation is a keyword (`origin`, `etc_dir`, `filename`, `path`).
@@ -57,6 +80,12 @@ For API stability guarantees and deprecation policy, see
   `--yes` skips (required in non-interactive contexts).
 
 ### Removed
+- `AppBuilder.with_name`, `with_version`, `with_standard_args`, `with_standard_arg`,
+  `without_standard_args`, `with_main_tool` and `.advanced`: the name is the constructor
+  argument, the rest moved to the `.cli`, `.version`, `.tools` and `.lifecycle` blocks.
+- `.logging.with_format` (nothing read the value), the app-side `ServerConfig` / `LoggingConfig`
+  and `.server.with_middleware*` / `with_cors_origins` / `with_ssl` (never reached the app), and
+  `ValidationBuilder` / `ValidationRule` (never applied).
 - `AppBuilder.with_config_file` and the etc-dir fallback chain behind it (`resolve_etc_dir`,
   `get_etc_dir`, `get_project_root`, `get_config_file_path`, `get_default_config`,
   `PROJECT_ROOT`, `ETC_DIR`, `DEFAULT_CONFIG_FILE`, `DEFAULT_CONFIG_FILENAME`): declare the
@@ -70,6 +99,8 @@ For API stability guarantees and deprecation policy, see
   `include_root` and `project_local()`.
 
 ### Fixed
+- `appinfra scaffold` writes the base config to `<name>/etc/infra.yaml` inside the package and
+  lists it as package data, so the generated app resolves it under the config protocol and starts.
 - `appinfra pg` and `make pg.*` targets exit with install guidance when
   no container runtime is on `PATH`.
 - `make pg.server.up` readiness wait probes over TCP. On a fresh volume the
@@ -79,8 +110,11 @@ For API stability guarantees and deprecation policy, see
 - `ConfigWatcher.stop()` returns within 2s on macOS when called right after
   `start()`; watchdog's FSEvents emitter could otherwise block it forever
   (https://github.com/gorakhargosh/watchdog/issues/64).
-- `AppBuilder.build()` configures plugins before registering tools, so tools a
-  plugin adds in `configure()` (e.g. `ServerPlugin`'s `serve`) are available.
+- `AppBuilder.build()` configures plugins before anything is realized from the builder, so
+  what a plugin sets on any block in `configure()`, tools, hooks, routes, config, flags or
+  tracked packages, reaches the app.
+- Console handler `format_*` options in YAML (`format_pretty_print` and the like) reach the
+  handler; they were dropped when the handler was created from config.
 - Database log handler: batched inserts with rows that differ in optional
   columns (`extra_data`, `exception_info`) no longer fail on a missing bind
   parameter.

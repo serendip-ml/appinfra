@@ -88,7 +88,7 @@ app = (
     AppBuilder("myapp")
     .config.with_spec("myorg", "myapp")
     .done()
-    .with_standard_args(etc_dir=True, config_file=True)
+    .cli(etc_dir=True, config_file=True)
     .build()
 )
 app.setup()

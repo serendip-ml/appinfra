@@ -49,9 +49,22 @@ class ConsoleHandlerConfig(HandlerConfig):
             self.format_options[key[7:]] = kwargs[key]  # Remove "format_" prefix
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to picklable dictionary."""
-        # Convert stream object to string identifier
-        stream_name = "stderr" if self.stream is sys.stderr else "stdout"
+        """Serialize to picklable dictionary.
+
+        Raises:
+            NotImplementedError: If the stream is neither ``sys.stdout`` nor
+                ``sys.stderr``. An arbitrary stream has no config form and
+                cannot cross a process boundary.
+        """
+        if self.stream is sys.stderr:
+            stream_name = "stderr"
+        elif self.stream is sys.stdout:
+            stream_name = "stdout"
+        else:
+            raise NotImplementedError(
+                f"console handler on {self.stream!r} cannot be serialized: "
+                "only sys.stdout and sys.stderr have a config form"
+            )
 
         d: dict[str, Any] = {
             "type": "console",

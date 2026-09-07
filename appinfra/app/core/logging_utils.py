@@ -9,9 +9,10 @@ particularly useful for examples and CLI applications.
 """
 
 import logging
+from collections.abc import Mapping
 from typing import Any, cast
 
-from ...log import LogConfig, LoggerFactory
+from ...log import LogConfig, LogConfigError, LoggerFactory
 from ...log.handler_factory import HandlerRegistry
 
 
@@ -105,6 +106,22 @@ def _add_optional_overrides(
         overrides["log_json"] = log_json
 
 
+def _add_extra_override(overrides: dict[str, Any], infra_config: Any) -> None:
+    """Carry ``logging.extra`` (pre-populated record fields) to the root logger."""
+    if not hasattr(infra_config, "logging"):
+        return
+    extra = getattr(infra_config.logging, "extra", None)
+    if not extra:
+        return
+    if hasattr(extra, "to_dict"):
+        extra = extra.to_dict()
+    if not isinstance(extra, Mapping):
+        raise LogConfigError(
+            f"logging.extra must be a mapping, got {type(extra).__name__}"
+        )
+    overrides["extra"] = dict(extra)
+
+
 def _build_config_overrides(
     args_dict: dict[str, Any] | None, infra_config: Any, **kwargs: Any
 ) -> dict[str, Any]:
@@ -127,6 +144,7 @@ def _build_config_overrides(
     }
 
     _add_optional_overrides(config_overrides, args_dict, infra_config)
+    _add_extra_override(config_overrides, infra_config)
 
     # Apply kwargs overrides (highest precedence)
     valid_keys = {"level", "location", "micros", "colors", "location_color"}
@@ -158,7 +176,7 @@ def _create_logger_without_default_handlers(
 
     # Create logger and remove default handler
     # The factory sets up the holder on the logger for hot-reload support
-    logger = LoggerFactory.create_root(log_config)
+    logger = LoggerFactory.create_root(log_config, extra=config_overrides.get("extra"))
     if logger.handlers:
         logger.handlers.clear()
 
@@ -309,8 +327,6 @@ def _load_handlers_from_config(
     if not handlers:
         return
     if not hasattr(handlers, "items"):
-        from ...log.handler_factory import LogConfigError
-
         raise LogConfigError(
             f"Handlers configuration must be a dictionary, got {type(handlers)}"
         )

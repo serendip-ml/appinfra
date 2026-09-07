@@ -253,7 +253,7 @@ class TestCreateStructure:
 
             tool._create_structure(project_path, with_db=False, with_server=False)
 
-            assert (project_path / "etc").exists()
+            assert (project_path / "myproject" / "etc").exists()
             assert (project_path / "tests").exists()
             assert (project_path / "myproject").exists()
 
@@ -342,7 +342,7 @@ class TestGenerateConfig:
         """Test generates config with just logging."""
         with tempfile.TemporaryDirectory() as tmpdir:
             project_path = Path(tmpdir)
-            (project_path / "etc").mkdir()
+            (project_path / "myproject" / "etc").mkdir(parents=True)
 
             tool = ScaffoldTool()
             tool._logger = Mock()
@@ -355,7 +355,7 @@ class TestGenerateConfig:
                 with_logging_db=False,
             )
 
-            config_path = project_path / "etc" / "infra.yaml"
+            config_path = project_path / "myproject" / "etc" / "infra.yaml"
             assert config_path.exists()
             content = config_path.read_text()
             assert "logging:" in content
@@ -366,7 +366,7 @@ class TestGenerateConfig:
         """Test generates config with all features."""
         with tempfile.TemporaryDirectory() as tmpdir:
             project_path = Path(tmpdir)
-            (project_path / "etc").mkdir()
+            (project_path / "myproject" / "etc").mkdir(parents=True)
 
             tool = ScaffoldTool()
             tool._logger = Mock()
@@ -379,7 +379,7 @@ class TestGenerateConfig:
                 with_logging_db=True,
             )
 
-            config_path = project_path / "etc" / "infra.yaml"
+            config_path = project_path / "myproject" / "etc" / "infra.yaml"
             content = config_path.read_text()
             assert "logging:" in content
             assert "pgserver:" in content
@@ -575,6 +575,8 @@ class TestGeneratePyproject:
             content = pyproject_path.read_text()
             assert 'name = "myproject"' in content
             assert "[build-system]" in content
+            assert '"appinfra",' in content  # the distribution, not "infra"
+            assert 'myproject = ["etc/*.yaml"]' in content
 
 
 @pytest.mark.unit
@@ -695,7 +697,7 @@ class TestScaffoldToolIntegration:
             project_path = Path(tmpdir) / "testproject"
 
             # Verify structure
-            assert (project_path / "etc" / "infra.yaml").exists()
+            assert (project_path / "testproject" / "etc" / "infra.yaml").exists()
             assert (project_path / "testproject" / "__main__.py").exists()
             assert (project_path / "testproject" / "__init__.py").exists()
             assert (project_path / "tests" / "test_example.py").exists()
@@ -723,7 +725,9 @@ class TestScaffoldToolIntegration:
             project_path = Path(tmpdir) / "fullproject"
 
             # Verify config includes all features
-            config_content = (project_path / "etc" / "infra.yaml").read_text()
+            config_content = (
+                project_path / "fullproject" / "etc" / "infra.yaml"
+            ).read_text()
             assert "logging:" in config_content
             assert "pgserver:" in config_content
             assert "server:" in config_content

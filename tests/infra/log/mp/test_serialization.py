@@ -3,6 +3,7 @@
 
 """Tests for logging configuration serialization for multiprocessing."""
 
+import io
 import logging
 import pickle
 import sys
@@ -122,6 +123,13 @@ class TestConsoleHandlerConfigSerialization:
         d = config.to_dict()
 
         assert d["stream"] == "stderr"
+
+    def test_to_dict_rejects_other_streams(self):
+        """A stream with no config form cannot be serialized."""
+        config = ConsoleHandlerConfig(stream=io.StringIO())
+
+        with pytest.raises(NotImplementedError, match="only sys.stdout and sys.stderr"):
+            config.to_dict()
 
     def test_to_dict_json_format(self):
         """Test serialization with JSON format options."""

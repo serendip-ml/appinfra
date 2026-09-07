@@ -47,8 +47,13 @@ class LoggingBuilder:
         self, level: int
     ) -> LoggingBuilder: ...  # 0=none, 1=file:line, 2=full
     def with_micros(self, enabled: bool = True) -> LoggingBuilder: ...
-    def console_handler(self, **kwargs) -> LoggingBuilder: ...
-    def file_handler(self, path: str, **kwargs) -> LoggingBuilder: ...
+    def with_console_handler(self, stream=None, level=None) -> LoggingBuilder: ...
+    def with_file_handler(
+        self, filename: str, level=None, **kwargs
+    ) -> LoggingBuilder: ...
+    def with_rotating_file_handler(
+        self, filename: str, max_bytes: int = 0, backup_count: int = 0, **kwargs
+    ) -> LoggingBuilder: ...
     def build(self) -> Logger: ...
 ```
 
@@ -57,7 +62,7 @@ class LoggingBuilder:
 ```python
 from appinfra.log import LoggingBuilder
 
-logger = LoggingBuilder("my_app").with_level("info").console_handler().build()
+logger = LoggingBuilder("my_app").with_level("info").with_console_handler().build()
 
 logger.info("Application started")
 logger.debug("Debug message")  # Won't show (level is info)
@@ -101,8 +106,8 @@ from appinfra.log import LoggingBuilder
 logger = (
     LoggingBuilder("my_app")
     .with_level("debug")
-    .console_handler()
-    .file_handler(
+    .with_console_handler()
+    .with_rotating_file_handler(
         "logs/app.log",
         max_bytes=10 * 1024 * 1024,  # 10MB
         backup_count=5,
@@ -116,7 +121,7 @@ logger = (
 ```python
 from appinfra.log.builder import JSONLoggingBuilder
 
-logger = JSONLoggingBuilder("my_app").with_level("info").console_handler().build()
+logger = JSONLoggingBuilder("my_app").with_level("info").with_console_handler().build()
 
 logger.info("User logged in", extra={"user_id": "123", "ip_address": "192.168.1.1"})
 ```
@@ -193,15 +198,15 @@ import sqlalchemy  # Logger already configured with appinfra formatting
 Different log levels for different subsystems:
 
 ```python
-from appinfra.log import LogLevelManager, LoggingBuilder
+from appinfra.log import LoggingBuilder
 
-# Set different levels for different topics
-level_mgr = LogLevelManager.get_instance()
-level_mgr.set_level("/infra/db", "debug")
-level_mgr.set_level("/infra/app", "info")
-
-# Create logger with topic
-logger = LoggingBuilder("/infra/db").console_handler().build()
+# Different levels for different topics; the rules apply process-wide
+logger = (
+    LoggingBuilder("/infra/db")
+    .with_topic_levels({"/infra/db": "debug", "/infra/app": "info"})
+    .with_console_handler()
+    .build()
+)
 logger.debug("Database query")  # Will show (debug level for /infra/db)
 ```
 

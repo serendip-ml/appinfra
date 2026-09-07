@@ -141,6 +141,35 @@ class TestServerPlugin:
         assert len(mock_builder._tools) == 1
         assert mock_builder._tools[0] is plugin._tool
 
+    def test_configure_builds_server_from_builder(self, mock_dependencies):
+        """A ServerBuilder is built at configure time, not at construction."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+        from appinfra.app.fastapi.plugin import ServerPlugin
+        from appinfra.app.fastapi.runtime.server import Server
+
+        builder = ServerBuilder(MagicMock(), "api").with_port(8123)
+        plugin = ServerPlugin(builder)
+        assert plugin._server is builder
+
+        mock_app_builder = MagicMock()
+        mock_app_builder._tools = []
+        with patch("appinfra.app.fastapi.builder.server.FastAPIAdapter") as adapter:
+            adapter.return_value = MagicMock()
+            plugin.configure(mock_app_builder)
+
+        assert isinstance(plugin._server, Server)
+        assert plugin._server.config.port == 8123
+        assert plugin._tool is not None
+
+    def test_cleanup_with_unbuilt_builder_is_noop(self, mock_dependencies):
+        """cleanup before configure has no server to stop."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+        from appinfra.app.fastapi.plugin import ServerPlugin
+
+        plugin = ServerPlugin(ServerBuilder(MagicMock(), "api"))
+
+        plugin.cleanup(MagicMock())  # must not raise
+
     def test_initialize_sets_parent(self, mock_dependencies):
         """Test initialize sets tool parent."""
         from appinfra.app.fastapi.plugin import ServerPlugin

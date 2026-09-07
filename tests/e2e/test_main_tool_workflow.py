@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
 
 """
-E2E tests for with_main_tool() workflow.
+E2E tests for the tools.with_main() workflow.
 
 Tests the complete workflow for single-tool apps where the main tool
 runs without requiring a subcommand.
@@ -46,17 +46,18 @@ class ProxyTool(Tool):
 
 @pytest.mark.e2e
 class TestMainToolWorkflow:
-    """E2E tests for with_main_tool() feature."""
+    """E2E tests for the tools.with_main() feature."""
 
     def test_main_tool_runs_without_subcommand(self):
         """Test that main tool runs when no subcommand is specified."""
         tool = ProxyTool()
         app = (
             AppBuilder("proxy")
-            .without_standard_args()
-            .tools.with_tool(tool)
+            .cli.without_flags()
             .done()
-            .with_main_tool("run")
+            .tools.with_tool(tool)
+            .with_main("run")
+            .done()
             .build()
         )
 
@@ -74,10 +75,11 @@ class TestMainToolWorkflow:
         tool = ProxyTool()
         app = (
             AppBuilder("proxy")
-            .without_standard_args()
-            .tools.with_tool(tool)
+            .cli.without_flags()
             .done()
-            .with_main_tool("run")
+            .tools.with_tool(tool)
+            .with_main("run")
+            .done()
             .build()
         )
 
@@ -95,10 +97,11 @@ class TestMainToolWorkflow:
         tool = ProxyTool()
         app = (
             AppBuilder("proxy")
-            .without_standard_args()
-            .tools.with_tool(tool)
+            .cli.without_flags()
             .done()
-            .with_main_tool("run")
+            .tools.with_tool(tool)
+            .with_main("run")
+            .done()
             .build()
         )
 
@@ -132,11 +135,12 @@ class TestMainToolWorkflow:
 
         app = (
             AppBuilder("proxy")
-            .without_standard_args()
+            .cli.without_flags()
+            .done()
             .tools.with_tool(main_tool)
             .with_tool(other_tool)
+            .with_main("run")
             .done()
-            .with_main_tool("run")
             .build()
         )
 
@@ -169,11 +173,12 @@ class TestMainToolWorkflow:
 
         app = (
             AppBuilder("proxy")
-            .without_standard_args()
+            .cli.without_flags()
+            .done()
             .tools.with_tool(main_tool)
             .with_tool(other_tool)
+            .with_main("run")
             .done()
-            .with_main_tool("run")
             .build()
         )
 
@@ -187,14 +192,14 @@ class TestMainToolWorkflow:
         assert result == 42
 
     def test_main_tool_with_tool_object(self):
-        """Test with_main_tool() accepts Tool object, not just string."""
+        """Test with_main() accepts a Tool object and registers it itself."""
         tool = ProxyTool()
         app = (
             AppBuilder("proxy")
-            .without_standard_args()
-            .tools.with_tool(tool)
+            .cli.without_flags()
             .done()
-            .with_main_tool(tool)  # Pass Tool object
+            .tools.with_main(tool)  # Pass Tool object; no separate with_tool()
+            .done()
             .build()
         )
 
@@ -212,9 +217,9 @@ class TestMainToolWorkflow:
         app = (
             AppBuilder("proxy")
             .tools.with_tool(tool)
+            .with_main("run")
             .done()
-            .with_main_tool("run")
-            .with_standard_args(log_level=True)
+            .cli(log_level=True)
             .build()
         )
 
@@ -289,11 +294,12 @@ class TestMainToolPositionalArgsConflict:
 
         app = (
             AppBuilder("cli")
-            .without_standard_args()
+            .cli.without_flags()
+            .done()
             .tools.with_tool(process_tool)
             .with_tool(analyze_tool)
+            .with_main("process")
             .done()
-            .with_main_tool("process")
             .build()
         )
 
@@ -332,10 +338,11 @@ class TestMainToolPositionalArgsConflict:
         tool = ProcessTool()
         app = (
             AppBuilder("cli")
-            .without_standard_args()
-            .tools.with_tool(tool)
+            .cli.without_flags()
             .done()
-            .with_main_tool("process")
+            .tools.with_tool(tool)
+            .with_main("process")
+            .done()
             .build()
         )
 
@@ -387,11 +394,12 @@ class TestMainToolPositionalArgsConflict:
 
         app = (
             AppBuilder("cli")
-            .without_standard_args()
+            .cli.without_flags()
+            .done()
             .tools.with_tool(main_tool)
             .with_tool(copy_tool)
+            .with_main("main")
             .done()
-            .with_main_tool("main")
             .build()
         )
 
@@ -409,15 +417,22 @@ class TestMainToolPositionalArgsConflict:
 
 @pytest.mark.e2e
 class TestMainToolWithDecorators:
-    """E2E tests for with_main_tool() with @app.tool decorator post-build."""
+    """E2E tests for tools.with_main() with @app.tool decorator post-build."""
 
     def test_decorated_tool_as_main_tool(self):
-        """Test that @app.tool decorator works with with_main_tool() post-build.
+        """Test that @app.tool decorator works with tools.with_main() post-build.
 
         Regression test for bug where DecoratedTool.set_args() didn't accept
         skip_positional parameter, causing TypeError when used as main tool.
         """
-        app = AppBuilder("proxy").without_standard_args().with_main_tool("run").build()
+        app = (
+            AppBuilder("proxy")
+            .cli.without_flags()
+            .done()
+            .tools.with_main("run")
+            .done()
+            .build()
+        )
 
         @app.tool(name="run", help="Run the proxy")
         @app.argument("--port", type=int, default=8080, help="Port")
@@ -436,7 +451,14 @@ class TestMainToolWithDecorators:
 
     def test_decorated_main_tool_with_other_subcommands(self):
         """Test decorated main tool works with other subcommand tools."""
-        app = AppBuilder("cli").without_standard_args().with_main_tool("serve").build()
+        app = (
+            AppBuilder("cli")
+            .cli.without_flags()
+            .done()
+            .tools.with_main("serve")
+            .done()
+            .build()
+        )
 
         @app.tool(name="serve", help="Start server")
         @app.argument("--port", type=int, default=8000, help="Port")
@@ -458,7 +480,14 @@ class TestMainToolWithDecorators:
         assert app.registry.get_tool("serve").serve_called
 
         # Reset: need a fresh app since setup() was already called
-        app2 = AppBuilder("cli").without_standard_args().with_main_tool("serve").build()
+        app2 = (
+            AppBuilder("cli")
+            .cli.without_flags()
+            .done()
+            .tools.with_main("serve")
+            .done()
+            .build()
+        )
 
         @app2.tool(name="serve", help="Start server")
         @app2.argument("--port", type=int, default=8000, help="Port")

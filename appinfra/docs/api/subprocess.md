@@ -122,7 +122,7 @@ from appinfra.log import LoggingBuilder
 
 def worker_process(etc_dir: str, config_file: str):
     # Create logger for this subprocess
-    logger = LoggingBuilder("worker").with_level("info").console_handler().build()
+    logger = LoggingBuilder("worker").with_level("info").with_console_handler().build()
 
     with SubprocessContext(lg=logger, etc_dir=etc_dir, config_file=config_file) as ctx:
         logger.info("Worker started")

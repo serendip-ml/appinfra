@@ -73,7 +73,7 @@ def create_application() -> App:
         .with_description(
             "Hello World example using appinfra.app.App class with config-based logging"
         )
-        .with_standard_args()
+        .cli(etc_dir=True, config_file=True, log=True)
         # appinfra's packaged base is etc/infra.yaml (its one deviation from rule 2)
         .config.with_spec("llm-works", "appinfra", filename="infra.yaml")
         .done()

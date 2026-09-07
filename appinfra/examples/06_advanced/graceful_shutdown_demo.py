@@ -82,9 +82,9 @@ class ShutdownDemoPlugin(Plugin):
     def configure(self, builder) -> None:
         """Configure the plugin."""
         # Add a startup hook to simulate resource allocation
-        builder.advanced.with_hook_builder(
+        builder.lifecycle.with_hook_builder(
             HookBuilder().on_startup(self._allocate_resources)
-        )
+        ).done()
 
     def initialize(self, application: App) -> None:
         """Initialize plugin resources."""
@@ -208,7 +208,7 @@ def create_application():
         .with_plugin(ShutdownDemoPlugin("MetricsPlugin"))
         .done()
         # Add shutdown hooks
-        .advanced.with_hook_builder(
+        .lifecycle.with_hook_builder(
             HookBuilder()
             .on_shutdown(create_shutdown_hook("PrimaryShutdown"), priority=10)
             .on_shutdown(create_shutdown_hook("SecondaryShutdown"), priority=5)

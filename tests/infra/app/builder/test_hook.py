@@ -217,6 +217,22 @@ class TestHookManagerOtherMethods:
         hooks.clear()
         assert manager.has_hooks("startup")
 
+    def test_iter_hooks_yields_metadata_in_trigger_order(self):
+        """iter_hooks pairs each hook with its event and registration kwargs."""
+        manager = HookManager()
+        low, high, other = Mock(), Mock(), Mock()
+        manager.register_hook("startup", low, priority=1)
+        manager.register_hook("startup", high, priority=9, once=True)
+        manager.register_hook("shutdown", other)
+
+        hooks = list(manager.iter_hooks())
+
+        assert hooks == [
+            ("startup", high, {"priority": 9, "once": True, "condition": None}),
+            ("startup", low, {"priority": 1, "once": False, "condition": None}),
+            ("shutdown", other, {"priority": 0, "once": False, "condition": None}),
+        ]
+
     def test_clear_hooks_specific_event(self):
         """Test clear_hooks clears specific event (lines 108-110)."""
         manager = HookManager()

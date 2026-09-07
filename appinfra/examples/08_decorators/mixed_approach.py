@@ -187,9 +187,8 @@ class ProcessorTool(Tool):
 # ============================================================================
 
 app = (
-    AppBuilder()
-    .with_name("mixed-app")
-    .with_version("1.0.0")
+    AppBuilder("mixed-app")
+    .version(semver="1.0.0")
     .config.with_overrides(
         DotDict(
             logging=DotDict(level="info"), server=DotDict(host="0.0.0.0", port=8080)

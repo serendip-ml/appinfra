@@ -77,10 +77,12 @@ class TestOverrides:
 
     def test_repeated_calls_deep_merge(self):
         builder = AppBuilder("test")
-        builder.config.with_overrides({"logging": {"level": "info", "micros": True}})
+        builder.config.with_overrides(
+            {"logging": {"level": "info", "micros": True}}
+        ).done()
         builder.config.with_overrides(
             {"logging": {"level": "debug"}, "server": {"port": 1}}
-        )
+        ).done()
         assert builder._config.logging.level == "debug"
         assert builder._config.logging.micros is True
         assert builder._config.server.port == 1
@@ -95,8 +97,8 @@ class TestOverrides:
 
     def test_with_value_merges_into_existing_layer(self):
         builder = AppBuilder("test")
-        builder.config.with_overrides({"logging": {"micros": True}})
-        builder.config.with_value("logging.level", "debug")
+        builder.config.with_overrides({"logging": {"micros": True}}).done()
+        builder.config.with_value("logging.level", "debug").done()
         assert builder._config.logging.micros is True
         assert builder._config.logging.level == "debug"
 
@@ -162,6 +164,11 @@ class TestCall:
         result = builder.config(namespace="myorg", name="myapp", path=base)
         assert result is builder
         assert builder._config_spec == ConfigSpec("myorg", "myapp", path=base)
+
+    def test_unknown_keyword_raises(self):
+        """A misspelled key fails instead of being ignored."""
+        with pytest.raises(TypeError, match="unknown config field\\(s\\): overides"):
+            AppBuilder("test").config(overides={"a": 1})
 
     def test_layout_keywords_forwarded(self, tmp_path):
         builder = AppBuilder("test").config(

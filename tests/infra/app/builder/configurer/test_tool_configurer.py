@@ -352,3 +352,74 @@ class TestToolConfigurerIntegration:
 
         assert len(app_builder._tools) == 3
         assert len(app_builder._commands) == 2
+
+
+# =============================================================================
+# with_main and the keyword form
+# =============================================================================
+
+
+def _tool(name: str):
+    from appinfra.app.tools.base import Tool, ToolConfig
+
+    return Tool(None, ToolConfig(name=name))
+
+
+@pytest.mark.unit
+class TestWithMain:
+    """with_main names the tool that runs without a subcommand."""
+
+    def test_string_names_main_tool(self):
+        """A name only sets the main tool."""
+        from appinfra.app.builder.app import AppBuilder
+
+        builder = AppBuilder("test")
+        block = builder.tools
+
+        assert block.with_main("run") is block
+        assert builder._main_tool == "run"
+        assert builder._tools == []
+
+    def test_instance_is_registered_and_named(self):
+        """A Tool instance is added to the tools list and named main."""
+        from appinfra.app.builder.app import AppBuilder
+
+        builder = AppBuilder("test")
+        main = _tool("main")
+
+        builder.tools.with_main(main)
+
+        assert builder._tools == [main]
+        assert builder._main_tool == "main"
+
+    def test_instance_already_added_is_not_duplicated(self):
+        """with_tool then with_main on the same instance registers it once."""
+        from appinfra.app.builder.app import AppBuilder
+
+        builder = AppBuilder("test")
+        main = _tool("main")
+
+        builder.tools.with_tool(main).with_main(main)
+
+        assert builder._tools == [main]
+
+
+@pytest.mark.unit
+class TestKeywordForm:
+    """Calling the block takes tools by position, plugins and main by keyword."""
+
+    def test_call_registers_tools_plugins_and_main(self):
+        """Everything lands on the builder and the builder is returned."""
+        from appinfra.app.builder.app import AppBuilder
+
+        builder = AppBuilder("test")
+        first, second = _tool("first"), _tool("second")
+        plugin = Mock()
+        plugin.name = "plugin"
+
+        result = builder.tools(first, second, plugins=[plugin], main="first")
+
+        assert result is builder
+        assert builder._tools == [first, second]
+        assert builder._main_tool == "first"
+        assert "plugin" in builder._plugins._plugins

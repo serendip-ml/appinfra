@@ -52,7 +52,7 @@ server = (
     .routes.with_route("/health", health)
     .done()
     .subprocess.with_ipc(request_q, response_q)
-    .with_auto_restart(enabled=True)
+    .with_auto_restart(True)
     .done()
     .build()
 )
@@ -153,7 +153,9 @@ server = (
     # IPC queues (required for subprocess mode)
     .with_ipc(request_q, response_q)
     # Auto-restart on crash
-    .with_auto_restart(enabled=True, delay=2.0, max_restarts=10)
+    .with_auto_restart(True)
+    .with_restart_delay(2.0)
+    .with_max_restarts(10)
     # Log isolation
     .with_log_file("/var/log/api.log")
     # IPC tuning
@@ -667,7 +669,7 @@ server = (
     .with_port(8000)
     .subprocess.with_ipc(request_q, response_q)
     .with_response_timeout(60.0)
-    .with_auto_restart(enabled=True)
+    .with_auto_restart(True)
     .done()
     .routes.with_router(router)  # Router with /generate, /stream endpoints
     .done()

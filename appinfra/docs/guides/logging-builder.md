@@ -28,8 +28,8 @@ logger = (
     .with_level("info")
     .with_location(1)
     .with_micros(True)
-    .console_handler()
-    .file_handler("logs/app.log")
+    .with_console_handler()
+    .with_file_handler("logs/app.log")
     .build()
 )
 ```
@@ -46,9 +46,9 @@ logger = (
     .with_location(1)  # Show file locations (0-3 levels)
     .with_micros(True)  # Microsecond precision
     .with_colors(True)  # Colored output
-    .console_handler()
-    .file_handler("logs/app.log")
-    .rotating_file_handler(
+    .with_console_handler()
+    .with_file_handler("logs/app.log")
+    .with_rotating_file_handler(
         "logs/errors.log", max_bytes=10 * 1024 * 1024, backup_count=5
     )
     .build()
@@ -150,9 +150,13 @@ from appinfra.log import LoggingBuilder
 prod_logger = (
     LoggingBuilder("my_app.prod")
     .with_level("info")
-    .console_handler()
-    .rotating_file_handler("logs/app.log", max_bytes=10 * 1024 * 1024, backup_count=10)
-    .timed_rotating_file_handler("logs/errors.log", when="midnight", backup_count=30)
+    .with_console_handler()
+    .with_rotating_file_handler(
+        "logs/app.log", max_bytes=10 * 1024 * 1024, backup_count=10
+    )
+    .with_timed_rotating_file_handler(
+        "logs/errors.log", when="midnight", backup_count=30
+    )
     .build()
 )
 ```

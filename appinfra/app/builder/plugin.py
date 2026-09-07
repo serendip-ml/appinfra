@@ -182,6 +182,12 @@ class PluginManager:
             if plugin_name in self._enabled_plugins:
                 plugin = self._plugins[plugin_name]
                 plugin.configure(builder)
+                if builder._open_block is not None:
+                    raise ValueError(
+                        f"plugin {plugin_name!r} left the {builder._open_block.name} "
+                        f"block opened at {builder._open_block.where} open; "
+                        "close it with done()"
+                    )
                 # Track as initialized for cleanup
                 if plugin_name not in self._initialized_plugins:
                     self._initialized_plugins.append(plugin_name)

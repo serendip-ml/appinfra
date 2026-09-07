@@ -174,7 +174,7 @@ The security module integrates automatically with appinfra's logging system. Whe
 ```python
 from appinfra.log import LoggingBuilder
 
-logger = LoggingBuilder("myapp").with_level("info").console_handler().build()
+logger = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
 
 # Secrets automatically masked in log output
 logger.info("User authenticated with api_key=sk-live-xxxxxxxxxxxx")

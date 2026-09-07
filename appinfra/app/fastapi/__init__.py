@@ -34,7 +34,7 @@ Example (Subprocess Mode with IPC):
         .routes.with_route("/health", health).done()
         .subprocess
             .with_ipc(request_q, response_q)
-            .with_auto_restart(enabled=True)
+            .with_auto_restart(True)
             .done()
         .build())
 

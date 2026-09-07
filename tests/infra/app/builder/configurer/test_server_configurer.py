@@ -4,392 +4,235 @@
 """
 Tests for app/builder/configurer/server.py.
 
-Tests key functionality including:
-- ServerConfigurer initialization
-- Server configuration options (port, host, ssl, cors, timeout)
-- Middleware configuration
-- Method chaining (fluent API)
+ServerScope is the FastAPI ServerBuilder bound to an AppBuilder. The
+AppBuilder builds the server at build() and registers a ServerPlugin,
+which adds the ``serve`` tool.
 """
 
-from unittest.mock import Mock, patch
+from dataclasses import fields
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from appinfra.app.builder.configurer.server import ServerConfigurer
+from appinfra.app.builder.app import AppBuilder
+from appinfra.app.builder.configurer.server import ServerFields, ServerScope
+from appinfra.app.fastapi.builder.server import ServerBuilder
+from appinfra.app.fastapi.config.api import ApiConfig
 
-# =============================================================================
-# Test ServerConfigurer Initialization
-# =============================================================================
+ADAPTER = "appinfra.app.fastapi.builder.server.FastAPIAdapter"
 
 
-@pytest.mark.unit
-class TestServerConfigurerInit:
-    """Test ServerConfigurer initialization."""
-
-    def test_stores_app_builder_reference(self):
-        """Test stores reference to parent AppBuilder."""
-        app_builder = Mock()
-
-        configurer = ServerConfigurer(app_builder)
-
-        assert configurer._app_builder is app_builder
+def _health() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 # =============================================================================
-# Test with_config
+# The scope is the standalone builder
 # =============================================================================
 
 
 @pytest.mark.unit
-class TestWithConfig:
-    """Test ServerConfigurer.with_config method."""
+class TestServerScopeIsABuilder:
+    """ServerScope inherits ServerBuilder and is memoized per AppBuilder."""
 
-    def test_sets_server_config(self):
-        """Test sets _server_config on AppBuilder."""
-        app_builder = Mock()
-        configurer = ServerConfigurer(app_builder)
-        server_config = Mock(name="ServerConfig")
+    def test_is_server_builder(self):
+        """Every ServerBuilder method and facet is available through inheritance."""
+        assert isinstance(AppBuilder("test").server, ServerBuilder)
+        assert isinstance(AppBuilder("test").server, ServerScope)
 
-        result = configurer.with_config(server_config)
+    def test_same_instance_per_builder(self):
+        """State lives on the scope, so the builder hands out one instance."""
+        builder = AppBuilder("test")
+        block = builder.server
+        block.done()
 
-        assert app_builder._server_config is server_config
-        assert result is configurer  # Returns self for chaining
+        assert builder.server is block
 
+    def test_name_follows_app(self):
+        """The server is named after the app."""
+        assert AppBuilder("myapp").server._name == "myapp"
 
-# =============================================================================
-# Test with_port
-# =============================================================================
+    def test_build_raises_pointing_at_done(self):
+        """The AppBuilder builds the server, not the scope."""
+        with pytest.raises(TypeError, match=r"done\(\)"):
+            AppBuilder("test").server.build()
 
+    def test_done_returns_builder(self):
+        """done() closes the block."""
+        builder = AppBuilder("test")
 
-@pytest.mark.unit
-class TestWithPort:
-    """Test ServerConfigurer.with_port method."""
+        assert builder.server.done() is builder
 
-    def test_creates_server_config_if_none(self):
-        """Test creates ServerConfig if not set."""
-        app_builder = Mock()
-        app_builder._server_config = None
-        configurer = ServerConfigurer(app_builder)
+    def test_facets_return_to_scope(self):
+        """routes, uvicorn and subprocess close back onto the scope."""
+        scope = AppBuilder("test").server
 
-        with patch("appinfra.app.builder.app.ServerConfig") as MockServerConfig:
-            mock_config = Mock()
-            MockServerConfig.return_value = mock_config
-
-            configurer.with_port(8080)
-
-            MockServerConfig.assert_called_once()
-            assert mock_config.port == 8080
-
-    def test_updates_existing_server_config(self):
-        """Test updates existing ServerConfig."""
-        app_builder = Mock()
-        existing_config = Mock()
-        app_builder._server_config = existing_config
-        configurer = ServerConfigurer(app_builder)
-
-        result = configurer.with_port(9000)
-
-        assert existing_config.port == 9000
-        assert result is configurer
-
-    def test_returns_self_for_chaining(self):
-        """Test returns self for method chaining."""
-        app_builder = Mock()
-        app_builder._server_config = Mock()
-        configurer = ServerConfigurer(app_builder)
-
-        result = configurer.with_port(8080)
-
-        assert result is configurer
+        assert scope.routes.done() is scope
+        assert scope.uvicorn.done() is scope
+        assert scope.subprocess.done() is scope
 
 
 # =============================================================================
-# Test with_host
+# Chained configuration
 # =============================================================================
 
 
 @pytest.mark.unit
-class TestWithHost:
-    """Test ServerConfigurer.with_host method."""
+class TestChainedConfiguration:
+    """Inherited methods write ServerBuilder state on the scope."""
 
-    def test_creates_server_config_if_none(self):
-        """Test creates ServerConfig if not set."""
-        app_builder = Mock()
-        app_builder._server_config = None
-        configurer = ServerConfigurer(app_builder)
-
-        with patch("appinfra.app.builder.app.ServerConfig") as MockServerConfig:
-            mock_config = Mock()
-            MockServerConfig.return_value = mock_config
-
-            configurer.with_host("0.0.0.0")
-
-            assert mock_config.host == "0.0.0.0"
-
-    def test_updates_existing_server_config(self):
-        """Test updates existing ServerConfig."""
-        app_builder = Mock()
-        existing_config = Mock()
-        app_builder._server_config = existing_config
-        configurer = ServerConfigurer(app_builder)
-
-        result = configurer.with_host("localhost")
-
-        assert existing_config.host == "localhost"
-        assert result is configurer
-
-
-# =============================================================================
-# Test with_ssl
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestWithSsl:
-    """Test ServerConfigurer.with_ssl method."""
-
-    def test_enables_ssl_by_default(self):
-        """Test enables SSL when called without argument."""
-        app_builder = Mock()
-        app_builder._server_config = Mock()
-        configurer = ServerConfigurer(app_builder)
-
-        configurer.with_ssl()
-
-        assert app_builder._server_config.ssl_enabled is True
-
-    def test_can_disable_ssl(self):
-        """Test can explicitly disable SSL."""
-        app_builder = Mock()
-        app_builder._server_config = Mock()
-        configurer = ServerConfigurer(app_builder)
-
-        configurer.with_ssl(enabled=False)
-
-        assert app_builder._server_config.ssl_enabled is False
-
-    def test_creates_server_config_if_none(self):
-        """Test creates ServerConfig if not set."""
-        app_builder = Mock()
-        app_builder._server_config = None
-        configurer = ServerConfigurer(app_builder)
-
-        with patch("appinfra.app.builder.app.ServerConfig") as MockServerConfig:
-            mock_config = Mock()
-            MockServerConfig.return_value = mock_config
-
-            configurer.with_ssl(True)
-
-            assert mock_config.ssl_enabled is True
-
-
-# =============================================================================
-# Test with_cors_origins
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestWithCorsOrigins:
-    """Test ServerConfigurer.with_cors_origins method."""
-
-    def test_sets_cors_origins(self):
-        """Test sets CORS origins list."""
-        app_builder = Mock()
-        app_builder._server_config = Mock()
-        configurer = ServerConfigurer(app_builder)
-
-        result = configurer.with_cors_origins(
-            "http://localhost:3000", "https://example.com"
+    def test_direct_methods_set_state(self):
+        """Host, port and title go to the builder fields."""
+        builder = (
+            AppBuilder("test")
+            .server.with_port(8080)
+            .with_host("127.0.0.1")
+            .with_title("T")
+            .done()
         )
 
-        assert app_builder._server_config.cors_origins == [
-            "http://localhost:3000",
-            "https://example.com",
-        ]
-        assert result is configurer
+        scope = builder._server_scope
+        assert (scope._api.port, scope._api.host, scope._api.title) == (
+            8080,
+            "127.0.0.1",
+            "T",
+        )
 
-    def test_creates_server_config_if_none(self):
-        """Test creates ServerConfig if not set."""
-        app_builder = Mock()
-        app_builder._server_config = None
-        configurer = ServerConfigurer(app_builder)
+    def test_routes_reach_scope(self):
+        """A route added through the facet lands on the scope."""
+        builder = (
+            AppBuilder("test")
+            .server.routes.with_route("/health", _health)
+            .done()
+            .done()
+        )
 
-        with patch("appinfra.app.builder.app.ServerConfig") as MockServerConfig:
-            mock_config = Mock()
-            MockServerConfig.return_value = mock_config
-
-            configurer.with_cors_origins("http://localhost")
-
-            assert mock_config.cors_origins == ["http://localhost"]
-
-
-# =============================================================================
-# Test with_timeout
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestWithTimeout:
-    """Test ServerConfigurer.with_timeout method."""
-
-    def test_sets_timeout(self):
-        """Test sets request timeout."""
-        app_builder = Mock()
-        app_builder._server_config = Mock()
-        configurer = ServerConfigurer(app_builder)
-
-        result = configurer.with_timeout(30)
-
-        assert app_builder._server_config.timeout == 30
-        assert result is configurer
-
-    def test_creates_server_config_if_none(self):
-        """Test creates ServerConfig if not set."""
-        app_builder = Mock()
-        app_builder._server_config = None
-        configurer = ServerConfigurer(app_builder)
-
-        with patch("appinfra.app.builder.app.ServerConfig") as MockServerConfig:
-            mock_config = Mock()
-            MockServerConfig.return_value = mock_config
-
-            configurer.with_timeout(60)
-
-            assert mock_config.timeout == 60
+        routes = builder._server_scope._routes
+        assert [r.path for r in routes] == ["/health"]
 
 
 # =============================================================================
-# Test with_middleware
+# Keyword form
 # =============================================================================
 
 
 @pytest.mark.unit
-class TestWithMiddleware:
-    """Test ServerConfigurer.with_middleware method."""
+class TestKeywordForm:
+    """Calling the block sets fields and returns the AppBuilder."""
 
-    def test_adds_middleware_to_list(self):
-        """Test adds middleware to AppBuilder's middleware list."""
-        app_builder = Mock()
-        app_builder._middleware = []
-        configurer = ServerConfigurer(app_builder)
-        middleware = Mock(name="TestMiddleware")
+    def test_call_unknown_keyword_raises(self):
+        """A misspelled key fails with the block's error, not a KeyError."""
+        with pytest.raises(TypeError, match="unknown server field\\(s\\): prot"):
+            AppBuilder("test").server(prot=1)
 
-        result = configurer.with_middleware(middleware)
+    def test_call_sets_fields_and_returns_builder(self):
+        """Each key maps onto the builder's direct setter."""
+        builder = AppBuilder("test")
 
-        assert middleware in app_builder._middleware
-        assert result is configurer
+        result = builder.server(
+            host="127.0.0.1",
+            port=9000,
+            title="T",
+            description="D",
+            version="2.0",
+            timeout=5.0,
+        )
 
-    def test_appends_multiple_middleware(self):
-        """Test can add multiple middleware."""
-        app_builder = Mock()
-        app_builder._middleware = []
-        configurer = ServerConfigurer(app_builder)
-        mw1 = Mock(name="Middleware1")
-        mw2 = Mock(name="Middleware2")
+        assert result is builder
+        scope = builder._server_scope
+        assert scope._api.host == "127.0.0.1"
+        assert scope._api.port == 9000
+        assert scope._api.title == "T"
+        assert scope._api.description == "D"
+        assert scope._api.version == "2.0"
+        assert scope._api.response_timeout == 5.0
 
-        configurer.with_middleware(mw1).with_middleware(mw2)
+    def test_uvicorn_mapping_routes_to_uvicorn_block(self):
+        """The uvicorn key takes UvicornFields."""
+        builder = AppBuilder("test").server(uvicorn={"workers": 4, "access_log": True})
 
-        assert mw1 in app_builder._middleware
-        assert mw2 in app_builder._middleware
-        assert len(app_builder._middleware) == 2
+        uvicorn = builder._server_scope._api.uvicorn
+        assert uvicorn.workers == 4
+        assert uvicorn.access_log is True
 
+    def test_fields_map_onto_api_config(self):
+        """ServerFields keys are ApiConfig fields; timeout is response_timeout."""
+        api = {f.name for f in fields(ApiConfig)}
 
-# =============================================================================
-# Test with_middleware_builder
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestWithMiddlewareBuilder:
-    """Test ServerConfigurer.with_middleware_builder method."""
-
-    def test_builds_and_adds_middleware(self):
-        """Test builds middleware from builder and adds it."""
-        app_builder = Mock()
-        app_builder._middleware = []
-        configurer = ServerConfigurer(app_builder)
-
-        builder = Mock()
-        built_middleware = Mock(name="BuiltMiddleware")
-        builder.build.return_value = built_middleware
-
-        result = configurer.with_middleware_builder(builder)
-
-        builder.build.assert_called_once()
-        assert built_middleware in app_builder._middleware
-        assert result is configurer
+        assert set(ServerFields.__annotations__) - {"timeout"} <= api
+        assert "response_timeout" in api
 
 
 # =============================================================================
-# Test done
+# build() registers the server
 # =============================================================================
 
 
 @pytest.mark.unit
-class TestDone:
-    """Test ServerConfigurer.done method."""
+class TestBuildRegistersServer:
+    """Declaring .server adds the serve tool through ServerPlugin at build()."""
 
-    def test_returns_app_builder(self):
-        """Test returns parent AppBuilder for continued chaining."""
-        app_builder = Mock()
-        configurer = ServerConfigurer(app_builder)
+    def test_build_registers_serve_tool(self):
+        """The built app has a serve tool for the declared server."""
+        with patch(ADAPTER) as adapter:
+            adapter.return_value = MagicMock()
+            app = AppBuilder("test").server.with_port(8080).done().build()
 
-        result = configurer.done()
+        assert app.registry.is_registered("serve")
 
-        assert result is app_builder
+    def test_build_without_server_registers_nothing(self):
+        """No .server, no serve tool."""
+        app = AppBuilder("test").build()
 
+        assert not app.registry.is_registered("serve")
 
-# =============================================================================
-# Integration Tests
-# =============================================================================
+    def test_built_server_carries_scope_config(self):
+        """The Server handed to the plugin has the scope's port."""
+        builder = AppBuilder("test").server(port=8123)
 
+        with patch(ADAPTER) as adapter:
+            adapter.return_value = MagicMock()
+            builder.build()
 
-@pytest.mark.integration
-class TestServerConfigurerIntegration:
-    """Integration tests for ServerConfigurer."""
+        (plugin,) = builder._plugins._plugins.values()
+        assert plugin._server.config.port == 8123
 
-    def test_full_configuration_chain(self):
-        """Test complete fluent configuration chain."""
-        app_builder = Mock()
-        app_builder._server_config = None
-        app_builder._middleware = []
+    def test_plugin_routes_reach_declared_server(self):
+        """A plugin's routes and middleware land on the server built at build()."""
+        from appinfra.app.builder.plugin import Plugin
 
-        with patch("appinfra.app.builder.app.ServerConfig") as MockServerConfig:
-            mock_config = Mock()
-            MockServerConfig.return_value = mock_config
+        class MetricsPlugin(Plugin):
+            def __init__(self):
+                super().__init__("metrics")
 
-            configurer = ServerConfigurer(app_builder)
-            middleware = Mock()
+            def configure(self, builder):
+                builder.server.routes.with_route("/metrics", _health).with_middleware(
+                    object
+                ).done().done()
 
-            result = (
-                configurer.with_port(8080)
-                .with_host("0.0.0.0")
-                .with_ssl(True)
-                .with_cors_origins("http://localhost:3000")
-                .with_timeout(30)
-                .with_middleware(middleware)
-                .done()
-            )
+        builder = AppBuilder("test").server.done().tools(plugins=[MetricsPlugin()])
 
-            assert result is app_builder
-            assert mock_config.port == 8080
-            assert mock_config.host == "0.0.0.0"
-            assert mock_config.ssl_enabled is True
-            assert mock_config.cors_origins == ["http://localhost:3000"]
-            assert mock_config.timeout == 30
-            assert middleware in app_builder._middleware
+        with patch(ADAPTER) as adapter:
+            adapter.return_value = MagicMock()
+            app = builder.build()
 
-    def test_partial_configuration(self):
-        """Test partial configuration (only some options)."""
-        app_builder = Mock()
-        existing_config = Mock()
-        app_builder._server_config = existing_config
-        app_builder._middleware = []
+        assert app.registry.is_registered("serve")
+        assert [r.path for r in builder._server_scope._routes] == ["/metrics"]
+        assert adapter.return_value.add_route.call_count == 1
+        assert adapter.return_value.add_middleware.call_count == 1
 
-        configurer = ServerConfigurer(app_builder)
+    def test_plugin_server_without_declaration_raises(self):
+        """A plugin touching .server on an app that declared none is an error."""
+        from appinfra.app.builder.plugin import Plugin
 
-        result = configurer.with_port(9000).done()
+        class RoutePlugin(Plugin):
+            def __init__(self):
+                super().__init__("routes")
 
-        assert result is app_builder
-        assert existing_config.port == 9000
-        # Other attributes not modified
+            def configure(self, builder):
+                builder.server.routes.with_route("/x", _health).done().done()
+
+        builder = AppBuilder("test").tools(plugins=[RoutePlugin()])
+
+        with pytest.raises(ValueError, match="declared no server"):
+            builder.build()

@@ -249,7 +249,7 @@ such as a shared config elsewhere on disk. The two compose.
 
 `AppBuilder.config.with_spec` declares the same spec. The App resolves it on every parse and
 wires `ConfigWatcher` with the same `project_root` so hot reload matches the initial load. Flag
-exposure is orthogonal: compose with `.with_standard_args(etc_dir=True, config_file=True)` to
+exposure is orthogonal: compose with `.cli(etc_dir=True, config_file=True)` to
 expose the escape hatches to end users, skip either flag for a locked-down CLI:
 
 ```python
@@ -263,7 +263,7 @@ app = (
     AppBuilder("myapp")
     .config.with_spec("myorg", "myapp")
     .done()
-    .with_standard_args(etc_dir=True, config_file=True)
+    .cli(etc_dir=True, config_file=True)
     .build()
 )
 ```

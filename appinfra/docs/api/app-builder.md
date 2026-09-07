@@ -1,6 +1,10 @@
 # AppBuilder - Fluent API
 
-Fluent builder for constructing CLI applications with tools, logging, and lifecycle management.
+Faceted builder for CLI applications: one block per axis, each closed with `done()` or called
+with keywords, which returns the `AppBuilder` directly. Mixing both spellings in one chain is the
+norm. One block is open at a time: opening another block, or calling `build()`, while a block is
+open raises `ValueError` naming the block and the line that opened it. Plugins that touch a block
+inside `configure()` close it the same way.
 
 ## AppBuilder
 
@@ -9,81 +13,41 @@ class AppBuilder:
     def __init__(self, name: str | None = None): ...
 ```
 
-**Chain Methods:**
-- `with_name(name)` - Set application name
+**Top level (identity only):**
+- `AppBuilder(name)` - Application name
 - `with_description(desc)` - Set description
-- `with_version(version)` - Set version string
-- `config` - Config-source block: `with_spec`, `with_overrides`, `with_value`, `with_hot_reload`; see [Config](config.md#appbuilderconfig)
-- `with_main_cls(cls)` - Use custom App subclass
-- `with_main_tool(tool)` - Set main tool (runs when no subcommand specified)
-- `with_standard_args(**kwargs)` - Enable/disable standard CLI args
-- `with_standard_arg(name, **kwargs)` - Override argparse kwargs of a standard arg
-- `without_standard_args()` - Disable all standard args
-- `build()` - Build and return the App instance
+- `with_main_cls(cls)` - Use a custom `App` subclass
+- `build()` - Build and return the `App` instance
 
-**Sub-builders (accessed via properties):**
-- `.config` - ConfigConfigurer for the config source: spec, overrides, hot reload
-- `.tools` - ToolConfigurer for adding tools
-- `.logging` - LoggingConfigurer for log settings
-- `.server` - ServerConfigurer for HTTP server
-- `.advanced` - AdvancedConfigurer for hooks, middleware, custom args
+**Blocks (accessed via properties):**
 
-## ToolConfigurer
+| Block        | Holds                                                    | Backed by        |
+|--------------|----------------------------------------------------------|------------------|
+| `.config`    | config source: spec, programmatic overrides, hot reload  | app-only         |
+| `.cli`       | standard flags, flag presentation, custom arguments      | app-only         |
+| `.logging`   | display options, topic levels, handlers, extra fields    | `LoggingBuilder` |
+| `.server`    | FastAPI server: routes, uvicorn, subprocess              | `ServerBuilder`  |
+| `.tools`     | tools, commands, plugins, main tool                      | app-only         |
+| `.lifecycle` | hooks by event                                           | app-only         |
+| `.version`   | semver, build info, tracked packages                     | app-only         |
 
-Accessed via `AppBuilder().tools`:
+`.logging` and `.server` are the standalone builders bound to the app: every method of
+[`LoggingBuilder`](logging.md) and [`ServerBuilder`](fastapi.md) is available on the block, and
+`build()` on the block raises, since the app builds the logger and the server itself.
 
-```python
-app = (
-    AppBuilder("myapp")
-    .tools.with_tool(MyTool())  # Add a Tool instance
-    .with_plugin(MyPlugin())  # Add a Plugin
-    .done()  # Return to AppBuilder
-    .build()
-)
-```
-
-## LoggingConfigurer
-
-Accessed via `AppBuilder().logging`:
+Two spellings per block write the same state:
 
 ```python
-app = (
-    AppBuilder("myapp")
-    .logging.with_level("info")  # Set log level
-    .with_location(1)  # Show file/line (0=none, 1=file:line, 2=full path)
-    .with_micros(True)  # Microsecond timestamps
-    .with_colors(True)  # Enable colored output
-    .with_format("%(msg)s")  # Custom format string
-    .done()
-    .build()
-)
+# chained: block methods, then done()
+AppBuilder("myapp").cli.with_flags(etc_dir=True, log=True).done()
+
+# keyword: call the block, get the AppBuilder back
+AppBuilder("myapp").cli(etc_dir=True, log=True)
 ```
 
-## ServerConfigurer
-
-Accessed via `AppBuilder().server`:
-
-```python
-app = AppBuilder("myapp").server.with_port(8080).with_host("0.0.0.0").done().build()
-```
-
-## AdvancedConfigurer
-
-Accessed via `AppBuilder().advanced`:
-
-```python
-def on_startup(ctx):
-    ctx.app.lg.info("Starting...")
-
-
-app = (
-    AppBuilder("myapp")
-    .advanced.with_hook("startup", on_startup)
-    .with_argument("-v", "--verbose", action="store_true")
-    .done()
-    .build()
-)
-```
+The keyword form takes scalar fields by keyword and homogeneous items by position, as in
+`.tools(A(), B())`. Anything structured, such as argparse arguments, handlers, routes, or hooks
+from a `HookBuilder`, is chained only.
 
 ## Complete Example
 
@@ -109,12 +73,13 @@ class GreetTool(Tool):
 app = (
     AppBuilder("myapp")
     .with_description("My CLI application")
-    .with_version("1.0.0")
-    .logging.with_level("info")
-    .with_location(1)
+    .config.with_spec("myorg", "myapp")
     .done()
+    .cli(etc_dir=True, config_file=True, log=True, version=True)
+    .logging(level="info", location=1)
     .tools.with_tool(GreetTool())
     .done()
+    .version(semver="1.0.0")
     .build()
 )
 
@@ -122,7 +87,7 @@ if __name__ == "__main__":
     exit(app.main())
 ```
 
-## Config File Loading
+## config block
 
 Declare the config source with the `config` block. The App resolves it at setup under the
 [config protocol](../guides/config-protocol.md): `--config`, `--etc-dir`, a project-local
@@ -144,7 +109,7 @@ app = (
 Programmatic config via builder methods takes precedence over the loaded file. A resolved file
 that does not exist raises `FileNotFoundError` at setup.
 
-With `with_standard_args(etc_dir=True)`, the `--etc-dir` CLI argument redirects the load:
+With `.cli(etc_dir=True)`, the `--etc-dir` CLI argument redirects the load:
 ```bash
 ./cli.py --etc-dir /custom/path serve
 # → loads /custom/path/inference.yaml
@@ -152,88 +117,90 @@ With `with_standard_args(etc_dir=True)`, the `--etc-dir` CLI argument redirects 
 
 Without a spec, no file is loaded; config comes from `.config.with_overrides()` and CLI args:
 ```python
-app = AppBuilder("myapp").config.with_overrides({"logging": {"level": "info"}}).build()
+app = (
+    AppBuilder("myapp")
+    .config.with_overrides({"logging": {"level": "info"}})
+    .done()
+    .build()
+)
 ```
 
 See [AppBuilder.config](config.md#appbuilderconfig) for the full block.
 
-## Standard Arguments
+## cli block
 
-Standard CLI arguments are **disabled by default** (except `-h/--help`). Opt-in explicitly:
-
-```python
-# Enable all standard args
-AppBuilder("myapp").with_standard_args().build()
-
-# Enable specific args
-AppBuilder("myapp").with_standard_args(etc_dir=True, log_level=True, quiet=True).build()
-
-# Enable all logging args at once
-AppBuilder("myapp").with_standard_args(log=True).build()
-
-# Disable all (including help)
-AppBuilder("myapp").without_standard_args().build()
-```
-
-**Available standard args:**
-
-| Arg Name | CLI Flag | Description |
-|----------|----------|-------------|
-| `help` | `-h, --help` | Show help message (default: True) |
-| `config_file` | `-c, --config` | Config file path or name |
-| `etc_dir` | `--etc-dir` | Configuration directory path |
-| `log_level` | `-l, --log-level` | Log level (trace2, trace, debug, info, warning, error) |
-| `log_json` | `--log-json` | Output logs in JSON format |
-| `log_location` | `--log-location` | Show file location in logs (0, 1, 2) |
-| `log_micros` | `--log-micros` | Use microsecond timestamps |
-| `log_topic` | `--log-topic` | Log topic filter |
-| `log_colors` | `--no-log-colors` | Disable colored log output |
-| `quiet` | `-q, --quiet` | Suppress output |
-
-**Aliases:**
-- `log=True` enables all 7 log-related args (`log_level`, `log_location`, `log_micros`, `log_topic`,
-  `log_colors`, `log_json`, `quiet`)
-
-**Overriding framework defaults:**
-
-Use `with_standard_arg(name, **argparse_kwargs)` to override any argparse parameter
-(`default`, `help`, `metavar`, `type`, `choices`, `required`, `nargs`, `action`) of a standard
-arg without subclassing `App`. Overrides merge on top of framework defaults — only the passed
-keys are changed.
+Standard flags are **off by default** except `-h/--help`. Flags merge onto the current set.
 
 ```python
-# Quieter default log level for a background service
-AppBuilder("myapp").with_standard_args(log_level=True).with_standard_arg(
-    "log_level", default="warning"
-).build()
+# Named flags
+AppBuilder("myapp").cli(etc_dir=True, log_level=True, quiet=True).build()
+
+# Every logging flag at once
+AppBuilder("myapp").cli(log=True).build()
+
+# Locked down: clear everything (help included), then name what stays
+AppBuilder("myapp").cli.without_flags().with_flags(etc_dir=True).done().build()
 ```
 
-> The framework populates `app.etc_dir` when `etc_dir` is opted in via
-> `with_standard_args(etc_dir=True)` — read it from inside `Tool.configure()`.
-> With a spec it is the resolved file's directory; overriding the flag's default
-> to `"./etc"` would bypass that resolution (the path is then validated strictly
-> and errors if `./etc` is missing).
-> See [config docs](config.md#reading-appetc_dir) for the full resolution table.
+**Available flags:**
+
+| Flag           | CLI Flag           | Description                                              |
+|----------------|--------------------|----------------------------------------------------------|
+| `help`         | `-h, --help`       | Show help message (default: True)                        |
+| `config_file`  | `-c, --config`     | Config file path or name                                 |
+| `etc_dir`      | `--etc-dir`        | Configuration directory path                             |
+| `log_level`    | `-l, --log-level`  | Log level (trace2, trace, debug, info, warning, error)   |
+| `log_json`     | `--log-json`       | Output logs in JSON format                               |
+| `log_location` | `--log-location`   | Show file location in logs (0, 1, 2)                     |
+| `log_micros`   | `--log-micros`     | Use microsecond timestamps                               |
+| `log_topic`    | `--log-topic`      | Log topic filter                                         |
+| `log_colors`   | `--no-log-colors`  | Disable colored log output                               |
+| `quiet`        | `-q, --quiet`      | Suppress output                                          |
+| `version`      | `-v, --version`    | Print the version declared on the `.version` block       |
+
+**Alias:** `log=True` enables the seven log-related flags (`log_level`, `log_location`,
+`log_micros`, `log_topic`, `log_colors`, `log_json`, `quiet`). An explicit key wins over the
+alias.
+
+**One flag with its presentation:** `with_flag(name, **argparse_kwargs)` enables one standard
+flag and overrides its argparse presentation (`help`, `metavar`, `choices`, `type`, `nargs`,
+`action`). Overrides merge on top of framework values; only the passed keys change.
+
+```python
+AppBuilder("myapp").cli.with_flag(
+    "log_level", help="verbosity of the service log"
+).done().build()
+```
 
 Restrictions:
-- `name` must be a valid standard arg; the `log` alias is rejected (target a specific log arg).
-- `help` is rejected — toggle it via `with_standard_args(help=...)`; its kwargs flow through
-  argparse's `add_help`, not the standard-arg kwargs path.
-- `dest` cannot be overridden — the framework reads parsed args by a fixed attribute name set
-  internally, which may differ from `name` (e.g. `log_topic` is read as `args.log_topics`).
-- The override is silently ignored if the arg is not opted in via `with_standard_args(<name>=True)`.
+- `default` is rejected: a default is a value, and values come from the subsystem block
+  (`.logging.with_level(...)`) or the config file, never from the flag.
+- `dest` is rejected: the framework reads parsed args by a fixed attribute name set internally,
+  which may differ from the flag name (`log_topic` is read as `args.log_topics`).
+- `log` (an alias) and `help` (argparse's `add_help`) have no single action to present.
+
+> The framework populates `app.etc_dir` when `etc_dir` is enabled; read it from inside
+> `Tool.configure()`. With a spec it is the resolved file's directory. See
+> [config docs](config.md#reading-appetc_dir) for the full resolution table.
 
 > Overriding shape-changing kwargs (`action`, `nargs`, `required`) is allowed but the consumer
 > takes on the responsibility of keeping framework assumptions intact. For example, flipping
 > `--no-log-colors` from `store_false` to `store_true` inverts the flag's user-visible meaning;
 > setting `required=True` on `--etc-dir` makes argparse reject runs that rely on the spec's own
-> resolution. Prefer overriding `default`, `help`, `metavar`, `type`, and
-> `choices` unless the shape-change is deliberate.
+> resolution.
+
+**Custom arguments:** `with_argument(*args, **kwargs)` takes the arguments of
+`parser.add_argument` and is chained only.
+
+```python
+AppBuilder("myapp").cli.with_argument("--dry-run", action="store_true").done()
+```
 
 **Precedence:** CLI args override environment variables, which override YAML config values.
-See [Configuration Precedence](../guides/configuration-precedence.md) for the full precedence rules.
+See [Configuration Precedence](../guides/configuration-precedence.md) for the full precedence
+rules.
 
-## Config File CLI Argument
+### `-c/--config`
 
 The `-c/--config` argument selects the config file at runtime for an app with a spec:
 
@@ -247,24 +214,109 @@ myapp -c custom.yaml                    # loads ./custom.yaml
 myapp --etc-dir /app/etc -c prod.yaml   # loads /app/etc/prod.yaml
 ```
 
-Enable via `with_standard_args(config_file=True)`:
+Enable via `.cli(etc_dir=True, config_file=True)`:
 
 ```python
 app = (
     AppBuilder("myapp")
     .config.with_spec("myorg", "myapp")
     .done()
-    .with_standard_args(etc_dir=True, config_file=True)
+    .cli(etc_dir=True, config_file=True)
     .build()
 )
 ```
 
-## Main Tool (Single-Tool Apps)
+## logging block
 
-For single-purpose apps, use `with_main_tool()` to run a tool without requiring a subcommand:
+`LoggingScope` is [`LoggingBuilder`](logging.md) bound to the app. Options set here go into the
+programmatic config layer, above the config file and below CLI flags; an option left untouched
+keeps the file's value.
 
 ```python
-app = AppBuilder("proxy").with_main_tool("run").build()
+app = (
+    AppBuilder("myapp")
+    .logging.with_level("info")
+    .with_location(1)  # Show file/line (0=none, 1=file:line, 2=full path)
+    .with_micros()  # Microsecond timestamps
+    .with_topic_level("/infra/db/*", "debug")
+    .with_file_handler("app.log")
+    .with_extra(service="api")
+    .done()
+    .build()
+)
+
+app = AppBuilder("myapp").logging(level="info", location=1).build()
+```
+
+Keyword fields: `level`, `location`, `micros`, `colors`, `location_color`, `topic_levels`,
+`runtime_updates`. Handlers and `with_extra` are chained only; handlers become
+`logging.handlers` entries and extra fields become `logging.extra`, so the app's root logger gets
+both. Handlers from the block are keyed `builder_0`, `builder_1` and so on, so they never merge
+into a handler the config file names. A handler with no config form, a database handler or a
+console handler on a stream other than stdout/stderr, fails at `done()`; add such a handler to
+the root logger from a startup hook instead. `with_runtime_updates()` is the one scope-only
+method; everything else is the standalone builder's.
+
+## server block
+
+`ServerScope` is the FastAPI [`ServerBuilder`](fastapi.md) bound to the app. Declaring it adds a
+`serve` tool at build time, through `ServerPlugin`. Plugins can add routes and middleware to it
+from `configure(builder)`; the server is built after every plugin has run. Requires
+`pip install appinfra[fastapi]`.
+
+The server built from `.server` logs through a default `Logger` named after the app, not through
+the app's configured logging: it is built before the app's logger exists, so `.logging` settings
+and `--log-level` do not reach it. An app that needs the server on its own logging builds it
+standalone with `ServerBuilder(lg, name)` and registers it with `ServerPlugin(server)`; see
+[FastAPI Integration](fastapi.md).
+
+```python
+app = (
+    AppBuilder("myapp")
+    .server.with_port(8080)
+    .routes.with_route("/health", health)
+    .done()
+    .uvicorn(workers=4)
+    .done()
+    .build()
+)
+
+app = AppBuilder("myapp").server(port=8080, uvicorn={"workers": 4}).build()
+```
+
+Keyword fields: `host`, `port`, `title`, `description`, `version`, `timeout`, and `uvicorn`, a
+mapping of `UvicornConfig` fields. Lifecycle callbacks and rate limiting are direct methods on
+the block; routes, CORS and middleware are chained through `.routes`, and Uvicorn and subprocess
+settings through `.uvicorn` and `.subprocess`, each closing back onto the block.
+
+## tools block
+
+```python
+app = (
+    AppBuilder("myapp")
+    .tools.with_tool(MyTool())  # Add a Tool instance
+    .with_plugin(MyPlugin())  # Add a Plugin
+    .with_main("run")  # Tool that runs without a subcommand
+    .done()
+    .build()
+)
+
+app = (
+    AppBuilder("myapp")
+    .tools(MyTool(), OtherTool(), plugins=[MyPlugin()], main="run")
+    .build()
+)
+```
+
+`with_cmd(name, run_func, aliases=..., help_text=...)` and `with_tool_builder(builder)` are
+chained only.
+
+### Main Tool (Single-Tool Apps)
+
+For single-purpose apps, `with_main()` runs a tool without requiring a subcommand:
+
+```python
+app = AppBuilder("proxy").tools(main="run").build()
 
 
 @app.tool(name="run")
@@ -279,11 +331,52 @@ Now the app can be invoked without the subcommand:
 # After:  ./proxy.py --port 8080
 ```
 
-Accepts either a tool name (string) or Tool object:
+Accepts either a tool name or a `Tool` instance; an instance is registered as well:
 ```python
-AppBuilder("proxy").with_main_tool("run")  # by name
-AppBuilder("proxy").with_main_tool(my_tool)  # by object
+AppBuilder("proxy").tools.with_main("run").done()  # by name
+AppBuilder("proxy").tools.with_main(my_tool).done()  # by instance
 ```
+
+## lifecycle block
+
+```python
+def on_startup(ctx):
+    ctx.application.lg.info("Starting...")
+
+
+app = AppBuilder("myapp").lifecycle.with_hook("startup", on_startup).done().build()
+
+app = AppBuilder("myapp").lifecycle(startup=on_startup, shutdown=on_shutdown).build()
+```
+
+`with_hook(event, callback, priority=0)` registers one callback; higher priority runs first.
+`with_hook_builder(HookBuilder)` registers every hook of a builder, keeping priority, `once` and
+conditions. The standard events are `startup`, `shutdown`, `tool_start`, `tool_end`, `error`,
+`before_parse`, `after_parse`, `before_setup` and `after_setup`; the keyword form accepts only
+those, so a misspelled name fails at the call. Custom event names go through `with_hook`.
+
+## version block
+
+```python
+app = (
+    AppBuilder("myapp")
+    .version.with_semver("1.0.0")
+    .with_build_info()  # Commit hash from _build_info.py
+    .with_package("mylib")  # Track a dependency's version and commit
+    .done()
+    .build()
+)
+
+app = (
+    AppBuilder("myapp")
+    .version(semver="1.0.0", build_info=True, package="mylib")
+    .build()
+)
+```
+
+Exposing `-v/--version` is the `.cli` block's `version` flag; it prints this block's text and
+requires a semver. Build info and tracked packages are logged at startup unless
+`startup_log=False` (`without_startup_log()` chained).
 
 ## Hot-Reload Logging
 
@@ -306,5 +399,6 @@ See [Hot-Reload Logging Guide](../guides/hot-reload-logging.md) for full documen
 
 - [Decorator API with Config Files](../guides/decorator-config-pattern.md) - Build app, then decorate
 - [Application Framework](app.md) - Tool and ToolConfig
-- [Logging System](logging.md) - LoggingBuilder
+- [Logging System](logging.md) - LoggingBuilder, the standalone builder behind `.logging`
+- [FastAPI Server](fastapi.md) - ServerBuilder, the standalone builder behind `.server`
 - [Hot-Reload Logging](../guides/hot-reload-logging.md) - Dynamic config reloading

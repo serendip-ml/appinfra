@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..builder.plugin import Plugin
 from ..tools.base import Tool, ToolConfig
+from .builder.server import ServerBuilder
 from .runtime.server import Server
 
 if TYPE_CHECKING:
@@ -89,6 +90,11 @@ class ServerPlugin(Plugin):
     Allows CLI applications to also serve HTTP by adding a "serve" tool
     that starts the configured server.
 
+    Given a ``ServerBuilder`` instead of a built ``Server``, the plugin builds
+    the server when it is configured, after plugins registered earlier have
+    added their routes and middleware. ``AppBuilder.server`` registers the
+    plugin this way.
+
     Example:
         server = (ServerBuilder("myapi")
             .with_port(8000)
@@ -104,7 +110,7 @@ class ServerPlugin(Plugin):
 
     def __init__(
         self,
-        server: Server,
+        server: Server | ServerBuilder,
         tool_name: str = "serve",
         tool_help: str = "Start the HTTP server",
     ) -> None:
@@ -112,22 +118,27 @@ class ServerPlugin(Plugin):
         Initialize plugin.
 
         Args:
-            server: Configured Server instance
+            server: Configured Server instance, or a ServerBuilder to build
+                when the plugin is configured
             tool_name: Name for the serve command (default: "serve")
             tool_help: Help text for the serve command
         """
         super().__init__(name="ServerPlugin")
-        self._server = server
+        self._server: Server | ServerBuilder = server
         self._tool_name = tool_name
         self._tool_help = tool_help
         self._tool: ServeTool | None = None
 
     def configure(self, builder: AppBuilder) -> None:
         """
-        Register serve tool with AppBuilder.
+        Build the server if given a builder, and register the serve tool.
 
         Called during AppBuilder.build() phase.
         """
+        if isinstance(self._server, ServerBuilder):
+            # The AppBuilder server scope overrides build() to raise; the base
+            # implementation is the real one.
+            self._server = ServerBuilder.build(self._server)
         self._tool = ServeTool(
             server=self._server,
             name=self._tool_name,
@@ -152,6 +163,8 @@ class ServerPlugin(Plugin):
 
         Called during app shutdown phase.
         """
+        if isinstance(self._server, ServerBuilder):
+            return  # never configured, nothing was started
         if self._server.is_running:
             logger.info("stopping server...")
             self._server.stop()

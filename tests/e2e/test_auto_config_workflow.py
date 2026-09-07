@@ -34,7 +34,7 @@ def _spec_app(etc_dir: Path, filename: str = "app.yaml") -> AppBuilder:
     """
     return (
         AppBuilder("test-app")
-        .with_standard_args(etc_dir=True)
+        .cli(etc_dir=True)
         .config.with_spec("test-org", "app", path=etc_dir / filename)
         .done()
     )
@@ -92,7 +92,7 @@ class TestConfigFileWorkflow:
             etc_dir.mkdir()
             (etc_dir / "app.yaml").write_text("logging:\n  level: info\n")
 
-            app = _spec_app(etc_dir).with_standard_args(log_level=True).build()
+            app = _spec_app(etc_dir).cli(log_level=True).build()
             _load(app, etc_dir, "--log-level", "debug")
 
             assert app.config.logging.level == "debug"
@@ -159,7 +159,7 @@ class TestConfigFileWorkflow:
                 "custom_key: should_not_load\nlogging:\n  level: debug\n"
             )
 
-            app = AppBuilder("test-app").with_standard_args(etc_dir=True).build()
+            app = AppBuilder("test-app").cli(etc_dir=True).build()
             _load(app, etc_dir)
 
             assert not hasattr(app.config, "custom_key")
@@ -471,7 +471,7 @@ class TestLogOutputCliOverrides:
                 "      colors: true\n"
             )
 
-            app = _spec_app(etc_dir).with_standard_args(log_json=True).build()
+            app = _spec_app(etc_dir).cli(log_json=True).build()
 
             with patch.object(
                 sys, "argv", ["test", "--etc-dir", str(etc_dir), "--log-json"]
@@ -510,7 +510,7 @@ class TestLogOutputCliOverrides:
                 "      colors: true\n"
             )
 
-            app = _spec_app(etc_dir).with_standard_args(log_colors=True).build()
+            app = _spec_app(etc_dir).cli(log_colors=True).build()
 
             with patch.object(
                 sys, "argv", ["test", "--etc-dir", str(etc_dir), "--no-log-colors"]
@@ -547,11 +547,7 @@ class TestLogOutputCliOverrides:
                 "      colors: true\n"
             )
 
-            app = (
-                _spec_app(etc_dir)
-                .with_standard_args(log_json=True, log_colors=True)
-                .build()
-            )
+            app = _spec_app(etc_dir).cli(log_json=True, log_colors=True).build()
 
             with patch.object(
                 sys,
@@ -597,7 +593,7 @@ class TestLogOutputCliOverrides:
                 "      colors: true\n"
             )
 
-            app = _spec_app(etc_dir).with_standard_args(log_json=True).build()
+            app = _spec_app(etc_dir).cli(log_json=True).build()
 
             with patch.object(
                 sys, "argv", ["test", "--etc-dir", str(etc_dir), "--log-json"]
@@ -627,7 +623,7 @@ class TestLogOutputCliOverrides:
             etc_dir.mkdir()
             (etc_dir / "app.yaml").write_text("logging:\n  level: info\n")
 
-            app = _spec_app(etc_dir).with_standard_args(log_json=True).build()
+            app = _spec_app(etc_dir).cli(log_json=True).build()
 
             with patch.object(
                 sys, "argv", ["test", "--etc-dir", str(etc_dir), "--log-json"]
@@ -657,7 +653,7 @@ class TestLogOutputCliOverrides:
             etc_dir.mkdir()
             (etc_dir / "app.yaml").write_text("logging:\n  level: info\n")
 
-            app = _spec_app(etc_dir).with_standard_args(log_colors=True).build()
+            app = _spec_app(etc_dir).cli(log_colors=True).build()
 
             with patch.object(
                 sys, "argv", ["test", "--etc-dir", str(etc_dir), "--no-log-colors"]

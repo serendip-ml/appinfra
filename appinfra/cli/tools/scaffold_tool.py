@@ -177,10 +177,10 @@ class ScaffoldTool(Tool):
         self, project_path: Path, with_db: bool, with_server: bool
     ) -> None:
         """Create project directory structure."""
-        # Main directories
-        (project_path / "etc").mkdir(parents=True)
+        # Main directories; etc/ lives inside the package so the base config
+        # resolves under the config protocol and ships with the package.
+        (project_path / project_path.name / "etc").mkdir(parents=True)
         (project_path / "tests").mkdir(parents=True)
-        (project_path / project_path.name).mkdir(parents=True)
 
         self.lg.debug("created directory structure")  # type: ignore[union-attr]
 
@@ -263,7 +263,7 @@ class ScaffoldTool(Tool):
         if with_server:
             config_lines.extend(self._config_server_section())
 
-        config_path = project_path / "etc" / "infra.yaml"
+        config_path = project_path / name / "etc" / "infra.yaml"
         config_path.write_text("\n".join(config_lines) + "\n")
         self.lg.debug(f"Generated config: {config_path}")  # type: ignore[union-attr]
 
@@ -275,7 +275,6 @@ class ScaffoldTool(Tool):
             '"""',
             "",
             "from appinfra.app import App, AppBuilder",
-            "from appinfra.config import Config",
             "from appinfra.app.tools import Tool, ToolConfig",
         ]
         if with_db:
@@ -320,16 +319,15 @@ class ScaffoldTool(Tool):
             "",
             "def main():",
             '    """Main entry point."""',
-            "    # Load configuration",
-            '    config = Config("etc/infra.yaml")',
-            "",
-            "    # Build application",
+            "    # Build application; etc/infra.yaml beside this file is the base config",
             "    app = (",
             '        AppBuilder("' + name + '")',
-            "        .with_config(config)",
-            "        .logging",
-            "            .with_level(config.logging.level)",
-            "            .done()",
+            '        .config.with_spec("'
+            + name
+            + '", "'
+            + name
+            + '", filename="infra.yaml")',
+            "        .done()",
             "        .tools",
             "            .with_tool(ExampleTool())",
             "            .done()",
@@ -436,8 +434,12 @@ class ScaffoldTool(Tool):
             f'description = "{name} - infra-based application"',
             'requires-python = ">=3.11"',
             "dependencies = [",
-            '    "infra",',
+            '    "appinfra",',
             "]",
+            "",
+            "# The base config ships inside the package.",
+            "[tool.setuptools.package-data]",
+            f'{name} = ["etc/*.yaml"]',
         ]
         (project_path / "pyproject.toml").write_text("\n".join(pyproject_lines) + "\n")
 

@@ -17,7 +17,7 @@ from appinfra.app import AppBuilder
 app = (
     AppBuilder("quickstart")
     .with_description("appinfra quick-start smoke")
-    .with_standard_args(log=True, quiet=True)
+    .cli(log=True, quiet=True)
     .build()
 )
 
