@@ -9,7 +9,7 @@ import multiprocessing as mp
 import pickle
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 from ..ratelimit.interface import RateLimiter
 
@@ -419,17 +419,17 @@ class ServerBuilder:
     # Focused configurers
 
     @property
-    def routes(self) -> RouteConfigurer:
+    def routes(self) -> RouteConfigurer[Self]:
         """Access route and middleware configuration."""
         return RouteConfigurer(self)
 
     @property
-    def subprocess(self) -> SubprocessConfigurer:
+    def subprocess(self) -> SubprocessConfigurer[Self]:
         """Access subprocess and IPC configuration."""
         return SubprocessConfigurer(self)
 
     @property
-    def uvicorn(self) -> UvicornConfigurer:
+    def uvicorn(self) -> UvicornConfigurer[Self]:
         """Access Uvicorn configuration."""
         return UvicornConfigurer(self)
 

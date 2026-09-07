@@ -114,7 +114,7 @@ def main() -> int:
         .tools.with_tool(InfoTool(tracker))
         .with_tool(ListTool(tracker))
         .done()
-        .with_standard_args(log_level=True, quiet=True)
+        .cli(log_level=True, quiet=True, version=True)
         .build()
     )
 

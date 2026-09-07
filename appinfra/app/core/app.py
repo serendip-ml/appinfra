@@ -48,6 +48,7 @@ DEFAULT_STANDARD_ARGS: dict[str, bool] = {
     "log_colors": False,
     "log_json": False,
     "quiet": False,
+    "version": False,
 }
 
 

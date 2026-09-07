@@ -9,7 +9,7 @@
 --etc-dir without a config spec
 
 Demonstrates the pattern for apps that:
-- Opt into the `--etc-dir` CLI flag via `with_standard_args(etc_dir=True)`.
+- Opt into the `--etc-dir` CLI flag via `.cli(etc_dir=True)`.
 - Manage their own YAML files (no config spec declared).
 - Need the etc directory inside `Tool.configure()`.
 
@@ -22,7 +22,7 @@ Running:
         --etc-dir examples/04_configuration/etc greet
 
 Key points:
-- `with_standard_args(etc_dir=True)` is the single opt-in.
+- `.cli(etc_dir=True)` is the single opt-in.
 - Read `self.app.etc_dir` inside `Tool.configure()` — populated by the framework.
 - A bad `--etc-dir /missing` raises `FileNotFoundError` at setup (fail-fast).
 - Without a spec there is no default directory: omit the flag and `app.etc_dir`
@@ -87,7 +87,7 @@ def main() -> int:
     app = (
         AppBuilder("etc-dir-only-demo")
         .with_description("Tool reads its own YAML from app.etc_dir")
-        .with_standard_args(etc_dir=True)
+        .cli(etc_dir=True)
         .tools.with_tool(GreetTool())
         .done()
         .logging.with_level("warning")

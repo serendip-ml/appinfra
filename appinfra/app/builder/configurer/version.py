@@ -2,21 +2,32 @@
 # SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
 
 """
-Version tracking configuration builder for AppBuilder.
+Version block for AppBuilder.
 
-This module provides a focused builder for configuring package version
-tracking, including commit hash detection and startup logging.
+Declares the app version and tracks commit hashes of packages that use
+the appinfra build protocol (``_build_info.py``). Exposing ``-v/--version``
+is the ``.cli`` block's ``version`` flag; this block supplies its text.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self, TypedDict, Unpack
 
 if TYPE_CHECKING:
     from ....version import BuildInfo, PackageVersionInfo
     from ..app import AppBuilder
+
+
+class VersionFields(TypedDict, total=False):
+    """Keyword form of the version block; see ``VersionConfigurer.__call__``."""
+
+    semver: str
+    build_info: bool | str | Path
+    package: str | Sequence[str]
+    startup_log: bool
 
 
 def _format_modified(val: bool | None) -> str:
@@ -64,31 +75,30 @@ def _log_package_info(lg: logging.Logger, info: PackageVersionInfo) -> None:
 
 
 class VersionConfigurer:
-    """
-    Focused builder for version tracking configuration.
+    """Version block: semver, build info, tracked packages, startup logging.
 
-    Example:
-        app = (AppBuilder("myapp")
-            .version
-                .with_semver("1.0.0")
-                .with_build_info()
-                .with_package("mylib")
-                .done()
-            .build())
+    Chained::
+
+        AppBuilder("myapp").version.with_semver("1.0.0").with_build_info().done()
+
+    Keyword, returning the AppBuilder directly::
+
+        AppBuilder("myapp").version(semver="1.0.0", build_info=True, package="mylib")
     """
 
     def __init__(self, app_builder: AppBuilder):
+        """Bind the block to its parent builder."""
         self._app_builder = app_builder
         self._packages: list[str] = []
         self._build_info: BuildInfo | None = None
         self._log_on_startup = True
 
-    def with_semver(self, version: str) -> VersionConfigurer:
+    def with_semver(self, version: str) -> Self:
         """Set the application version string (e.g., '1.0.0')."""
         self._app_builder._version = version
         return self
 
-    def with_build_info(self, path: Path | str | None = None) -> VersionConfigurer:
+    def with_build_info(self, path: Path | str | None = None) -> Self:
         """
         Include build info for the current repo.
 
@@ -127,17 +137,17 @@ class VersionConfigurer:
         # Fall back to current directory
         return Path.cwd() / "_build_info.py"
 
-    def with_package(self, name: str) -> VersionConfigurer:
+    def with_package(self, name: str) -> Self:
         """Track a specific package by distribution name."""
         self._packages.append(name)
         return self
 
-    def with_startup_log(self) -> VersionConfigurer:
+    def with_startup_log(self) -> Self:
         """Enable startup logging of package versions (default)."""
         self._log_on_startup = True
         return self
 
-    def without_startup_log(self) -> VersionConfigurer:
+    def without_startup_log(self) -> Self:
         """Disable startup logging of package versions."""
         self._log_on_startup = False
         return self
@@ -152,42 +162,19 @@ class VersionConfigurer:
             tracker.track(*self._packages)
             self._app_builder._version_tracker = tracker
 
-        self._app_builder._build_info = self._build_info
+        if self._build_info is not None:
+            self._app_builder._build_info = self._build_info
 
         if self._log_on_startup and (self._build_info or tracker):
             self._register_startup_hook(tracker, self._build_info)
 
-        # Add --version argument if version is configured
-        if self._app_builder._version:
-            self._add_version_argument(tracker, self._build_info)
-
         return self._app_builder
-
-    def _add_version_argument(self, tracker: Any, build_info: BuildInfo | None) -> None:
-        """Add --version CLI argument with tracker support."""
-        from ....version.actions import VersionWithTrackerAction
-
-        app_name = self._app_builder._name or "app"
-        app_version = self._app_builder._version or "0.0.0"
-
-        self._app_builder._custom_args.append(
-            (
-                ("--version",),
-                {
-                    "action": VersionWithTrackerAction,
-                    "app_name": app_name,
-                    "app_version": app_version,
-                    "tracker": tracker,
-                    "build_info": build_info,
-                },
-            )
-        )
 
     def _register_startup_hook(
         self, tracker: Any, build_info: BuildInfo | None
     ) -> None:
         """Register a startup hook to log version info."""
-        from ..hook import HookBuilder, HookContext
+        from ..hook import HookContext
 
         def log_versions(context: HookContext) -> None:
             if not hasattr(context.application, "lg"):
@@ -200,5 +187,23 @@ class VersionConfigurer:
                 for info in tracker.get_all().values():
                     _log_package_info(context.application.lg, info)
 
-        hook_builder = HookBuilder().on_startup(log_versions, priority=90)
-        self._app_builder.advanced.with_hook_builder(hook_builder).done()
+        self._app_builder._hooks.register_hook("startup", log_versions, priority=90)
+
+    def __call__(self, **fields: Unpack[VersionFields]) -> AppBuilder:
+        """Keyword form of the block; returns the AppBuilder."""
+        if "semver" in fields:
+            self.with_semver(fields["semver"])
+        build_info = fields.get("build_info")
+        if build_info is True:
+            self.with_build_info()
+        elif isinstance(build_info, str | Path):
+            self.with_build_info(build_info)
+        package = fields.get("package")
+        if isinstance(package, str):
+            self.with_package(package)
+        elif package is not None:
+            for name in package:
+                self.with_package(name)
+        if fields.get("startup_log") is False:
+            self.without_startup_log()
+        return self.done()

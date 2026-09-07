@@ -457,7 +457,7 @@ logging:
         # The spec's base lives elsewhere; --etc-dir redirects the load.
         app = (
             AppBuilder("test-app")
-            .with_standard_args(etc_dir=True)
+            .cli(etc_dir=True)
             .config.with_spec(
                 "test-org", "config", path=tmp_path / "pkg" / "config.yaml"
             )

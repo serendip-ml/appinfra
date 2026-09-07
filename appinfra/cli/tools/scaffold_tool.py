@@ -275,7 +275,6 @@ class ScaffoldTool(Tool):
             '"""',
             "",
             "from appinfra.app import App, AppBuilder",
-            "from appinfra.config import Config",
             "from appinfra.app.tools import Tool, ToolConfig",
         ]
         if with_db:
@@ -320,16 +319,15 @@ class ScaffoldTool(Tool):
             "",
             "def main():",
             '    """Main entry point."""',
-            "    # Load configuration",
-            '    config = Config("etc/infra.yaml")',
-            "",
-            "    # Build application",
+            "    # Build application; etc/infra.yaml beside this file is the base config",
             "    app = (",
             '        AppBuilder("' + name + '")',
-            "        .with_config(config)",
-            "        .logging",
-            "            .with_level(config.logging.level)",
-            "            .done()",
+            '        .config.with_spec("'
+            + name
+            + '", "'
+            + name
+            + '", filename="infra.yaml")',
+            "        .done()",
             "        .tools",
             "            .with_tool(ExampleTool())",
             "            .done()",

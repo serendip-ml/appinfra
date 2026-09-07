@@ -2,24 +2,28 @@
 # SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
 
 """
-Configurer classes for AppBuilder.
+Blocks of the faceted AppBuilder, one per axis.
 
-This module provides focused configurers that handle specific aspects
-of AppBuilder configuration using the composition pattern.
+``ConfigConfigurer``, ``CliConfigurer``, ``ToolConfigurer``,
+``LifecycleConfigurer`` and ``VersionConfigurer`` are app-only blocks.
+``LoggingScope`` and ``ServerScope`` are the standalone ``LoggingBuilder``
+and FastAPI ``ServerBuilder`` bound to the AppBuilder.
 """
 
-from .advanced import AdvancedConfigurer
+from .cli import CliConfigurer
 from .config import ConfigConfigurer
-from .logging import LoggingConfigurer
-from .server import ServerConfigurer
+from .lifecycle import LifecycleConfigurer
+from .logging import LoggingScope
+from .server import ServerScope
 from .tool import ToolConfigurer
 from .version import VersionConfigurer
 
 __all__ = [
+    "CliConfigurer",
     "ConfigConfigurer",
+    "LifecycleConfigurer",
+    "LoggingScope",
+    "ServerScope",
     "ToolConfigurer",
-    "ServerConfigurer",
-    "LoggingConfigurer",
-    "AdvancedConfigurer",
     "VersionConfigurer",
 ]

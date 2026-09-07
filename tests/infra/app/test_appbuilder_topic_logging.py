@@ -216,12 +216,10 @@ class TestAppBuilderTopicLogging:
         assert manager.get_effective_level("/infra/db/pg") == "debug"
         assert manager.get_effective_level("/myapp/service") == "warning"
 
-        # Verify other logging config is preserved in builder
-        # (App object doesn't expose _logging_config, but builder does)
-        assert builder._logging_config is not None
-        assert builder._logging_config.level == "info"
-        assert builder._logging_config.location == 2
-        assert builder._logging_config.micros is True
+        # Verify other logging options reached the programmatic config layer
+        assert app.config.logging.level == "info"
+        assert app.config.logging.location == 2
+        assert app.config.logging.micros is True
 
     def test_multiple_calls_to_with_topic_level(self):
         """Test multiple calls to with_topic_level() accumulate rules."""

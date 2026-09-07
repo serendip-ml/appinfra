@@ -6,12 +6,16 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from typing import TYPE_CHECKING, TypedDict, Unpack
+from typing import TYPE_CHECKING, Generic, Self, TypedDict, TypeVar, Unpack
 
 from ..config.uvicorn import UvicornConfig
 
 if TYPE_CHECKING:
     from .server import ServerBuilder
+
+# The parent's concrete type, so done() on a subclass of ServerBuilder
+# (the AppBuilder server scope) returns that subclass.
+P = TypeVar("P", bound="ServerBuilder")
 
 
 class UvicornFields(TypedDict, total=False):
@@ -31,7 +35,7 @@ class UvicornFields(TypedDict, total=False):
 _UVICORN_KEYS = frozenset(f.name for f in fields(UvicornConfig))
 
 
-class UvicornConfigurer:
+class UvicornConfigurer(Generic[P]):
     """
     Focused builder for Uvicorn configuration.
 
@@ -52,63 +56,63 @@ class UvicornConfigurer:
         server = ServerBuilder("myapi").uvicorn(workers=4, access_log=True).build()
     """
 
-    def __init__(self, parent: ServerBuilder) -> None:
+    def __init__(self, parent: P) -> None:
         """
         Initialize configurer.
 
         Args:
             parent: Parent ServerBuilder instance
         """
-        self._parent = parent
+        self._parent: P = parent
         self._config = UvicornConfig()
 
-    def with_workers(self, workers: int) -> UvicornConfigurer:
+    def with_workers(self, workers: int) -> Self:
         """Set number of worker processes."""
         self._config.workers = workers
         return self
 
-    def with_timeout_keep_alive(self, timeout: int) -> UvicornConfigurer:
+    def with_timeout_keep_alive(self, timeout: int) -> Self:
         """Set keep-alive timeout in seconds."""
         self._config.timeout_keep_alive = timeout
         return self
 
-    def with_limit_concurrency(self, limit: int) -> UvicornConfigurer:
+    def with_limit_concurrency(self, limit: int) -> Self:
         """Set max concurrent connections."""
         self._config.limit_concurrency = limit
         return self
 
-    def with_limit_max_requests(self, limit: int) -> UvicornConfigurer:
+    def with_limit_max_requests(self, limit: int) -> Self:
         """Set max requests per worker before restart."""
         self._config.limit_max_requests = limit
         return self
 
-    def with_backlog(self, backlog: int) -> UvicornConfigurer:
+    def with_backlog(self, backlog: int) -> Self:
         """Set socket backlog size."""
         self._config.backlog = backlog
         return self
 
-    def with_log_level(self, level: str) -> UvicornConfigurer:
+    def with_log_level(self, level: str) -> Self:
         """Set uvicorn log level (debug, info, warning, error, critical)."""
         self._config.log_level = level
         return self
 
-    def with_access_log(self, enabled: bool = True) -> UvicornConfigurer:
+    def with_access_log(self, enabled: bool = True) -> Self:
         """Enable/disable access logging."""
         self._config.access_log = enabled
         return self
 
-    def with_ssl(self, keyfile: str, certfile: str) -> UvicornConfigurer:
+    def with_ssl(self, keyfile: str, certfile: str) -> Self:
         """Configure SSL with key and certificate files."""
         self._config.ssl_keyfile = keyfile
         self._config.ssl_certfile = certfile
         return self
 
-    def with_config(self, config: UvicornConfig) -> UvicornConfigurer:
+    def with_config(self, config: UvicornConfig) -> Self:
         """Set entire uvicorn config at once."""
         self._config = config
         return self
 
-    def done(self) -> ServerBuilder:
+    def done(self) -> P:
         """
         Finish uvicorn configuration and return to parent builder.
 
@@ -118,7 +122,7 @@ class UvicornConfigurer:
         self._parent._uvicorn_config = self._config
         return self._parent
 
-    def __call__(self, **fields: Unpack[UvicornFields]) -> ServerBuilder:
+    def __call__(self, **fields: Unpack[UvicornFields]) -> P:
         """Keyword form of the block; sets ``UvicornConfig`` fields and returns the parent.
 
         Raises:

@@ -35,7 +35,7 @@ def _spec_app(etc_dir: Path, filename: str = "app.yaml") -> AppBuilder:
     """
     return (
         AppBuilder("test-app")
-        .with_standard_args(etc_dir=True)
+        .cli(etc_dir=True)
         .config.with_spec("test-org", "app", path=etc_dir / filename)
         .done()
     )

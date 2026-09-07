@@ -7,8 +7,7 @@ Tests for app/builder/app.py.
 Tests key functionality including:
 - Helper functions for build process
 - Command and CommandTool classes
-- ServerConfig and LoggingConfig dataclasses
-- AppBuilder class initialization and methods
+- AppBuilder initialization, blocks, and build
 - Fluent builder API
 """
 
@@ -20,18 +19,25 @@ from appinfra.app.builder.app import (
     AppBuilder,
     Command,
     CommandTool,
-    LoggingConfig,
-    ServerConfig,
-    _configure_arguments_and_validation,
+    _configure_arguments,
     _configure_hooks,
-    _configure_middleware,
-    _configure_server_and_logging,
     _create_base_app,
     _register_tools_and_commands,
     _set_app_metadata,
 )
+from appinfra.app.builder.configurer.cli import CliConfigurer
+from appinfra.app.builder.configurer.config import ConfigConfigurer
+from appinfra.app.builder.configurer.lifecycle import LifecycleConfigurer
+from appinfra.app.builder.configurer.logging import LoggingScope
+from appinfra.app.builder.configurer.server import ServerScope
+from appinfra.app.builder.configurer.tool import ToolConfigurer
+from appinfra.app.builder.configurer.version import VersionConfigurer
 from appinfra.app.builder.plugin import Plugin
 from appinfra.app.builder.tool import ToolBuilder
+from appinfra.app.core.app import DEFAULT_STANDARD_ARGS
+from appinfra.app.tools.base import Tool, ToolConfig
+from appinfra.dot_dict import DotDict
+from appinfra.log.builder.builder import LoggingBuilder
 from appinfra.yaml import deep_merge
 
 # =============================================================================
@@ -124,70 +130,30 @@ class TestRegisterToolsAndCommands:
 
 
 @pytest.mark.unit
-class TestConfigureMiddleware:
-    """Test _configure_middleware helper function."""
-
-    def test_adds_middleware_when_server_configured(self):
-        """Test adds middleware when server config present."""
-        app = Mock()
-        mw1 = Mock()
-        mw2 = Mock()
-        server_config = Mock()
-
-        _configure_middleware(app, [mw1, mw2], server_config)
-
-        assert app.add_middleware.call_count == 2
-
-    def test_skips_when_no_server_config(self):
-        """Test does nothing when no server config."""
-        app = Mock()
-        mw = Mock()
-
-        _configure_middleware(app, [mw], None)
-
-        app.add_middleware.assert_not_called()
-
-    def test_handles_app_without_add_middleware(self):
-        """Test handles app without add_middleware method."""
-        app = Mock(spec=[])  # No add_middleware
-        mw = Mock()
-        server_config = Mock()
-
-        # Should not raise
-        _configure_middleware(app, [mw], server_config)
-
-
-@pytest.mark.unit
-class TestConfigureArgumentsAndValidation:
-    """Test _configure_arguments_and_validation helper function."""
+class TestConfigureArguments:
+    """Test _configure_arguments helper function."""
 
     def test_adds_custom_arguments(self):
-        """Test adds custom arguments to app."""
+        """Test adds custom arguments to app, unpacking args and kwargs."""
         app = Mock()
         custom_args = [
             (("--verbose",), {"action": "store_true"}),
             (("--file",), {"required": True}),
         ]
 
-        _configure_arguments_and_validation(app, custom_args, [])
+        _configure_arguments(app, custom_args)
 
         assert app.add_argument.call_count == 2
+        app.add_argument.assert_any_call("--verbose", action="store_true")
+        app.add_argument.assert_any_call("--file", required=True)
 
-    def test_adds_validation_rules(self):
-        """Test adds validation rules to app."""
+    def test_no_arguments_is_a_no_op(self):
+        """Test an empty list adds nothing."""
         app = Mock()
-        rules = [Mock(), Mock()]
 
-        _configure_arguments_and_validation(app, [], rules)
+        _configure_arguments(app, [])
 
-        assert app.add_validation_rule.call_count == 2
-
-    def test_handles_app_without_methods(self):
-        """Test handles app without add_argument/add_validation_rule."""
-        app = Mock(spec=[])  # No methods
-
-        # Should not raise
-        _configure_arguments_and_validation(app, [(("--test",), {})], [Mock()])
+        app.add_argument.assert_not_called()
 
 
 @pytest.mark.unit
@@ -210,36 +176,6 @@ class TestConfigureHooks:
 
         # Should not raise
         _configure_hooks(app, hooks)
-
-
-@pytest.mark.unit
-class TestConfigureServerAndLogging:
-    """Test _configure_server_and_logging helper function."""
-
-    def test_configures_server(self):
-        """Test configures server when config provided."""
-        app = Mock()
-        server_config = Mock()
-
-        _configure_server_and_logging(app, server_config, None)
-
-        app.configure_server.assert_called_once_with(server_config)
-
-    def test_configures_logging(self):
-        """Test configures logging when config provided."""
-        app = Mock()
-        logging_config = Mock()
-
-        _configure_server_and_logging(app, None, logging_config)
-
-        app.configure_logging.assert_called_once_with(logging_config)
-
-    def test_handles_app_without_methods(self):
-        """Test handles app without configure_* methods."""
-        app = Mock(spec=[])
-
-        # Should not raise
-        _configure_server_and_logging(app, Mock(), Mock())
 
 
 # =============================================================================
@@ -366,146 +302,81 @@ class TestCommandTool:
 
 
 # =============================================================================
-# Test ServerConfig
+# Test logging block folds into the programmatic config layer
 # =============================================================================
 
 
 @pytest.mark.unit
-class TestServerConfig:
-    """Test ServerConfig dataclass."""
+class TestLoggingBlockFold:
+    """The logging block writes explicit options under ``logging`` in the config."""
 
-    def test_default_values(self):
-        """Test default values."""
-        config = ServerConfig()
+    def test_untouched_block_leaves_config_alone(self):
+        """Closing the block without setting anything changes nothing."""
+        builder = AppBuilder("test").config.with_overrides({"app_name": "test"}).done()
 
-        assert config.port == 8080
-        assert config.host == "localhost"
-        assert config.ssl_enabled is False
-        assert config.cors_origins == []
-        assert config.timeout == 30
+        result = builder.logging.done()
 
-    def test_custom_values(self):
-        """Test custom values."""
-        config = ServerConfig(
-            port=9000,
-            host="0.0.0.0",
-            ssl_enabled=True,
-            cors_origins=["http://localhost"],
-            timeout=60,
+        assert result is builder
+        assert builder._config.to_dict() == {"app_name": "test"}
+
+    def test_untouched_block_creates_no_config(self):
+        """Closing an untouched block on a builder without config leaves it None."""
+        builder = AppBuilder("test")
+
+        builder.logging.done()
+
+        assert builder._config is None
+
+    def test_creates_config_when_none(self):
+        """An explicit option creates the config with a logging section."""
+        builder = AppBuilder("test")
+
+        builder.logging.with_level("debug").done()
+
+        assert builder._config is not None
+        assert builder._config.logging.level == "debug"
+
+    def test_adds_logging_section_to_existing_config(self):
+        """Config without a logging section gains one; other keys survive."""
+        builder = AppBuilder("test").config.with_overrides({"app_name": "test"}).done()
+
+        builder.logging.with_level("debug").done()
+
+        assert builder._config.app_name == "test"
+        assert builder._config.logging.level == "debug"
+
+    def test_merges_into_existing_logging_section(self):
+        """Explicit options merge with an existing logging section."""
+        builder = (
+            AppBuilder("test")
+            .config.with_overrides({"logging": {"location": 1}})
+            .done()
         )
 
-        assert config.port == 9000
-        assert config.host == "0.0.0.0"
-        assert config.ssl_enabled is True
-        assert config.cors_origins == ["http://localhost"]
-        assert config.timeout == 60
+        builder.logging.with_level("debug").done()
 
-    def test_post_init_initializes_none_cors_origins(self):
-        """Test __post_init__ converts None cors_origins to empty list."""
-        config = ServerConfig(cors_origins=None)
+        assert builder._config.logging.level == "debug"
+        assert builder._config.logging.location == 1
 
-        assert config.cors_origins == []
-
-
-# =============================================================================
-# Test LoggingConfig
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestLoggingConfig:
-    """Test LoggingConfig dataclass."""
-
-    def test_default_values(self):
-        """Test default values are None (to allow config file values to take precedence)."""
-        config = LoggingConfig()
-
-        assert config.level is None
-        assert config.location is None
-        assert config.micros is None
-        assert config.format_string is None
-        assert config.location_color is None
-
-    def test_custom_values(self):
-        """Test custom values."""
-        config = LoggingConfig(
-            level="debug",
-            location=1,
-            micros=True,
-            format_string="%(message)s",
-        )
-
-        assert config.level == "debug"
-        assert config.location == 1
-        assert config.micros is True
-        assert config.format_string == "%(message)s"
-
-
-# =============================================================================
-# Test LoggingConfig Merge
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestLoggingConfigMerge:
-    """Test AppBuilder._merge_logging_into_config method."""
-
-    def test_merge_returns_config_when_no_logging_settings(self):
-        """Test that merge returns original config when no logging settings are set."""
-        from appinfra.dot_dict import DotDict
-
-        # Create a config, but no logging settings in builder
+    def test_keyword_form_returns_builder(self):
+        """``.logging(...)`` folds and returns the AppBuilder."""
         builder = AppBuilder("test")
-        builder._config = DotDict(app_name="test")
-        # _logging_config has all None values by default
 
-        result = builder._merge_logging_into_config()
+        result = builder.logging(level="debug", micros=True)
 
-        # Should return original config unchanged
-        assert result is builder._config
-        assert result.app_name == "test"
+        assert result is builder
+        assert builder._config.logging.level == "debug"
+        assert builder._config.logging.micros is True
 
-    def test_merge_creates_config_with_logging_when_no_config(self):
-        """Test that merge creates new config with logging when no config exists."""
+    def test_build_applies_unclosed_block(self):
+        """build() folds a block that was never closed with done()."""
         builder = AppBuilder("test")
-        builder._config = None
-        builder._logging_config = LoggingConfig(level="debug")
+        builder.logging.with_level("debug")
 
-        result = builder._merge_logging_into_config()
+        with patch("appinfra.app.builder.app.App"):
+            builder.build()
 
-        # Should create new config with logging
-        assert result is not None
-        assert hasattr(result, "logging")
-        assert result.logging.level == "debug"
-
-    def test_merge_adds_logging_to_config_without_logging_section(self):
-        """Test that logging config is added when config has no logging section."""
-        from appinfra.dot_dict import DotDict
-
-        # Create a config without logging section
-        builder = AppBuilder("test")
-        builder._config = DotDict(app_name="test")
-        builder._logging_config = LoggingConfig(level="debug")
-
-        result = builder._merge_logging_into_config()
-
-        assert hasattr(result, "logging")
-        assert result.logging.level == "debug"
-
-    def test_merge_updates_existing_logging_section(self):
-        """Test that logging config updates existing logging section."""
-        from appinfra.dot_dict import DotDict
-
-        # Create a config with existing logging section
-        builder = AppBuilder("test")
-        builder._config = DotDict(logging=DotDict(location=1))
-        builder._logging_config = LoggingConfig(level="debug")
-
-        result = builder._merge_logging_into_config()
-
-        # Should have both values
-        assert result.logging.level == "debug"
-        assert result.logging.location == 1
+        assert builder._config.logging.level == "debug"
 
 
 # =============================================================================
@@ -562,9 +433,19 @@ class TestAppBuilderInit:
 
         assert builder._tools == []
         assert builder._commands == []
-        assert builder._middleware == []
-        assert builder._validation_rules == []
         assert builder._custom_args == []
+        assert builder._standard_arg_overrides == {}
+        assert builder._main_tool is None
+        assert builder._config is None
+        assert builder._config_spec is None
+
+    def test_init_standard_args_are_the_defaults(self):
+        """Flags start as a copy of DEFAULT_STANDARD_ARGS, version included."""
+        builder = AppBuilder()
+
+        assert builder._standard_args == DEFAULT_STANDARD_ARGS
+        assert builder._standard_args is not DEFAULT_STANDARD_ARGS
+        assert builder._standard_args["version"] is False
 
 
 # =============================================================================
@@ -576,15 +457,6 @@ class TestAppBuilderInit:
 class TestAppBuilderFluentMethods:
     """Test AppBuilder fluent builder methods."""
 
-    def test_with_name(self):
-        """Test with_name sets name and returns self."""
-        builder = AppBuilder()
-
-        result = builder.with_name("myapp")
-
-        assert builder._name == "myapp"
-        assert result is builder
-
     def test_with_description(self):
         """Test with_description sets description and returns self."""
         builder = AppBuilder()
@@ -594,11 +466,20 @@ class TestAppBuilderFluentMethods:
         assert builder._description == "My app description"
         assert result is builder
 
-    def test_with_version(self):
-        """Test with_version sets version and returns self."""
+    def test_version_block_sets_version(self):
+        """The version block's with_semver sets the version; done() returns self."""
         builder = AppBuilder()
 
-        result = builder.with_version("1.0.0")
+        result = builder.version.with_semver("1.0.0").done()
+
+        assert builder._version == "1.0.0"
+        assert result is builder
+
+    def test_version_keyword_form(self):
+        """``.version(semver=...)`` sets the version and returns self."""
+        builder = AppBuilder()
+
+        result = builder.version(semver="1.0.0")
 
         assert builder._version == "1.0.0"
         assert result is builder
@@ -612,6 +493,17 @@ class TestAppBuilderFluentMethods:
         assert builder._config.a == 1
         assert result is builder
 
+    def test_cli_keyword_form(self):
+        """``.cli(...)`` sets flags on the builder and returns self."""
+        builder = AppBuilder()
+
+        result = builder.cli(etc_dir=True, log=True)
+
+        assert result is builder
+        assert builder._standard_args["etc_dir"] is True
+        assert builder._standard_args["log_level"] is True
+        assert builder._standard_args["help"] is True
+
     def test_deep_merge_dict_recursive(self):
         """Test that yaml.deep_merge merges nested dicts recursively."""
         base = {"a": 1, "nested": {"x": 1, "y": 2}}
@@ -620,6 +512,17 @@ class TestAppBuilderFluentMethods:
         result = deep_merge(base, override)
 
         assert result == {"a": 1, "b": 2, "nested": {"x": 1, "y": 3, "z": 4}}
+
+    def test_merge_configs_returns_dot_dict(self):
+        """_merge_configs deep-merges two layers into a DotDict."""
+        builder = AppBuilder()
+
+        merged = builder._merge_configs(
+            DotDict(a=1, nested=DotDict(x=1)), DotDict(nested=DotDict(y=2))
+        )
+
+        assert isinstance(merged, DotDict)
+        assert merged.to_dict() == {"a": 1, "nested": {"x": 1, "y": 2}}
 
     def test_with_main_cls(self):
         """Test with_main_cls sets main class."""
@@ -633,26 +536,35 @@ class TestAppBuilderFluentMethods:
         assert builder._main_cls is CustomApp
         assert result is builder
 
-    def test_with_main_tool_by_name(self):
-        """Test with_main_tool sets main tool by name."""
+    def test_main_tool_by_name(self):
+        """A name only names the main tool; it registers nothing."""
         builder = AppBuilder()
 
-        result = builder.with_main_tool("run")
+        result = builder.tools.with_main("run").done()
 
         assert builder._main_tool == "run"
+        assert builder._tools == []
         assert result is builder
 
-    def test_with_main_tool_by_object(self):
-        """Test with_main_tool sets main tool by Tool object."""
-        from appinfra.app.tools.base import Tool, ToolConfig
-
+    def test_main_tool_by_object_registers_it(self):
+        """A Tool instance is registered as well as named."""
         builder = AppBuilder()
         tool = Tool(config=ToolConfig(name="process"))
 
-        result = builder.with_main_tool(tool)
+        result = builder.tools.with_main(tool).done()
 
         assert builder._main_tool == "process"
+        assert builder._tools == [tool]
         assert result is builder
+
+    def test_main_tool_by_object_not_registered_twice(self):
+        """An instance already added via with_tool is not added again."""
+        builder = AppBuilder()
+        tool = Tool(config=ToolConfig(name="process"))
+
+        builder.tools.with_tool(tool).with_main(tool).done()
+
+        assert builder._tools == [tool]
 
 
 # =============================================================================
@@ -703,53 +615,71 @@ class TestAppBuilderNoDecoratorAPI:
 
 
 # =============================================================================
-# Test AppBuilder Configurer Properties
+# Test AppBuilder Blocks
 # =============================================================================
 
 
 @pytest.mark.unit
-class TestAppBuilderConfigurerProperties:
-    """Test AppBuilder configurer properties."""
+class TestAppBuilderBlocks:
+    """Each block property returns its configurer bound to the builder."""
 
-    def test_tools_property(self):
-        """Test tools property returns ToolConfigurer."""
+    def test_config_block(self):
         builder = AppBuilder()
+        block = builder.config
+        assert isinstance(block, ConfigConfigurer)
+        assert block.done() is builder
 
-        result = builder.tools
-
-        from appinfra.app.builder.configurer.tool import ToolConfigurer
-
-        assert isinstance(result, ToolConfigurer)
-
-    def test_server_property(self):
-        """Test server property returns ServerConfigurer."""
+    def test_cli_block(self):
         builder = AppBuilder()
+        block = builder.cli
+        assert isinstance(block, CliConfigurer)
+        assert block.done() is builder
 
-        result = builder.server
-
-        from appinfra.app.builder.configurer.server import ServerConfigurer
-
-        assert isinstance(result, ServerConfigurer)
-
-    def test_logging_property(self):
-        """Test logging property returns LoggingConfigurer."""
+    def test_logging_block(self):
+        """The logging block is the standalone LoggingBuilder bound to the app."""
         builder = AppBuilder()
+        block = builder.logging
+        assert isinstance(block, LoggingScope)
+        assert isinstance(block, LoggingBuilder)
+        assert block.done() is builder
 
-        result = builder.logging
-
-        from appinfra.app.builder.configurer.logging import LoggingConfigurer
-
-        assert isinstance(result, LoggingConfigurer)
-
-    def test_advanced_property(self):
-        """Test advanced property returns AdvancedConfigurer."""
+    def test_logging_block_is_one_instance_per_builder(self):
+        """The scope holds builder state, so repeated access returns the same one."""
         builder = AppBuilder()
+        assert builder.logging is builder.logging
 
-        result = builder.advanced
+    def test_server_block(self):
+        builder = AppBuilder()
+        block = builder.server
+        assert isinstance(block, ServerScope)
+        assert block.done() is builder
 
-        from appinfra.app.builder.configurer.advanced import AdvancedConfigurer
+    def test_server_block_is_one_instance_per_builder(self):
+        builder = AppBuilder()
+        assert builder.server is builder.server
 
-        assert isinstance(result, AdvancedConfigurer)
+    def test_tools_block(self):
+        builder = AppBuilder()
+        block = builder.tools
+        assert isinstance(block, ToolConfigurer)
+        assert block.done() is builder
+
+    def test_lifecycle_block(self):
+        builder = AppBuilder()
+        block = builder.lifecycle
+        assert isinstance(block, LifecycleConfigurer)
+        assert block.done() is builder
+
+    def test_version_block(self):
+        builder = AppBuilder()
+        block = builder.version
+        assert isinstance(block, VersionConfigurer)
+        assert block.done() is builder
+
+    def test_no_advanced_block(self):
+        """The former advanced block is split across cli and lifecycle."""
+        builder = AppBuilder()
+        assert not hasattr(builder, "advanced")
 
 
 # =============================================================================
@@ -772,6 +702,7 @@ class TestAppBuilderBuild:
             result = builder.build()
 
             MockApp.assert_called_once()
+            assert result is mock_app
             assert mock_app.name == "myapp"
 
     def test_build_configures_plugins(self):
@@ -783,6 +714,44 @@ class TestAppBuilderBuild:
             builder.build()
 
             builder._plugins.configure_all.assert_called_once_with(builder)
+
+    def test_build_copies_flags_and_overrides_without_aliasing(self):
+        """The app gets its own copies of the flag set and per-flag overrides."""
+        builder = (
+            AppBuilder("myapp")
+            .cli.with_flags(etc_dir=True)
+            .with_flag("etc_dir", help="config dir")
+            .done()
+        )
+
+        app = builder.build()
+
+        assert app._standard_args["etc_dir"] is True
+        assert app._standard_arg_overrides == {"etc_dir": {"help": "config dir"}}
+        builder._standard_args["etc_dir"] = False
+        builder._standard_arg_overrides["etc_dir"]["help"] = "changed"
+        assert app._standard_args["etc_dir"] is True
+        assert app._standard_arg_overrides["etc_dir"]["help"] == "config dir"
+
+    def test_build_registers_tools_and_main_tool(self):
+        """Tools from the block reach the registry and the main tool is set."""
+        tool = Tool(config=ToolConfig(name="process"))
+
+        app = AppBuilder("myapp").tools.with_main(tool).done().build()
+
+        assert app.registry.get_tool("process") is tool
+        assert app._main_tool == "process"
+
+    def test_build_adds_custom_arguments(self):
+        """Custom arguments from the cli block are handed to the app."""
+        app = (
+            AppBuilder("myapp")
+            .cli.with_argument("--verbose", action="store_true")
+            .done()
+            .build()
+        )
+
+        assert (("--verbose",), {"action": "store_true"}) in app._custom_args
 
 
 # =============================================================================
@@ -803,7 +772,9 @@ class TestAppBuilderIntegration:
             MockApp.return_value = mock_app
 
             result = (
-                builder.with_description("My application").with_version("1.0.0").build()
+                builder.with_description("My application")
+                .version(semver="1.0.0")
+                .build()
             )
 
             assert result is mock_app
@@ -811,22 +782,34 @@ class TestAppBuilderIntegration:
             assert mock_app.description == "My application"
             assert mock_app.version == "1.0.0"
 
-    def test_configurer_chain_workflow(self):
-        """Test using configurer chain."""
+    def test_block_chain_workflow(self):
+        """Every block closes back to the same builder."""
         builder = AppBuilder("myapp")
 
-        # Test that configurers can be chained
-        tool_configurer = builder.tools
-        assert tool_configurer.done() is builder
+        assert builder.config.done() is builder
+        assert builder.cli.done() is builder
+        assert builder.logging.done() is builder
+        assert builder.tools.done() is builder
+        assert builder.lifecycle.done() is builder
+        assert builder.version.done() is builder
 
-        server_configurer = builder.server
-        assert server_configurer.done() is builder
+    def test_keyword_blocks_chain_directly(self):
+        """Keyword forms return the AppBuilder, so blocks chain without done()."""
+        tool = Tool(config=ToolConfig(name="process"))
 
-        logging_configurer = builder.logging
-        assert logging_configurer.done() is builder
+        builder = (
+            AppBuilder("myapp")
+            .cli(etc_dir=True)
+            .logging(level="debug")
+            .tools(tool, main="process")
+            .version(semver="1.0.0")
+        )
 
-        advanced_configurer = builder.advanced
-        assert advanced_configurer.done() is builder
+        assert builder._standard_args["etc_dir"] is True
+        assert builder._config.logging.level == "debug"
+        assert builder._tools == [tool]
+        assert builder._main_tool == "process"
+        assert builder._version == "1.0.0"
 
 
 @pytest.mark.unit

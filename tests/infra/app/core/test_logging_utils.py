@@ -574,8 +574,8 @@ class TestAppBuilderLoggingConfigE2E:
     def test_builder_logging_does_not_override_config_file_location(self, tmp_path):
         """Test that .logging.with_level() doesn't override location from config file.
 
-        This is a regression test for a bug where LoggingConfig dataclass defaults
-        (location=0) would override config file values (location=1).
+        This is a regression test for a bug where the logging block's own
+        defaults (location=0) would override config file values (location=1).
         """
         from appinfra.app.builder.app import AppBuilder
 
@@ -629,27 +629,18 @@ logging:
         assert hasattr(app.config, "logging")
         assert app.config.logging.location == 2
 
-    def test_builder_logging_config_merges_with_none_skipped(self, tmp_path):
-        """Test that None values in LoggingConfig are skipped during merge."""
-        from dataclasses import asdict
+    def test_builder_logging_only_explicit_options_reach_config(self, tmp_path):
+        """Test that only explicitly set logging options land in the config layer."""
+        from appinfra.app.builder.app import AppBuilder
 
-        from appinfra.app.builder.app import LoggingConfig
+        # Set only level; the builder's own defaults for the other options
+        # must not be written, or they would override config file values.
+        builder = AppBuilder("test").logging.with_level("debug").done()
 
-        # Create a LoggingConfig with only level set
-        config = LoggingConfig(level="debug")
-
-        # Verify defaults are None, not hardcoded values
-        config_dict = asdict(config)
-        assert config_dict["location"] is None, "location default should be None"
-        assert config_dict["micros"] is None, "micros default should be None"
-        assert config_dict["location_color"] is None, (
-            "location_color default should be None"
-        )
-
-        # Only level should be set
-        non_none = {k: v for k, v in config_dict.items() if v is not None}
-        assert non_none == {"level": "debug"}, (
-            f"Only level should be set, got {non_none}"
+        assert builder._config is not None
+        logging_layer = builder._config.to_dict()["logging"]
+        assert logging_layer == {"level": "debug"}, (
+            f"Only level should be set, got {logging_layer}"
         )
 
     def test_full_app_lifecycle_preserves_config_file_location(self, tmp_path):
@@ -686,7 +677,7 @@ logging:
         loaded_config = Config(str(config_file))
 
         # After merge, location should be 1 from config file (not 0 from defaults)
-        # The builder's _merge_logging_into_config should skip None values
+        # The logging block's done() writes only explicitly set options
         from appinfra.yaml import deep_merge
 
         # Deep merge: loaded as base, programmatic takes precedence

@@ -16,7 +16,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from appinfra.app.builder.app import AppBuilder
 from appinfra.app.builder.hook import HookBuilder
-from appinfra.app.builder.middleware import MiddlewareBuilder
 from appinfra.app.builder.plugin import Plugin
 from appinfra.app.builder.tool import ToolBuilder
 from appinfra.app.core.app import App
@@ -46,7 +45,7 @@ class DatabasePlugin(Plugin):
         )
 
         # Add database hooks
-        builder.advanced.with_hook_builder(
+        builder.lifecycle.with_hook_builder(
             HookBuilder().on_startup(self._connect_db).on_shutdown(self._disconnect_db)
         )
 
@@ -109,13 +108,6 @@ class AuthPlugin(Plugin):
             .with_run_function(self._logout)
         )
 
-        # Add auth middleware
-        builder.server.with_middleware_builder(
-            MiddlewareBuilder("auth")
-            .process_request(self._auth_middleware)
-            .when(lambda req: hasattr(req, "path") and req.path.startswith("/api"))
-        )
-
     def _login(self, tool, **kwargs):
         """Handle user login."""
         tool.lg.info("handling user login...")
@@ -151,7 +143,7 @@ class LoggingPlugin(Plugin):
         )
 
         # Add logging hooks
-        builder.advanced.with_hook_builder(
+        builder.lifecycle.with_hook_builder(
             HookBuilder().on_startup(self._setup_logging).on_error(self._log_error)
         )
 
@@ -188,13 +180,6 @@ class MetricsPlugin(Plugin):
             ToolBuilder("metrics")
             .with_help("Show application metrics")
             .with_run_function(self._show_metrics)
-        )
-
-        # Add metrics middleware
-        builder.server.with_middleware_builder(
-            MiddlewareBuilder("metrics")
-            .process_request(self._record_request)
-            .process_response(self._record_response)
         )
 
     def _show_metrics(self, tool, **kwargs):

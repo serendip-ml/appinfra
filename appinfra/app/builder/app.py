@@ -4,12 +4,21 @@
 """
 Main AppBuilder class for constructing CLI applications.
 
-This module provides the core AppBuilder class that orchestrates
-the construction of applications using a fluent API.
+The builder is faceted: one block per axis, each closed with ``done()``,
+or called with keywords, which returns the AppBuilder directly::
 
-The AppBuilder has been refactored to use focused configurers for better
-maintainability and testability. Use .config, .tools, .server, .logging,
-and .advanced to access specialized configuration builders.
+    AppBuilder("myapp")
+        .config.with_spec("myorg", "myapp").done()
+        .cli.with_flags(etc_dir=True, log=True).done()
+        .logging.with_level("info").done()
+        .tools.with_tool(ServeTool()).with_main("serve").done()
+        .lifecycle.with_hook("startup", init_db).done()
+        .version.with_semver("1.0.0").done()
+        .build()
+
+``.logging`` and ``.server`` are the standalone ``LoggingBuilder`` and
+FastAPI ``ServerBuilder`` bound to the AppBuilder, so every method of
+those builders is available on the block without re-declaration.
 """
 
 from __future__ import annotations
@@ -22,18 +31,17 @@ from ...config import Config, ConfigSpec
 from ...dot_dict import DotDict
 from ...yaml import deep_merge
 from ..core.app import DEFAULT_STANDARD_ARGS, App
-from ..server.handlers import Middleware
 from ..tools.base import Tool, ToolConfig
 from ..tracing.traceable import Traceable
-from .configurer.advanced import AdvancedConfigurer
+from .configurer.cli import CliConfigurer
 from .configurer.config import ConfigConfigurer
-from .configurer.logging import LoggingConfigurer
-from .configurer.server import ServerConfigurer
+from .configurer.lifecycle import LifecycleConfigurer
+from .configurer.logging import LoggingScope
+from .configurer.server import ServerScope
 from .configurer.tool import ToolConfigurer
 from .configurer.version import VersionConfigurer
 from .hook import HookManager
 from .plugin import PluginManager
-from .validation import ValidationRule
 
 # Helper functions for AppBuilder.build()
 
@@ -89,39 +97,10 @@ def _register_tools_and_commands(app: App, tools: list, commands: list) -> None:
         app.add_tool(command_tool)
 
 
-def _configure_middleware(app: App, middleware: list, server_config: Any) -> None:
-    """
-    Add middleware if server is configured.
-
-    Args:
-        app: App instance
-        middleware: List of middleware
-        server_config: Server configuration (None if no server)
-    """
-    if server_config:
-        for mw in middleware:
-            if hasattr(app, "add_middleware"):
-                app.add_middleware(mw)
-
-
-def _configure_arguments_and_validation(
-    app: App, custom_args: list[tuple], validation_rules: list
-) -> None:
-    """
-    Add custom arguments and validation rules.
-
-    Args:
-        app: App instance
-        custom_args: List of (args, kwargs) tuples for add_argument
-        validation_rules: List of validation rules
-    """
+def _configure_arguments(app: App, custom_args: list[tuple]) -> None:
+    """Add custom arguments declared on the cli block."""
     for args, kwargs in custom_args:
-        if hasattr(app, "add_argument"):
-            app.add_argument(*args, **kwargs)
-
-    if hasattr(app, "add_validation_rule"):
-        for rule in validation_rules:
-            app.add_validation_rule(rule)
+        app.add_argument(*args, **kwargs)
 
 
 def _configure_hooks(app: App, hooks: Any) -> None:
@@ -134,24 +113,6 @@ def _configure_hooks(app: App, hooks: Any) -> None:
     """
     if hasattr(app, "set_hook_manager"):
         app.set_hook_manager(hooks)
-
-
-def _configure_server_and_logging(
-    app: App, server_config: Any, logging_config: Any
-) -> None:
-    """
-    Configure server and logging if specified.
-
-    Args:
-        app: App instance
-        server_config: Server configuration (optional)
-        logging_config: Logging configuration (optional)
-    """
-    if server_config and hasattr(app, "configure_server"):
-        app.configure_server(server_config)
-
-    if logging_config and hasattr(app, "configure_logging"):
-        app.configure_logging(logging_config)
 
 
 def _register_lifecycle_managers(app: App, hooks: Any, plugins: Any) -> None:
@@ -197,7 +158,7 @@ def _initialize_foundation(app: App, builder: AppBuilder) -> None:
 
 
 def _register_components(app: App, builder: AppBuilder) -> None:
-    """Register all app components: plugins, tools, lifecycle."""
+    """Register all app components: plugins, tools, lifecycle, arguments."""
     # Plugins first: configure() may add tools and hooks to the builder, and
     # those must exist before the tool registry is populated from it.
     builder._plugins.configure_all(builder)
@@ -205,16 +166,7 @@ def _register_components(app: App, builder: AppBuilder) -> None:
     if builder._main_tool:
         app.set_main_tool(builder._main_tool)
     _register_lifecycle_managers(app, builder._hooks, builder._plugins)
-    _configure_arguments_and_validation(
-        app, builder._custom_args, builder._validation_rules
-    )
-
-
-def _configure_external_services(app: App, builder: AppBuilder) -> None:
-    """Configure external services: server, logging, middleware, hooks."""
-    _configure_middleware(app, builder._middleware, builder._server_config)
-    _configure_hooks(app, builder._hooks)
-    _configure_server_and_logging(app, builder._server_config, builder._logging_config)
+    _configure_arguments(app, builder._custom_args)
 
 
 @dataclass
@@ -257,84 +209,54 @@ class CommandTool(Tool):
             return 1
 
 
-@dataclass
-class ServerConfig:
-    """Configuration for server components."""
-
-    port: int = 8080
-    host: str = "localhost"
-    ssl_enabled: bool = False
-    cors_origins: list[str] | None = None
-    timeout: int = 30
-
-    def __post_init__(self) -> None:
-        if self.cors_origins is None:
-            self.cors_origins = []
-
-
-@dataclass
-class LoggingConfig:
-    """Configuration for logging.
-
-    Fields with None defaults will not override config file values during merge.
-    Only explicitly set values will take precedence over config files.
-    """
-
-    level: str | None = None
-    location: int | None = None
-    micros: bool | None = None
-    format_string: str | None = None
-    location_color: str | None = None
-
-
 class AppBuilder:
     """
-    Fluent builder for constructing CLI applications.
+    Fluent, faceted builder for CLI applications.
 
-    Provides a declarative API for building applications with tools,
-    middleware, configuration, and lifecycle management.
+    Top level carries identity only: the name (constructor), a description
+    and an optional ``App`` subclass. Everything else lives on a block:
+    ``.config``, ``.cli``, ``.logging``, ``.server``, ``.tools``,
+    ``.lifecycle``, ``.version``.
     """
-
-    # Default standard args configuration (minimal by default)
-    _DEFAULT_STANDARD_ARGS: dict[str, bool] = DEFAULT_STANDARD_ARGS
 
     def __init__(self, name: str | None = None):
         """Initialize the application builder."""
         self._name: str | None = name
-        self._config: Config | DotDict | None = None
-        self._config_spec: ConfigSpec | None = None  # protocol auto-loading
-        self._server_config: ServerConfig | None = None
-        self._logging_config: LoggingConfig | None = None
-        self._tools: list[Tool] = []
-        self._commands: list[Command] = []
-        self._middleware: list[Middleware] = []
-        self._validation_rules: list[ValidationRule] = []
-        self._hooks: HookManager = HookManager()
-        self._plugins: PluginManager = PluginManager()
-        self._custom_args: list[tuple] = []
         self._description: str | None = None
         self._version: str | None = None
         self._main_cls: type | None = None
-        self._standard_args: dict[str, bool] = self._DEFAULT_STANDARD_ARGS.copy()
+        # .config
+        self._config: Config | DotDict | None = None
+        self._config_spec: ConfigSpec | None = None
+        # .cli
+        self._standard_args: dict[str, bool] = DEFAULT_STANDARD_ARGS.copy()
         self._standard_arg_overrides: dict[str, dict[str, Any]] = {}
+        self._custom_args: list[tuple] = []
+        # .tools
+        self._tools: list[Tool] = []
+        self._commands: list[Command] = []
         self._main_tool: str | None = None
-        # Version tracking
+        self._plugins: PluginManager = PluginManager()
+        # .lifecycle
+        self._hooks: HookManager = HookManager()
+        # .version
         self._version_tracker: Any | None = None
         self._build_info: Any | None = None
-
-    def with_name(self, name: str) -> Self:
-        """Set the application name."""
-        self._name = name
-        return self
+        # Scopes that subclass a standalone builder hold their own state, so
+        # one instance per builder.
+        self._logging_scope: LoggingScope | None = None
+        self._server_scope: ServerScope | None = None
+        self._server_registered = False
+        self._version_flag_added = False
 
     def with_description(self, description: str) -> Self:
         """Set the application description."""
         self._description = description
         return self
 
-    def with_version(self, version: str) -> Self:
-        """Set the application version."""
-        self._version = version
+    def with_main_cls(self, cls: type) -> Self:
+        """Set the main application class."""
+        self._main_cls = cls
         return self
 
     def _merge_configs(
@@ -348,373 +270,131 @@ class AppBuilder:
         merged = deep_merge(base_dict, override_dict)
         return DotDict(**merged)
 
-    def with_main_cls(self, cls: type) -> Self:
-        """Set the main application class."""
-        self._main_cls = cls
-        return self
-
-    def with_main_tool(self, tool: str | Tool) -> Self:
-        """
-        Set the main tool that runs when no subcommand is specified.
-
-        Args:
-            tool: Tool name (str) or Tool instance
-
-        Returns:
-            AppBuilder: Self for method chaining
-
-        Example:
-            app = builder.with_main_tool("run").build()
-
-            @app.tool(name="run")
-            def run_proxy(self):
-                ...
-
-            # Or with tool object:
-            builder.with_main_tool(my_tool)
-        """
-        self._main_tool = tool.name if isinstance(tool, Tool) else tool
-        return self
-
-    # Alias that expands to all logging-related standard args
-    _LOG_ARGS_ALIAS = {
-        "log_level",
-        "log_location",
-        "log_micros",
-        "log_topic",
-        "log_colors",
-        "log_json",
-        "quiet",
-    }
-
-    def _validate_standard_arg_name(self, name: str) -> None:
-        """Validate that argument name is a valid standard arg or alias."""
-        valid_args = {
-            "help",
-            "config_file",
-            "etc_dir",
-            "log",  # Alias for all log args
-            "log_level",
-            "log_location",
-            "log_micros",
-            "log_topic",
-            "quiet",
-            "log_colors",
-            "log_json",
-        }
-        if name not in valid_args:
-            raise ValueError(
-                f"Invalid standard argument name: '{name}'. "
-                f"Valid names are: {', '.join(sorted(valid_args))}"
-            )
-
-    def with_standard_args(self, **kwargs: bool) -> Self:
-        """
-        Control which standard CLI arguments are enabled.
-
-        When called without arguments, enables all standard arguments.
-        When called with keyword arguments, sets specific arguments to True/False.
-
-        Args:
-            **kwargs: Keyword arguments matching standard arg names (etc_dir, log_level,
-                      log_location, log_micros, quiet) with boolean values.
-
-        Returns:
-            AppBuilder: Self for method chaining
-
-        Raises:
-            ValueError: If invalid argument name or non-boolean value provided
-
-        Examples:
-            # Enable all standard args (explicit)
-            AppBuilder("myapp").with_standard_args().build()
-
-            # Disable specific args
-            AppBuilder("myapp").with_standard_args(log_location=False, log_micros=False).build()
-
-            # After disabling all, enable specific args
-            AppBuilder("myapp").without_standard_args().with_standard_args(etc_dir=True).build()
-        """
-        if not kwargs:
-            # No arguments: enable all
-            for key in self._standard_args:
-                self._standard_args[key] = True
-        else:
-            # Expand 'log' alias to all log args
-            if "log" in kwargs:
-                log_value = kwargs.pop("log")
-                if not isinstance(log_value, bool):
-                    raise ValueError(
-                        f"Value for 'log' must be a boolean, got {type(log_value).__name__}"
-                    )
-                for log_arg in self._LOG_ARGS_ALIAS:
-                    if log_arg not in kwargs:  # Don't override explicit settings
-                        kwargs[log_arg] = log_value
-
-            # Validate and apply specific settings
-            for name, enabled in kwargs.items():
-                self._validate_standard_arg_name(name)
-                if not isinstance(enabled, bool):
-                    raise ValueError(
-                        f"Value for '{name}' must be a boolean, got {type(enabled).__name__}"
-                    )
-                self._standard_args[name] = enabled
-
-        return self
-
-    def with_standard_arg(self, name: str, **overrides: Any) -> Self:
-        """
-        Override argparse kwargs for a single standard CLI argument.
-
-        Use this to customize the default value, help text, or any other argparse
-        parameter (``metavar``, ``type``, ``choices``, ``required``, ``nargs``,
-        ``action``, ...) of a standard arg without subclassing ``App``. Overrides
-        are merged on top of the framework's defaults at parser-build time, so
-        only the passed keys are changed.
-
-        Args:
-            name: Name of the standard arg to override (e.g. ``"etc_dir"``,
-                  ``"log_level"``). Must be one of the valid standard arg names.
-                  The ``"log"`` alias is rejected here — target a specific log
-                  arg (``log_level``, ``log_location``, ...) instead. ``"help"``
-                  is also rejected — toggle it with
-                  ``with_standard_args(help=...)`` (consumed via ``add_help``).
-            **overrides: argparse kwargs to merge. ``dest`` is rejected because
-                         the framework reads parsed args by a fixed attribute
-                         name set internally (which may differ from ``name`` —
-                         e.g. ``log_topic`` is read as ``args.log_topics``).
-
-        Returns:
-            AppBuilder: Self for method chaining.
-
-        Raises:
-            ValueError: If ``name`` is not a valid standard arg, is the ``"log"``
-                        alias or ``"help"``, or ``overrides`` contains ``"dest"``.
-
-        Note:
-            This method does NOT enable the arg — opt in with
-            ``with_standard_args(<name>=True)`` first (or rely on the framework
-            default). Overrides for a disabled arg are stored but never applied.
-
-        Example:
-            AppBuilder("myapp") \\
-                .with_standard_args(log_level=True) \\
-                .with_standard_arg("log_level", default="DEBUG", help="logging level") \\
-                .build()
-        """
-        self._validate_standard_arg_name(name)
-        if name == "log":
-            raise ValueError(
-                "'log' is an alias for multiple log args; use a specific name "
-                "(log_level, log_location, log_micros, log_topic, log_colors, log_json)"
-            )
-        if name == "help":
-            raise ValueError(
-                "'help' is consumed by argparse via add_help, not the standard-arg "
-                "kwargs path; toggle it with with_standard_args(help=...) instead"
-            )
-        if "dest" in overrides:
-            raise ValueError(
-                f"Cannot override 'dest' for standard arg '{name}': "
-                f"the framework reads parsed args by their canonical attribute name"
-            )
-        self._standard_arg_overrides.setdefault(name, {}).update(overrides)
-        return self
-
-    def without_standard_args(self) -> Self:
-        """
-        Disable all standard CLI arguments.
-
-        By default, the application framework adds standard arguments like --etc-dir,
-        --log-level, --log-location, --log-micros, and -q/--quiet. Use this method
-        to disable all of them if you want full manual control.
-
-        You can selectively re-enable specific arguments using with_standard_args():
-            AppBuilder("myapp")
-                .without_standard_args()
-                .with_standard_args(etc_dir=True, log_level=True)
-                .build()
-
-        Returns:
-            AppBuilder: Self for method chaining
-
-        Example:
-            app = AppBuilder("myapp").without_standard_args().build()
-        """
-        for key in self._standard_args:
-            self._standard_args[key] = False
-        return self
-
     def build(self) -> App:
         """Build the application with all configured components."""
-        config = self._merge_logging_into_config()
-        app = _create_base_app(self._main_cls, config)
+        if self._logging_scope is not None:
+            self._logging_scope._apply()
+        self._register_server()
+        self._add_version_flag()
+        app = _create_base_app(self._main_cls, self._config)
         _initialize_foundation(app, self)
         _register_components(app, self)
-        _configure_external_services(app, self)
+        _configure_hooks(app, self._hooks)
         return app
 
-    def _merge_logging_into_config(self) -> Config | DotDict | None:
-        """Merge logging config into base config, skipping None values."""
-        if self._logging_config is None:
-            return self._config
+    def _register_server(self) -> None:
+        """Build the declared server and register the plugin that adds ``serve``."""
+        if self._server_scope is None or self._server_registered:
+            return
+        from ..fastapi.plugin import ServerPlugin
 
-        from dataclasses import asdict
+        server = self._server_scope._build_server()
+        self._plugins.register_plugin(ServerPlugin(server))
+        self._server_registered = True
 
-        from ...dot_dict import DotDict
+    def _add_version_flag(self) -> None:
+        """Expose ``-v/--version`` from the version block when the cli flag is on."""
+        if not self._standard_args.get("version", False) or self._version_flag_added:
+            return
+        if self._version is None:
+            raise ValueError("cli flag 'version' requires .version.with_semver(...)")
+        from ...version.actions import VersionWithTrackerAction
 
-        # Get non-None logging values
-        logging_dict = {
-            k: v for k, v in asdict(self._logging_config).items() if v is not None
+        kwargs: dict[str, Any] = {
+            "action": VersionWithTrackerAction,
+            "app_name": self._name or "app",
+            "app_version": self._version,
+            "tracker": self._version_tracker,
+            "build_info": self._build_info,
+            **self._standard_arg_overrides.get("version", {}),
         }
-
-        if not logging_dict:
-            return self._config
-
-        # Merge into config
-        if self._config is None:
-            return DotDict(logging=DotDict(**logging_dict))
-
-        # Ensure logging section exists
-        if not hasattr(self._config, "logging"):
-            self._config.logging = DotDict()  # type: ignore[attr-defined]
-
-        # Update logging section with non-None values
-        for key, value in logging_dict.items():
-            setattr(self._config.logging, key, value)  # type: ignore[attr-defined]
-
-        return self._config
+        self._custom_args.append((("-v", "--version"), kwargs))
+        self._version_flag_added = True
 
     # ========================================================================
-    # Focused Configurers
+    # Blocks
     # ========================================================================
-
-    @property
-    def tools(self) -> ToolConfigurer:
-        """
-        Access tool configuration builder.
-
-        Returns a focused builder for configuring tools, commands, and plugins.
-        Use .done() to return to the main AppBuilder.
-
-        Example:
-            app = (AppBuilder("myapp")
-                .tools
-                    .with_tool(MyTool())
-                    .with_plugin(DatabasePlugin())
-                    .done()
-                .build())
-
-        Returns:
-            ToolConfigurer instance for method chaining
-        """
-        return ToolConfigurer(self)
-
-    @property
-    def server(self) -> ServerConfigurer:
-        """
-        Access server configuration builder.
-
-        Returns a focused builder for configuring server and middleware.
-        Use .done() to return to the main AppBuilder.
-
-        Example:
-            app = (AppBuilder("myapp")
-                .server
-                    .with_port(8080)
-                    .with_middleware(AuthMiddleware())
-                    .done()
-                .build())
-
-        Returns:
-            ServerConfigurer instance for method chaining
-        """
-        return ServerConfigurer(self)
 
     @property
     def config(self) -> ConfigConfigurer:
         """
-        Access the config-source block.
-
-        Declares the config spec, the programmatic overrides layer and hot
-        reload. Use ``.done()`` to return to the AppBuilder, or call the
-        block with keyword arguments to set everything at once.
+        Config-source block: spec, programmatic overrides, hot reload.
 
         Example:
-            app = (AppBuilder("myapp")
-                .config
-                    .with_spec("myorg", "myapp")
-                    .with_hot_reload(debounce_ms=500)
-                    .done()
-                .build())
-
-            app = AppBuilder("myapp").config(namespace="myorg", name="myapp").build()
-
-        Returns:
-            ConfigConfigurer instance for method chaining
+            AppBuilder("myapp").config.with_spec("myorg", "myapp").done()
+            AppBuilder("myapp").config(namespace="myorg", name="myapp")
         """
         return ConfigConfigurer(self)
 
     @property
-    def logging(self) -> LoggingConfigurer:
+    def cli(self) -> CliConfigurer:
         """
-        Access logging configuration builder.
-
-        Returns a focused builder for configuring logging.
-        Use .done() to return to the main AppBuilder.
+        CLI-surface block: standard flags, presentation, custom arguments.
 
         Example:
-            app = (AppBuilder("myapp")
-                .logging
-                    .with_level("debug")
-                    .with_micros(True)
-                    .done()
-                .build())
-
-        Returns:
-            LoggingConfigurer instance for method chaining
+            AppBuilder("myapp").cli.with_flags(etc_dir=True, log=True).done()
+            AppBuilder("myapp").cli(etc_dir=True, log=True)
         """
-        return LoggingConfigurer(self)
+        return CliConfigurer(self)
 
     @property
-    def advanced(self) -> AdvancedConfigurer:
+    def logging(self) -> LoggingScope:
         """
-        Access advanced configuration builder.
-
-        Returns a focused builder for hooks, validation, and custom arguments.
-        Use .done() to return to the main AppBuilder.
+        Logging block: the standalone ``LoggingBuilder`` bound to this app.
 
         Example:
-            app = (AppBuilder("myapp")
-                .advanced
-                    .with_hook("startup", on_startup)
-                    .with_validation_rule(rule)
-                    .done()
-                .build())
-
-        Returns:
-            AdvancedConfigurer instance for method chaining
+            AppBuilder("myapp").logging.with_level("debug").with_micros().done()
+            AppBuilder("myapp").logging(level="debug", micros=True)
         """
-        return AdvancedConfigurer(self)
+        if self._logging_scope is None:
+            self._logging_scope = LoggingScope(self)
+        return self._logging_scope
+
+    @property
+    def server(self) -> ServerScope:
+        """
+        Server block: the FastAPI ``ServerBuilder`` bound to this app.
+
+        Declaring it adds a ``serve`` tool at build time.
+
+        Example:
+            AppBuilder("myapp").server.with_port(8080).done()
+            AppBuilder("myapp").server(port=8080, uvicorn={"workers": 4})
+        """
+        if self._server_scope is None:
+            self._server_scope = ServerScope(self)
+        return self._server_scope
+
+    @property
+    def tools(self) -> ToolConfigurer:
+        """
+        Tools block: tools, commands, plugins, the main tool.
+
+        Example:
+            AppBuilder("myapp").tools.with_tool(MyTool()).with_main("run").done()
+            AppBuilder("myapp").tools(MyTool(), main="run")
+        """
+        return ToolConfigurer(self)
+
+    @property
+    def lifecycle(self) -> LifecycleConfigurer:
+        """
+        Lifecycle block: hooks by event.
+
+        Example:
+            AppBuilder("myapp").lifecycle.with_hook("startup", init_db).done()
+            AppBuilder("myapp").lifecycle(startup=init_db)
+        """
+        return LifecycleConfigurer(self)
 
     @property
     def version(self) -> VersionConfigurer:
         """
-        Access version tracking configuration builder.
-
-        Configures app version and tracks commit hashes of packages
-        that use the appinfra build protocol (_build_info.py).
+        Version block: semver, build info, tracked packages.
 
         Example:
-            app = (AppBuilder("myapp")
-                .version
-                    .with_semver("1.0.0")
-                    .with_package("mylib")
-                    .done()
-                .build())
-
-        Returns:
-            VersionConfigurer instance for method chaining
+            AppBuilder("myapp").version.with_semver("1.0.0").with_build_info().done()
+            AppBuilder("myapp").version(semver="1.0.0", build_info=True)
         """
         return VersionConfigurer(self)
 
@@ -730,6 +410,6 @@ def create_app_builder(name: str) -> AppBuilder:
         AppBuilder instance
 
     Example:
-        app = create_app_builder("myapp").with_help("My app").build()
+        app = create_app_builder("myapp").with_description("My app").build()
     """
     return AppBuilder(name)

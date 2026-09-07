@@ -55,21 +55,12 @@ def _build_app() -> App:
     builder = (
         AppBuilder("appinfra")
         .with_description("Infra framework utility commands")
-        .without_standard_args()
-        .with_standard_args(
-            help=True, log_level=True, quiet=True, etc_dir=True, config_file=True
-        )
+        .cli(log_level=True, quiet=True, etc_dir=True, config_file=True, version=True)
         # appinfra's base ships as etc/infra.yaml, the one exception to rule 2.
         .config.with_spec("llm-works", "appinfra", filename="infra.yaml")
         .done()
         .version.with_semver(appinfra.__version__)
         .with_build_info()
-        .done()
-        .advanced.with_argument(
-            "-v",
-            action="version",
-            version=f"appinfra {appinfra.__version__}",
-        )
         .done()
     )
     for tool_cls in _TOOLS:
