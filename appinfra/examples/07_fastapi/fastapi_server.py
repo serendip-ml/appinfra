@@ -6,6 +6,8 @@
 # ci-run:
 # ci-run: --subprocess
 # ci-stop: 4
+# ci-requires: port:8000
+# ci-requires: port:8001
 
 """
 FastAPI Server Framework Examples.

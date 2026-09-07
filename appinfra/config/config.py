@@ -36,6 +36,7 @@ APPINFRA_TOOLING_ENV_VARS: frozenset[str] = frozenset(
         "INFRA_COMPOSE_CMD",
         "INFRA_CONTAINER_CMD",
         "INFRA_DEFAULT_CONFIG_FILE",
+        "INFRA_DEV_CHECK_EXAMPLES",
         "INFRA_DEV_CHECK_SCRIPT",
         "INFRA_DEV_CQ_EXCLUDE",
         "INFRA_DEV_CQ_SPDX",

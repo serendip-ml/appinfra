@@ -28,6 +28,10 @@ For API stability guarantees and deprecation policy, see
   `# ci-skip:` comments declare the cases. Files run one per CPU (`--jobs`), each case
   in a private `TMPDIR`, and results print in discovery order. CI runs it in the
   container lane.
+- `INFRA_DEV_CHECK_EXAMPLES` Makefile variable (default `false`): run the examples as a
+  test subcheck of `make check`. `# ci-requires: pg` and `# ci-requires: port:N` headers
+  mark a file that needs Postgres or a free TCP port; when unavailable the file is skipped
+  with a warning instead of failing.
 - Faceted `AppBuilder`: `.cli` (standard flags, presentation, custom arguments), `.lifecycle`
   (hooks), `.tools.with_main`, and a keyword form on every block; `.logging` is the standalone
   `LoggingBuilder` bound to the app, so its whole API is available there. One block is open at

@@ -12,6 +12,8 @@ Each example declares how it is exercised in header comments::
     # ci-stop: 4
     # ci-timeout: 10
     # ci-skip: requires a TTY
+    # ci-requires: pg
+    # ci-requires: port:8000
 
 Without a ``ci-run`` line the script runs once with no arguments. Each
 ``ci-run`` line is one case. A case is killed after ``ci-timeout`` seconds
@@ -21,6 +23,17 @@ Without a ``ci-run`` line the script runs once with no arguments. Each
 seconds gets SIGTERM, and passes if it then exits within the timeout,
 whatever the exit code. Exiting before the stop time is judged by exit code
 as usual. Whatever is left in the case's process group is killed afterwards.
+
+``ci-requires`` names a service or resource the file needs. Each is probed
+once before anything runs; when one is unavailable, every file declaring it
+is reported with a warning mark and counted as skipped instead of failing.
+Two forms are known, any other is rejected:
+
+- ``pg``: a real Postgres connection. The endpoint (``--pg``, else
+  ``INFRA_PGSERVER_HOST`` / ``INFRA_PGSERVER_PORT``, else 127.0.0.1:25432)
+  must accept a TCP connect.
+- ``port:N``: the file binds TCP port N. The probe binds it on all
+  interfaces and releases it; a port another process holds is unavailable.
 
 Scripts run with stdin closed and inherit the current working directory, so
 relative paths resolve the same way as under ``make``. Each case gets a
@@ -33,7 +46,8 @@ completes, so the report reads the same as a serial run.
 
 Usage::
 
-    run_examples.py <examples-dir> [--jobs N] [--timeout N] [--only SUBSTRING] [-v]
+    run_examples.py <examples-dir> [--jobs N] [--timeout N] [--only SUBSTRING]
+                    [--pg HOST:PORT] [-v]
 """
 
 from __future__ import annotations
@@ -44,6 +58,7 @@ import re
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -55,18 +70,39 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
 
-_MARKER_RE = re.compile(r"^#\s*ci-(run|skip|stop|timeout):\s*(.*?)\s*$")
+_MARKER_RE = re.compile(r"^#\s*ci-(run|skip|stop|timeout|requires):\s*(.*?)\s*$")
 _DEFAULT_TIMEOUT_S = 7.0
 _OUTPUT_TAIL_LINES = 15
 _FAILING = ("FAIL", "TIMEOUT")
 # Same palette as check.sh.
-_GREEN, _RED, _GRAY, _RESET = "\033[32m", "\033[31m", "\033[90m", "\033[0m"
+_GREEN, _RED, _YELLOW, _GRAY, _RESET = (
+    "\033[32m",
+    "\033[31m",
+    "\033[33m",
+    "\033[90m",
+    "\033[0m",
+)
+# UNMET: the file needs a service that is not reachable. Reported with a
+# warning mark, counted as skipped, never as a failure.
 _MARKS = {
     "PASS": f"{_GREEN}[✓]{_RESET}",
     "FAIL": f"{_RED}[✗]{_RESET}",
     "TIMEOUT": f"{_RED}[⏱]{_RESET}",
     "SKIP": f"{_GRAY}[–]{_RESET}",
+    "UNMET": f"{_YELLOW}[⚠]{_RESET}",
 }
+
+# Requirement keys are "pg" or "port:N". The pg skip reason matches the
+# sentinel the test suite uses for the same condition so the two read alike
+# in check.sh's skip summary.
+_PG_REQUIREMENT = "pg"
+_PG_UNAVAILABLE = "pg-unavailable"
+_PORT_PREFIX = "port:"
+# Endpoint used when neither --pg nor INFRA_PGSERVER_* names one. Matches the
+# canonical port in etc/pg.yaml.
+_DEFAULT_PG_HOST = "127.0.0.1"
+_DEFAULT_PG_PORT = 25432
+_PROBE_TIMEOUT_S = 2.0
 
 
 @dataclass
@@ -78,6 +114,7 @@ class Spec:
     timeout_s: float = _DEFAULT_TIMEOUT_S
     stop_s: float | None = None
     skip_reason: str | None = None
+    requires: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -91,7 +128,11 @@ class Result:
 
 
 def parse_spec(path: Path, default_timeout_s: float) -> Spec:
-    """Read the ci-* markers from a file's comment lines."""
+    """Read the ci-* markers from a file's comment lines.
+
+    Raises ``ValueError`` on a ``ci-requires`` name the runner cannot probe,
+    so a typo fails the run instead of silently running the file unguarded.
+    """
     spec = Spec(path=path, timeout_s=default_timeout_s)
     for line in path.read_text(encoding="utf-8").splitlines():
         match = _MARKER_RE.match(line)
@@ -106,9 +147,92 @@ def parse_spec(path: Path, default_timeout_s: float) -> Spec:
             spec.stop_s = float(value)
         elif kind == "timeout":
             spec.timeout_s = float(value)
+        elif kind == "requires":
+            spec.requires.add(parse_requirement(path, value))
     if not spec.cases:
         spec.cases.append("")
     return spec
+
+
+def parse_requirement(path: Path, value: str) -> str:
+    """Validate one ``ci-requires`` value and return its key.
+
+    Raises ``ValueError`` for anything but ``pg`` or ``port:N``.
+    """
+    if value == _PG_REQUIREMENT:
+        return value
+    if value.startswith(_PORT_PREFIX):
+        port_text = value[len(_PORT_PREFIX) :]
+        if port_text.isdigit() and 1 <= int(port_text) <= 65535:
+            return f"{_PORT_PREFIX}{int(port_text)}"
+    raise ValueError(
+        f"{path}: unknown ci-requires '{value}' (known: {_PG_REQUIREMENT}, port:N)"
+    )
+
+
+def resolve_pg_endpoint(override: str | None) -> tuple[str, int]:
+    """Pick the Postgres endpoint to probe: ``--pg``, else env, else default.
+
+    Raises ``ValueError`` on a malformed ``--pg`` value.
+    """
+    if override:
+        host, sep, port_text = override.rpartition(":")
+        if not sep or not host or not port_text.isdigit():
+            raise ValueError(f"--pg expects HOST:PORT, got '{override}'")
+        return host, int(port_text)
+    host = os.environ.get("INFRA_PGSERVER_HOST", _DEFAULT_PG_HOST)
+    port_text = os.environ.get("INFRA_PGSERVER_PORT", str(_DEFAULT_PG_PORT))
+    return host, int(port_text) if port_text.isdigit() else _DEFAULT_PG_PORT
+
+
+def probe_tcp(host: str, port: int) -> bool:
+    """Confirm something accepts a TCP connection at host:port."""
+    try:
+        with socket.create_connection((host, port), timeout=_PROBE_TIMEOUT_S):
+            return True
+    except OSError:
+        return False
+
+
+def probe_bind(port: int) -> bool:
+    """Confirm TCP ``port`` can be bound on all interfaces right now.
+
+    SO_REUSEADDR mirrors what servers set, so a socket lingering in
+    TIME_WAIT from an earlier run does not count as taken; a live listener
+    still does.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("0.0.0.0", port))
+            return True
+    except OSError:
+        return False
+
+
+def requirement_reason(key: str) -> str:
+    """Short skip reason for an unmet requirement, as shown in summaries."""
+    if key == _PG_REQUIREMENT:
+        return _PG_UNAVAILABLE
+    return f"port {key[len(_PORT_PREFIX) :]} in use"
+
+
+def unmet_requirements(specs: list[Spec], pg: tuple[str, int]) -> dict[str, str]:
+    """Probe each requirement any spec declares; map the unavailable ones to a detail.
+
+    Only requirements actually declared are probed, so a tree with no
+    ``ci-requires`` line pays nothing.
+    """
+    unmet: dict[str, str] = {}
+    declared: set[str] = set().union(*(spec.requires for spec in specs))
+    for key in sorted(declared):
+        if key == _PG_REQUIREMENT:
+            host, port = pg
+            if not probe_tcp(host, port):
+                unmet[key] = f"{_PG_UNAVAILABLE}: {host}:{port} unreachable"
+        elif not probe_bind(int(key[len(_PORT_PREFIX) :])):
+            unmet[key] = requirement_reason(key)
+    return unmet
 
 
 def discover(examples_dir: Path, only: str | None) -> list[Path]:
@@ -223,15 +347,25 @@ def _kill_group(proc: subprocess.Popen[str]) -> None:
         pass
 
 
-def run_spec(spec: Spec) -> list[Result]:
-    """Run every case of one file in order, or skip the file."""
+def run_spec(spec: Spec, unmet: dict[str, str]) -> list[Result]:
+    """Run every case of one file in order, or skip the file.
+
+    A file whose requirement is in ``unmet`` is not started: it would only
+    crash on the missing service.
+    """
     if spec.skip_reason is not None:
         return [Result(spec, "", "SKIP", spec.skip_reason)]
+    missing = sorted(spec.requires & unmet.keys())
+    if missing:
+        return [Result(spec, "", "UNMET", "; ".join(unmet[name] for name in missing))]
     return [run_case(spec, args) for args in spec.cases]
 
 
 def run_all(
-    specs: list[Spec], jobs: int, report: Callable[[Result], None]
+    specs: list[Spec],
+    unmet: dict[str, str],
+    jobs: int,
+    report: Callable[[Result], None],
 ) -> list[Result]:
     """Run files ``jobs`` at a time; report results in discovery order.
 
@@ -241,7 +375,7 @@ def run_all(
     """
     results: list[Result] = []
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        futures = [pool.submit(run_spec, spec) for spec in specs]
+        futures = [pool.submit(run_spec, spec, unmet) for spec in specs]
         for future in futures:
             for result in future.result():
                 report(result)
@@ -252,7 +386,7 @@ def run_all(
 def print_result(result: Result, root: Path, verbose: bool) -> None:
     """Print one line for a case, plus details for failures."""
     label = f"{result.spec.path.relative_to(root)} {result.args}".rstrip()
-    if result.status in ("PASS", "SKIP") and result.detail:
+    if result.status in ("PASS", "SKIP", "UNMET") and result.detail:
         label = f"{label}  {_GRAY}({result.detail}){_RESET}"
     print(f"{_MARKS[result.status]} {label}", flush=True)
     if result.status in _FAILING or (verbose and result.detail):
@@ -260,16 +394,28 @@ def print_result(result: Result, root: Path, verbose: bool) -> None:
             print(f"    {_GRAY}{line}{_RESET}", flush=True)
 
 
-def print_summary(results: list[Result], elapsed_s: float) -> None:
-    """Print the pass/fail/timeout/skip totals and the wall time, as check.sh does."""
+def print_summary(
+    results: list[Result], unmet: dict[str, str], elapsed_s: float
+) -> None:
+    """Print the totals and the wall time, as check.sh does.
+
+    Unmet files count as skipped; when there are any, a trailing
+    ``N unmet (reason, ...)`` clause names them, and check.sh reads that
+    clause to mark its Examples line with a warning.
+    """
     counts = {
         status: sum(1 for r in results if r.status == status)
-        for status in ("PASS", "FAIL", "TIMEOUT", "SKIP")
+        for status in ("PASS", "FAIL", "TIMEOUT", "SKIP", "UNMET")
     }
     color = _GREEN if counts["FAIL"] + counts["TIMEOUT"] == 0 else _RED
+    skipped = counts["SKIP"] + counts["UNMET"]
+    unmet_clause = ""
+    if counts["UNMET"]:
+        reasons = ", ".join(requirement_reason(key) for key in sorted(unmet))
+        unmet_clause = f", {counts['UNMET']} unmet ({reasons})"
     print(
         f"\n{color}{counts['PASS']} passed, {counts['FAIL']} failed, "
-        f"{counts['TIMEOUT']} timed out, {counts['SKIP']} skipped{_RESET} "
+        f"{counts['TIMEOUT']} timed out, {skipped} skipped{unmet_clause}{_RESET} "
         f"{_GRAY}in {elapsed_s:.1f}s{_RESET}",
         flush=True,
     )
@@ -297,6 +443,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--only", help="run only files whose path contains this substring"
     )
     parser.add_argument(
+        "--pg",
+        metavar="HOST:PORT",
+        help="Postgres endpoint probed for `ci-requires: pg` files "
+        "(default: INFRA_PGSERVER_HOST/PORT, else "
+        f"{_DEFAULT_PG_HOST}:{_DEFAULT_PG_PORT})",
+    )
+    parser.add_argument(
         "-v", "--verbose", action="store_true", help="print details for every case"
     )
     return parser
@@ -312,12 +465,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"--jobs must be 0 or positive, got {ns.jobs}", file=sys.stderr)
         return 2
     start = time.monotonic()
-    specs = [parse_spec(p, ns.timeout) for p in discover(ns.examples_dir, ns.only)]
+    try:
+        # Resolve --pg up front so a malformed value fails even when no
+        # selected file declares pg.
+        pg = resolve_pg_endpoint(ns.pg)
+        specs = [parse_spec(p, ns.timeout) for p in discover(ns.examples_dir, ns.only)]
+        unmet = unmet_requirements(specs, pg)
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 2
     jobs = ns.jobs or os.cpu_count() or 1
     results = run_all(
-        specs, jobs, lambda r: print_result(r, ns.examples_dir, ns.verbose)
+        specs, unmet, jobs, lambda r: print_result(r, ns.examples_dir, ns.verbose)
     )
-    print_summary(results, time.monotonic() - start)
+    print_summary(results, unmet, time.monotonic() - start)
     return 1 if any(r.status in _FAILING for r in results) else 0
 
 
