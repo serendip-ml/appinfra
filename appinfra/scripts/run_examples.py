@@ -23,11 +23,17 @@ whatever the exit code. Exiting before the stop time is judged by exit code
 as usual. Whatever is left in the case's process group is killed afterwards.
 
 Scripts run with stdin closed and inherit the current working directory, so
-relative paths resolve the same way as under ``make``.
+relative paths resolve the same way as under ``make``. Each case gets a
+private scratch directory as ``TMPDIR``, removed afterwards, so an example
+that writes files uses ``tempfile`` and lands there, never in the checkout.
+
+Files run concurrently, ``--jobs`` at a time (0: one per CPU). A file's
+cases stay sequential, and results print in discovery order as each file
+completes, so the report reads the same as a serial run.
 
 Usage::
 
-    run_examples.py <examples-dir> [--timeout N] [--only SUBSTRING] [-v]
+    run_examples.py <examples-dir> [--jobs N] [--timeout N] [--only SUBSTRING] [-v]
 """
 
 from __future__ import annotations
@@ -36,10 +42,15 @@ import argparse
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
+import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
@@ -110,7 +121,8 @@ def discover(examples_dir: Path, only: str | None) -> list[Path]:
 
 def run_case(spec: Spec, args: str) -> Result:
     """Run one case in its own process group and classify the outcome."""
-    proc = _spawn([sys.executable, str(spec.path), *shlex.split(args)])
+    scratch = Path(tempfile.mkdtemp(prefix="example-"))
+    proc = _spawn([sys.executable, str(spec.path), *shlex.split(args)], scratch)
     out_chunks, err_chunks, readers = _start_readers(proc)
     try:
         status, detail = _wait_case(spec, proc)
@@ -125,6 +137,7 @@ def run_case(spec: Spec, args: str) -> Result:
             proc.stderr.close()
         for reader in readers:
             reader.join(timeout=2.0)
+        shutil.rmtree(scratch, ignore_errors=True)
     if status == "FAIL":
         output = "".join(err_chunks) or "".join(out_chunks)
         tail = "\n".join(output.splitlines()[-_OUTPUT_TAIL_LINES:])
@@ -132,10 +145,17 @@ def run_case(spec: Spec, args: str) -> Result:
     return Result(spec, args, status, detail)
 
 
-def _spawn(cmd: list[str]) -> subprocess.Popen[str]:
-    """Start a case in its own session with stdin closed and output piped."""
+def _spawn(cmd: list[str], scratch: Path) -> subprocess.Popen[str]:
+    """Start a case in its own session with stdin closed and output piped.
+
+    ``scratch`` is the case's private directory, handed over as ``TMPDIR``
+    so anything the example creates through ``tempfile`` lands there. An
+    ``INFRA_*`` name is not an option: the config layer reads every such
+    variable as a config override.
+    """
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
+    env["TMPDIR"] = str(scratch)
     return subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
@@ -203,17 +223,29 @@ def _kill_group(proc: subprocess.Popen[str]) -> None:
         pass
 
 
-def run_spec(spec: Spec, root: Path, verbose: bool) -> list[Result]:
-    """Run every case of one file (or skip it), printing each as it finishes."""
+def run_spec(spec: Spec) -> list[Result]:
+    """Run every case of one file in order, or skip the file."""
     if spec.skip_reason is not None:
-        skipped = Result(spec, "", "SKIP", spec.skip_reason)
-        print_result(skipped, root, verbose)
-        return [skipped]
+        return [Result(spec, "", "SKIP", spec.skip_reason)]
+    return [run_case(spec, args) for args in spec.cases]
+
+
+def run_all(
+    specs: list[Spec], jobs: int, report: Callable[[Result], None]
+) -> list[Result]:
+    """Run files ``jobs`` at a time; report results in discovery order.
+
+    Futures are drained in submission order, so a file's results are printed
+    once it and every file before it have finished. The report therefore
+    reads exactly like a serial run, only sooner.
+    """
     results: list[Result] = []
-    for args in spec.cases:
-        result = run_case(spec, args)
-        print_result(result, root, verbose)
-        results.append(result)
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = [pool.submit(run_spec, spec) for spec in specs]
+        for future in futures:
+            for result in future.result():
+                report(result)
+                results.append(result)
     return results
 
 
@@ -228,8 +260,8 @@ def print_result(result: Result, root: Path, verbose: bool) -> None:
             print(f"    {_GRAY}{line}{_RESET}", flush=True)
 
 
-def print_summary(results: list[Result]) -> None:
-    """Print the pass/fail/timeout/skip totals."""
+def print_summary(results: list[Result], elapsed_s: float) -> None:
+    """Print the pass/fail/timeout/skip totals and the wall time, as check.sh does."""
     counts = {
         status: sum(1 for r in results if r.status == status)
         for status in ("PASS", "FAIL", "TIMEOUT", "SKIP")
@@ -237,7 +269,8 @@ def print_summary(results: list[Result]) -> None:
     color = _GREEN if counts["FAIL"] + counts["TIMEOUT"] == 0 else _RED
     print(
         f"\n{color}{counts['PASS']} passed, {counts['FAIL']} failed, "
-        f"{counts['TIMEOUT']} timed out, {counts['SKIP']} skipped{_RESET}",
+        f"{counts['TIMEOUT']} timed out, {counts['SKIP']} skipped{_RESET} "
+        f"{_GRAY}in {elapsed_s:.1f}s{_RESET}",
         flush=True,
     )
 
@@ -248,6 +281,12 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Run every example script and fail on errors."
     )
     parser.add_argument("examples_dir", type=Path, help="directory to scan")
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=0,
+        help="files to run concurrently; 0 means one per CPU (default: %(default)s)",
+    )
     parser.add_argument(
         "--timeout",
         type=float,
@@ -269,12 +308,16 @@ def main(argv: list[str] | None = None) -> int:
     if not ns.examples_dir.is_dir():
         print(f"not a directory: {ns.examples_dir}", file=sys.stderr)
         return 2
-    results: list[Result] = []
-    for path in discover(ns.examples_dir, ns.only):
-        results.extend(
-            run_spec(parse_spec(path, ns.timeout), ns.examples_dir, ns.verbose)
-        )
-    print_summary(results)
+    if ns.jobs < 0:
+        print(f"--jobs must be 0 or positive, got {ns.jobs}", file=sys.stderr)
+        return 2
+    start = time.monotonic()
+    specs = [parse_spec(p, ns.timeout) for p in discover(ns.examples_dir, ns.only)]
+    jobs = ns.jobs or os.cpu_count() or 1
+    results = run_all(
+        specs, jobs, lambda r: print_result(r, ns.examples_dir, ns.verbose)
+    )
+    print_summary(results, time.monotonic() - start)
     return 1 if any(r.status in _FAILING for r in results) else 0
 
 

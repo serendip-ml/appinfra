@@ -25,7 +25,9 @@ For API stability guarantees and deprecation policy, see
   `make test.*` targets. `run_pytest_serial` macro for custom targets that must stay in-process.
 - `make examples.check`: runs every script under `examples/` (or `<pkg>/examples/`) and
   fails on errors or timeouts. Per-file `# ci-run:` / `# ci-stop:` / `# ci-timeout:` /
-  `# ci-skip:` comments declare the cases. CI runs it in the container lane.
+  `# ci-skip:` comments declare the cases. Files run one per CPU (`--jobs`), each case
+  in a private `TMPDIR`, and results print in discovery order. CI runs it in the
+  container lane.
 - Faceted `AppBuilder`: `.cli` (standard flags, presentation, custom arguments), `.lifecycle`
   (hooks), `.tools.with_main`, and a keyword form on every block; `.logging` is the standalone
   `LoggingBuilder` bound to the app, so its whole API is available there. One block is open at
