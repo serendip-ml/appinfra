@@ -77,12 +77,12 @@ class HookManager:
         for i, hook in enumerate(self._hooks[event]):
             metadata = self._hook_metadata[event][i]
 
-            # Check condition if provided
-            condition = metadata.get("condition")
-            if condition and not condition(*args, **kwargs):
-                continue
-
             try:
+                # Check condition if provided
+                condition = metadata.get("condition")
+                if condition and not condition(*args, **kwargs):
+                    continue
+
                 result = hook(*args, **kwargs)
                 results.append(result)
 

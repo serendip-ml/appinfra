@@ -167,11 +167,10 @@ class LoggingPlugin(Plugin):
 
 
 class MetricsPlugin(Plugin):
-    """Plugin for metrics: a tool that reports the counts it collects."""
+    """Plugin for metrics: a tool that reports application state."""
 
     def __init__(self) -> None:
         super().__init__("metrics")
-        self._counts: dict[str, int] = {}
 
     def configure(self, builder: AppBuilder) -> None:
         """Configure the metrics tool."""
@@ -183,7 +182,7 @@ class MetricsPlugin(Plugin):
 
     def _show_metrics(self, tool: Any, **kwargs: Any) -> int:
         """Show application metrics."""
-        tool.lg.info("request counts", extra={"requests": dict(self._counts)})
+        tool.lg.info("metrics placeholder - no collection source configured")
         return 0
 
 

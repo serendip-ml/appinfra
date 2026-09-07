@@ -269,7 +269,7 @@ def time_it_lg(
         ... # Logs: database operation table[users] after[0.100s]
 
         >>> # With additional context
-        >>> with time_it_lg(logger.debug, "file processing",
+        >>> with time_it_lg(lg.debug, "file processing",
         ...                 {"file": "data.csv", "size": "1MB"}):
         ...     # Process file
         ...     time.sleep(0.05)

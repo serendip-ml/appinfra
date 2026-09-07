@@ -261,7 +261,7 @@ class Ticker:
             def ticker_tick(self):
                 self.lg.info("Checking system health...")
 
-        handler = HealthChecker()
+        handler = HealthChecker(lg)
         ticker = Ticker(lg, handler, secs=10)
 
         # Run in a separate thread
