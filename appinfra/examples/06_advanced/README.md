@@ -114,7 +114,7 @@ ticker = Ticker(interval=5.0, handler=my_handler)
 ticker.start()
 
 # Logger without App
-logger = LoggingBuilder("standalone").console_handler().build()
+logger = LoggingBuilder("standalone").with_console_handler().build()
 
 # Config without App
 config = Config("etc/infra.yaml")

@@ -8,6 +8,7 @@ from __future__ import annotations
 import multiprocessing as mp
 from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar
 
+from ..config.api import ApiConfig
 from ..config.ipc import IPCConfig
 
 if TYPE_CHECKING:
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
 # The parent's concrete type, so done() on a subclass of ServerBuilder
 # (the AppBuilder server scope) returns that subclass.
 P = TypeVar("P", bound="ServerBuilder")
+
+_API_DEFAULTS = ApiConfig()
 
 
 class SubprocessConfigurer(Generic[P]):
@@ -49,13 +52,9 @@ class SubprocessConfigurer(Generic[P]):
             parent: Parent ServerBuilder instance
         """
         self._parent: P = parent
-        self._request_q: mp.Queue[Any] | None = None
-        self._response_q: mp.Queue[Any] | None = None
-        self._config = IPCConfig()
-        self._log_file: str | None = None
-        self._auto_restart: bool = True
-        self._restart_delay: float = 1.0
-        self._max_restarts: int = 5
+        if parent._api.ipc is None:
+            parent._api.ipc = IPCConfig()
+        self._config = parent._api.ipc  # the parent's, mutated in place
 
     def with_ipc(
         self,
@@ -72,8 +71,8 @@ class SubprocessConfigurer(Generic[P]):
         Returns:
             Self for method chaining
         """
-        self._request_q = request_q
-        self._response_q = response_q
+        self._parent._request_q = request_q
+        self._parent._response_q = response_q
         return self
 
     def with_log_file(self, path: str) -> Self:
@@ -89,7 +88,7 @@ class SubprocessConfigurer(Generic[P]):
         Returns:
             Self for method chaining
         """
-        self._log_file = path
+        self._parent._api.log_file = path
         return self
 
     def with_poll_interval(self, interval: float) -> Self:
@@ -152,8 +151,8 @@ class SubprocessConfigurer(Generic[P]):
     def with_auto_restart(
         self,
         enabled: bool = True,
-        delay: float = 1.0,
-        max_restarts: int = 5,
+        delay: float = _API_DEFAULTS.restart_delay,
+        max_restarts: int = _API_DEFAULTS.max_restarts,
     ) -> Self:
         """
         Configure automatic restart on crash.
@@ -166,13 +165,14 @@ class SubprocessConfigurer(Generic[P]):
         Returns:
             Self for method chaining
         """
-        self._auto_restart = enabled
-        self._restart_delay = delay
-        self._max_restarts = max_restarts
+        self._parent._api.auto_restart = enabled
+        self._parent._api.restart_delay = delay
+        self._parent._api.max_restarts = max_restarts
         return self
 
     def with_config(self, config: IPCConfig) -> Self:
         """Set entire IPC config at once."""
+        self._parent._api.ipc = config
         self._config = config
         return self
 
@@ -183,14 +183,4 @@ class SubprocessConfigurer(Generic[P]):
         Returns:
             Parent ServerBuilder instance for continued chaining
         """
-        if self._request_q is not None:
-            self._parent._request_q = self._request_q
-            self._parent._response_q = self._response_q
-            self._parent._ipc_config = self._config
-
-        self._parent._log_file = self._log_file
-        self._parent._auto_restart = self._auto_restart
-        self._parent._restart_delay = self._restart_delay
-        self._parent._max_restarts = self._max_restarts
-
         return self._parent

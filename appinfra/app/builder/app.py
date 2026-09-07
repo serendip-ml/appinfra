@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
 
 from ...config import Config, ConfigSpec
 from ...dot_dict import DotDict
@@ -39,11 +39,16 @@ from .configurer.cli import CliConfigurer
 from .configurer.config import ConfigConfigurer
 from .configurer.lifecycle import LifecycleConfigurer
 from .configurer.logging import LoggingScope
-from .configurer.server import ServerScope
 from .configurer.tool import ToolConfigurer
 from .configurer.version import VersionConfigurer, register_startup_hook
 from .hook import HookManager
 from .plugin import PluginManager
+
+if TYPE_CHECKING:
+    # Deferred, not a cycle: the server scope's module imports the FastAPI
+    # runtime, which only apps that declare .server should load. The
+    # ``server`` property imports it on first use.
+    from .configurer.server import ServerScope
 
 # Helper functions for AppBuilder.build()
 
@@ -253,6 +258,10 @@ class AppBuilder:
         self._version_tracker: PackageVersionTracker | None = None
         self._build_info: BuildInfo | None = None
         self._version_startup_log = True
+        self._init_block_state()
+
+    def _init_block_state(self) -> None:
+        """State about the blocks themselves rather than what they hold."""
         # Scopes that subclass a standalone builder hold their own state, so
         # one instance per builder.
         self._logging_scope: LoggingScope | None = None
@@ -435,6 +444,8 @@ class AppBuilder:
             AppBuilder("myapp").server(port=8080, uvicorn={"workers": 4})
         """
         if self._server_scope is None:
+            from .configurer.server import ServerScope
+
             self._server_scope = ServerScope(self)
         self._open(self._server_scope)
         return self._server_scope

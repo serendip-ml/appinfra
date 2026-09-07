@@ -20,10 +20,10 @@ if TYPE_CHECKING:
 
     from ....log import Logger
 
+from dataclasses import replace
+
 from ....subprocess import Lazy
 from ..config.api import ApiConfig
-from ..config.ipc import IPCConfig
-from ..config.uvicorn import UvicornConfig
 from ..runtime.adapter import (
     CORSDefinition,
     ExceptionCallbackDefinition,
@@ -101,29 +101,12 @@ class ServerBuilder:
         """
         self._lg = lg
         self._name = name
-        self._init_api_defaults()
-        self._init_subprocess_defaults()
-        self._init_routes_and_callbacks()
-
-    def _init_api_defaults(self) -> None:
-        """Initialize API configuration defaults."""
-        self._host = "0.0.0.0"
-        self._port = 8000
-        self._title = "API Server"
-        self._description = ""
-        self._version = "0.1.0"
-        self._response_timeout = 60.0
-        self._uvicorn_config = UvicornConfig()
-
-    def _init_subprocess_defaults(self) -> None:
-        """Initialize subprocess configuration defaults."""
+        # The builder's state is the config it will build; the facets are
+        # views on it, so defaults live in the config dataclasses only.
+        self._api = ApiConfig()
         self._request_q: mp.Queue[Any] | None = None
         self._response_q: mp.Queue[Any] | None = None
-        self._ipc_config: IPCConfig | None = None
-        self._log_file: str | None = None
-        self._auto_restart = True
-        self._restart_delay = 1.0
-        self._max_restarts = 5
+        self._init_routes_and_callbacks()
 
     def _init_routes_and_callbacks(self) -> None:
         """Initialize routes, middleware, and callback storage."""
@@ -144,32 +127,32 @@ class ServerBuilder:
 
     def with_host(self, host: str) -> Self:
         """Set the bind address (default: "0.0.0.0")."""
-        self._host = host
+        self._api.host = host
         return self
 
     def with_port(self, port: int) -> Self:
         """Set the bind port (default: 8000)."""
-        self._port = port
+        self._api.port = port
         return self
 
     def with_title(self, title: str) -> Self:
         """Set API title for OpenAPI docs."""
-        self._title = title
+        self._api.title = title
         return self
 
     def with_description(self, description: str) -> Self:
         """Set API description for OpenAPI docs."""
-        self._description = description
+        self._api.description = description
         return self
 
     def with_version(self, version: str) -> Self:
         """Set API version."""
-        self._version = version
+        self._api.version = version
         return self
 
     def with_timeout(self, timeout: float) -> Self:
         """Set default response timeout in seconds."""
-        self._response_timeout = timeout
+        self._api.response_timeout = timeout
         return self
 
     def with_config(self, config: ApiConfig) -> Self:
@@ -178,21 +161,7 @@ class ServerBuilder:
 
         Useful when loading config from file or environment.
         """
-        self._host = config.host
-        self._port = config.port
-        self._title = config.title
-        self._description = config.description
-        self._version = config.version
-        self._response_timeout = config.response_timeout
-        self._log_file = config.log_file
-        self._auto_restart = config.auto_restart
-        self._restart_delay = config.restart_delay
-        self._max_restarts = config.max_restarts
-        self._uvicorn_config = config.uvicorn
-
-        if config.ipc:
-            self._ipc_config = config.ipc
-
+        self._api = config
         return self
 
     # Lifecycle callback methods
@@ -436,21 +405,8 @@ class ServerBuilder:
     # Build
 
     def _build_config(self) -> ApiConfig:
-        """Build API configuration from builder state."""
-        return ApiConfig(
-            host=self._host,
-            port=self._port,
-            title=self._title,
-            description=self._description,
-            version=self._version,
-            response_timeout=self._response_timeout,
-            log_file=self._log_file,
-            auto_restart=self._auto_restart,
-            restart_delay=self._restart_delay,
-            max_restarts=self._max_restarts,
-            uvicorn=self._uvicorn_config,
-            ipc=self._ipc_config,
-        )
+        """A copy of the builder's config, so the Server owns its own."""
+        return replace(self._api)
 
     def _configure_adapter(self, adapter: FastAPIAdapter) -> None:
         """Configure adapter with routes, middleware, handlers, and lifecycle callbacks."""

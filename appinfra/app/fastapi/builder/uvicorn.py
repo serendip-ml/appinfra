@@ -64,7 +64,7 @@ class UvicornConfigurer(Generic[P]):
             parent: Parent ServerBuilder instance
         """
         self._parent: P = parent
-        self._config = UvicornConfig()
+        self._config = parent._api.uvicorn  # the parent's, mutated in place
 
     def with_workers(self, workers: int) -> Self:
         """Set number of worker processes."""
@@ -109,6 +109,7 @@ class UvicornConfigurer(Generic[P]):
 
     def with_config(self, config: UvicornConfig) -> Self:
         """Set entire uvicorn config at once."""
+        self._parent._api.uvicorn = config
         self._config = config
         return self
 
@@ -119,7 +120,6 @@ class UvicornConfigurer(Generic[P]):
         Returns:
             Parent ServerBuilder instance for continued chaining
         """
-        self._parent._uvicorn_config = self._config
         return self._parent
 
     def __call__(self, **fields: Unpack[UvicornFields]) -> P:

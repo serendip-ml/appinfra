@@ -92,7 +92,11 @@ class TestChainedConfiguration:
         )
 
         scope = builder._server_scope
-        assert (scope._port, scope._host, scope._title) == (8080, "127.0.0.1", "T")
+        assert (scope._api.port, scope._api.host, scope._api.title) == (
+            8080,
+            "127.0.0.1",
+            "T",
+        )
 
     def test_routes_reach_scope(self):
         """A route added through the facet lands on the scope."""
@@ -136,18 +140,18 @@ class TestKeywordForm:
 
         assert result is builder
         scope = builder._server_scope
-        assert scope._host == "127.0.0.1"
-        assert scope._port == 9000
-        assert scope._title == "T"
-        assert scope._description == "D"
-        assert scope._version == "2.0"
-        assert scope._response_timeout == 5.0
+        assert scope._api.host == "127.0.0.1"
+        assert scope._api.port == 9000
+        assert scope._api.title == "T"
+        assert scope._api.description == "D"
+        assert scope._api.version == "2.0"
+        assert scope._api.response_timeout == 5.0
 
     def test_uvicorn_mapping_routes_to_uvicorn_block(self):
         """The uvicorn key takes UvicornFields."""
         builder = AppBuilder("test").server(uvicorn={"workers": 4, "access_log": True})
 
-        uvicorn = builder._server_scope._uvicorn_config
+        uvicorn = builder._server_scope._api.uvicorn
         assert uvicorn.workers == 4
         assert uvicorn.access_log is True
 

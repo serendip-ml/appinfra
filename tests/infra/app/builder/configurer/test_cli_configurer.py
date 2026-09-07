@@ -374,18 +374,18 @@ class TestPresentationIntegration:
 
         assert _action_for(app, "etc_dir").help == "custom etc help"
 
-    def test_override_for_disabled_flag_is_ignored(self):
-        """Presentation for a flag that is off changes nothing."""
+    def test_with_flag_enables_the_flag(self):
+        """with_flag is the singular of with_flags: it turns the flag on."""
         app = (
             AppBuilder("test")
             .cli.without_flags()
-            .with_flag("etc_dir", help="unused")
+            .with_flag("etc_dir", help="config dir")
             .done()
             .build()
         )
         app.create_args()
 
-        assert "etc_dir" not in _dests(app)
+        assert _action_for(app, "etc_dir").help == "config dir"
 
     def test_override_only_changes_specified_keys(self):
         """Framework values survive for keys not in the override."""

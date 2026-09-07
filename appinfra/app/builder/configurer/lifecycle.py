@@ -48,10 +48,8 @@ class LifecycleConfigurer:
 
     def with_hook_builder(self, builder: HookBuilder) -> Self:
         """Register every hook of a ``HookBuilder``, keeping priority and conditions."""
-        manager = builder.build()
-        for event, callbacks in manager._hooks.items():
-            for callback, meta in zip(callbacks, manager._hook_metadata[event]):
-                self._app_builder._hooks.register_hook(event, callback, **meta)
+        for event, callback, meta in builder.build().iter_hooks():
+            self._app_builder._hooks.register_hook(event, callback, **meta)
         return self
 
     def done(self) -> AppBuilder:

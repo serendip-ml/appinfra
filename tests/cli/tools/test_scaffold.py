@@ -575,6 +575,8 @@ class TestGeneratePyproject:
             content = pyproject_path.read_text()
             assert 'name = "myproject"' in content
             assert "[build-system]" in content
+            assert '"appinfra",' in content  # the distribution, not "infra"
+            assert 'myproject = ["etc/*.yaml"]' in content
 
 
 @pytest.mark.unit

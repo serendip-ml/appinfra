@@ -162,12 +162,12 @@ AppBuilder("myapp").cli.without_flags().with_flags(etc_dir=True).done().build()
 `log_micros`, `log_topic`, `log_colors`, `log_json`, `quiet`). An explicit key wins over the
 alias.
 
-**Presentation:** `with_flag(name, **argparse_kwargs)` overrides the argparse presentation of one
-standard flag (`help`, `metavar`, `choices`, `type`, `nargs`, `action`). Overrides merge on top
-of framework values; only the passed keys change.
+**One flag with its presentation:** `with_flag(name, **argparse_kwargs)` enables one standard
+flag and overrides its argparse presentation (`help`, `metavar`, `choices`, `type`, `nargs`,
+`action`). Overrides merge on top of framework values; only the passed keys change.
 
 ```python
-AppBuilder("myapp").cli.with_flags(log_level=True).with_flag(
+AppBuilder("myapp").cli.with_flag(
     "log_level", help="verbosity of the service log"
 ).done().build()
 ```
@@ -178,7 +178,6 @@ Restrictions:
 - `dest` is rejected: the framework reads parsed args by a fixed attribute name set internally,
   which may differ from the flag name (`log_topic` is read as `args.log_topics`).
 - `log` (an alias) and `help` (argparse's `add_help`) have no single action to present.
-- The override is silently ignored if the flag is not enabled via `with_flags(<name>=True)`.
 
 > The framework populates `app.etc_dir` when `etc_dir` is enabled; read it from inside
 > `Tool.configure()`. With a spec it is the resolved file's directory. See
@@ -277,9 +276,9 @@ app = AppBuilder("myapp").server(port=8080, uvicorn={"workers": 4}).build()
 ```
 
 Keyword fields: `host`, `port`, `title`, `description`, `version`, `timeout`, and `uvicorn`, a
-mapping of `UvicornConfig` fields. Routes, lifecycle callbacks, rate limiting, CORS and
-middleware are chained through the builder's `.routes`, `.subprocess` and `.uvicorn` facets, each
-closing back onto the block.
+mapping of `UvicornConfig` fields. Lifecycle callbacks and rate limiting are direct methods on
+the block; routes, CORS and middleware are chained through `.routes`, and Uvicorn and subprocess
+settings through `.uvicorn` and `.subprocess`, each closing back onto the block.
 
 ## tools block
 

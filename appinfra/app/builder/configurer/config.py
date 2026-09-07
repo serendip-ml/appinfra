@@ -74,7 +74,7 @@ class ConfigConfigurer:
         (the module named after the config or the calling script, ``etc``,
         ``<name>.yaml``); ``path`` names the file outright. At setup the App
         resolves the spec against ``--etc-dir`` and ``--config`` (when
-        exposed via ``with_standard_args``), the project-local walk-up, XDG
+        exposed via ``.cli(config_file=True)``), the project-local walk-up, XDG
         overlays and the packaged base. See ``ConfigSpec``.
         """
         self._app_builder._config_spec = ConfigSpec(

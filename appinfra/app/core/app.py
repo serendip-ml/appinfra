@@ -82,7 +82,7 @@ class App(Traceable):
 
         # Standard args configuration (set by builder, minimal by default)
         self._standard_args: dict[str, bool] = DEFAULT_STANDARD_ARGS.copy()
-        # Per-arg argparse kwarg overrides (set by builder via with_standard_arg)
+        # Per-arg argparse kwarg overrides (set by the builder's .cli.with_flag)
         self._standard_arg_overrides: dict[str, dict[str, Any]] = {}
 
         self._decorators: DecoratorAPI = DecoratorAPI(self)  # Decorator API support

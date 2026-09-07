@@ -447,15 +447,14 @@ with pg.session() as session:
 stays responsive while workers handle requests, with automatic restart on failure:
 
 ```python
-from appinfra.app.fastapi import FastAPIBuilder
+from appinfra.app.fastapi import ServerBuilder
 
 server = (
-    FastAPIBuilder("api")
-    .with_config(config)
+    ServerBuilder(lg, "api")
     .with_port(8000)
-    .with_subprocess_mode(
-        request_queue=request_q, response_queue=response_q, auto_restart=True
-    )
+    .subprocess.with_ipc(request_q, response_q)
+    .with_auto_restart(enabled=True)
+    .done()
     .build()
 )
 

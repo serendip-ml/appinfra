@@ -121,11 +121,15 @@ class LoggingScope(LoggingBuilder):
         return values
 
     def _serialized_handlers(self) -> dict[str, dict[str, Any]]:
-        """Handlers as ``logging.handlers`` entries, keyed by position."""
+        """Handlers as ``logging.handlers`` entries, keyed ``builder_<position>``.
+
+        The prefix says where the entry came from and keeps it clear of the
+        names a config file would use, since the fold deep-merges with them.
+        """
         handlers: dict[str, dict[str, Any]] = {}
         for index, handler in enumerate(self._handlers):
             try:
-                handlers[f"handler{index}"] = handler.to_dict()
+                handlers[f"builder_{index}"] = handler.to_dict()
             except NotImplementedError as e:
                 raise ValueError(
                     f"{type(handler).__name__} cannot be expressed as config, so "

@@ -10,7 +10,7 @@ and event handling.
 
 import logging
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any, Self
 
 
@@ -105,6 +105,20 @@ class HookManager:
     def get_hooks(self, event: str) -> list[Callable]:
         """Get all hooks for an event."""
         return self._hooks[event].copy()
+
+    def iter_hooks(self) -> Iterator[tuple[str, Callable, dict[str, Any]]]:
+        """Every hook with its event and metadata, in trigger order.
+
+        The metadata keys are ``register_hook``'s keyword arguments, so a
+        hook can be re-registered on another manager unchanged.
+        """
+        for event, callbacks in self._hooks.items():
+            yield from (
+                (event, callback, dict(meta))
+                for callback, meta in zip(
+                    callbacks, self._hook_metadata[event], strict=True
+                )
+            )
 
     def clear_hooks(self, event: str | None = None) -> None:
         """Clear hooks for an event or all events."""

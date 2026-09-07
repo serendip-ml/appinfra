@@ -79,7 +79,7 @@ The logging system provides structured output with custom levels and multiple ha
 ```python
 from appinfra.log import LoggingBuilder
 
-logger = LoggingBuilder("my_app").with_level("info").console_handler().build()
+logger = LoggingBuilder("my_app").with_level("info").with_console_handler().build()
 
 logger.info("Application started")
 logger.debug("Debug message", extra={"user_id": "123"})
@@ -93,8 +93,10 @@ from appinfra.log import LoggingBuilder
 logger = (
     LoggingBuilder("my_app")
     .with_level("info")
-    .console_handler()
-    .file_handler("logs/app.log", max_bytes=10 * 1024 * 1024, backup_count=5)
+    .with_console_handler()
+    .with_rotating_file_handler(
+        "logs/app.log", max_bytes=10 * 1024 * 1024, backup_count=5
+    )
     .build()
 )
 ```
@@ -104,7 +106,7 @@ logger = (
 ```python
 from appinfra.log.builder import JSONLoggingBuilder
 
-logger = JSONLoggingBuilder("my_app").with_level("info").console_handler().build()
+logger = JSONLoggingBuilder("my_app").with_level("info").with_console_handler().build()
 
 logger.info("User action", extra={"user_id": "123", "action": "login"})
 ```
@@ -525,7 +527,7 @@ Check your configuration in `etc/infra.yaml`.
 Ensure you've built the logger:
 
 ```python
-logger = LoggingBuilder("app").console_handler().build()
+logger = LoggingBuilder("app").with_console_handler().build()
 ```
 
 Don't forget the `.build()` call!

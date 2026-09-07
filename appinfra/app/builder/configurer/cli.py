@@ -108,13 +108,14 @@ class CliConfigurer:
         return self
 
     def with_flag(self, name: str, **presentation: Any) -> Self:
-        """Override the argparse presentation of one standard flag.
+        """Enable one standard flag and override its argparse presentation.
 
-        Presentation means ``help``, ``metavar``, ``choices`` and the like.
-        ``default`` is rejected: a default is a value, and values come from
-        the subsystem block or the config file. ``dest`` is rejected because
-        the framework reads parsed args by a fixed attribute name. Does not
-        enable the flag; see ``with_flags``.
+        The singular of ``with_flags``: the flag is turned on, and the
+        keywords given (``help``, ``metavar``, ``choices`` and the like)
+        replace the framework's values for it. ``default`` is rejected: a
+        default is a value, and values come from the subsystem block or the
+        config file. ``dest`` is rejected because the framework reads parsed
+        args by a fixed attribute name.
 
         Raises:
             ValueError: for an unknown or aliased name, or a rejected key.
@@ -127,6 +128,7 @@ class CliConfigurer:
         for key in ("default", "dest"):
             if key in presentation:
                 raise ValueError(f"with_flag({name!r}) does not accept {key!r}")
+        self._app_builder._standard_args[name] = True
         overrides = self._app_builder._standard_arg_overrides
         overrides.setdefault(name, {}).update(presentation)
         return self

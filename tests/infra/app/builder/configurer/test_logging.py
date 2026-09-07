@@ -131,8 +131,8 @@ class TestDoneFoldsIntoConfig:
         )
 
         handlers = _logging_section(builder)["handlers"]
-        assert handlers["handler0"]["type"] == "console"
-        assert handlers["handler1"] == {
+        assert handlers["builder_0"]["type"] == "console"
+        assert handlers["builder_1"] == {
             "type": "file",
             "filename": str(log_file),
             "mode": "a",
@@ -222,7 +222,7 @@ class TestHandlersReachRootLogger:
         logger.info("written through the scope's handler")
 
         assert [h._handler_name for h in registry.iter_enabled_handlers()] == [
-            "handler0"
+            "builder_0"
         ]
         assert "written through the scope's handler" in log_file.read_text()
         logger.handlers.clear()

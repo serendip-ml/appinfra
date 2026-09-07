@@ -37,8 +37,8 @@ class TestServerBuilder:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.with_host("127.0.0.1").with_port(9000)
 
-        assert builder._host == "127.0.0.1"
-        assert builder._port == 9000
+        assert builder._api.host == "127.0.0.1"
+        assert builder._api.port == 9000
 
     def test_metadata_configuration(self, mock_fastapi, mock_lg):
         """Test API metadata configuration."""
@@ -51,16 +51,16 @@ class TestServerBuilder:
             .with_version("2.0.0")
         )
 
-        assert builder._title == "My API"
-        assert builder._description == "Test description"
-        assert builder._version == "2.0.0"
+        assert builder._api.title == "My API"
+        assert builder._api.description == "Test description"
+        assert builder._api.version == "2.0.0"
 
     def test_timeout_configuration(self, mock_fastapi, mock_lg):
         """Test timeout configuration."""
         from appinfra.app.fastapi.builder.server import ServerBuilder
 
         builder = ServerBuilder(mock_lg, "test-api").with_timeout(120.0)
-        assert builder._response_timeout == 120.0
+        assert builder._api.response_timeout == 120.0
 
     def test_with_config(self, mock_fastapi, mock_lg):
         """Test bulk configuration via ApiConfig."""
@@ -76,11 +76,11 @@ class TestServerBuilder:
 
         builder = ServerBuilder(mock_lg, "test-api").with_config(config)
 
-        assert builder._host == "192.168.1.1"
-        assert builder._port == 8080
-        assert builder._title == "Bulk Config API"
-        assert builder._version == "3.0.0"
-        assert builder._auto_restart is False
+        assert builder._api.host == "192.168.1.1"
+        assert builder._api.port == 8080
+        assert builder._api.title == "Bulk Config API"
+        assert builder._api.version == "3.0.0"
+        assert builder._api.auto_restart is False
 
     def test_fluent_chaining(self, mock_fastapi, mock_lg):
         """Test method chaining returns builder."""
@@ -109,8 +109,8 @@ class TestServerBuilder:
 
         builder = ServerBuilder(mock_lg, "test-api").with_config(config)
 
-        assert builder._ipc_config is not None
-        assert builder._ipc_config.max_pending == 200
+        assert builder._api.ipc is not None
+        assert builder._api.ipc.max_pending == 200
 
     def test_build_creates_server(self, mock_fastapi, mock_lg):
         """Test build() creates a Server instance."""
@@ -326,9 +326,9 @@ class TestSubprocessConfigurer:
             enabled=True, delay=2.0, max_restarts=10
         ).done()
 
-        assert builder._auto_restart is True
-        assert builder._restart_delay == 2.0
-        assert builder._max_restarts == 10
+        assert builder._api.auto_restart is True
+        assert builder._api.restart_delay == 2.0
+        assert builder._api.max_restarts == 10
 
     def test_log_file_configuration(self, mock_fastapi, mock_lg):
         """Test log file configuration."""
@@ -337,7 +337,7 @@ class TestSubprocessConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.subprocess.with_log_file("/var/log/server.log").done()
 
-        assert builder._log_file == "/var/log/server.log"
+        assert builder._api.log_file == "/var/log/server.log"
 
     def test_ipc_config(self, mock_fastapi, mock_lg):
         """Test IPCConfig configuration."""
@@ -353,8 +353,8 @@ class TestSubprocessConfigurer:
             ipc_config
         ).done()
 
-        assert builder._ipc_config is ipc_config
-        assert builder._ipc_config.max_pending == 500
+        assert builder._api.ipc is ipc_config
+        assert builder._api.ipc.max_pending == 500
 
     def test_poll_interval(self, mock_fastapi, mock_lg):
         """Test poll interval configuration."""
@@ -368,7 +368,19 @@ class TestSubprocessConfigurer:
             0.05
         ).done()
 
-        assert builder._ipc_config.poll_interval == 0.05
+        assert builder._api.ipc.poll_interval == 0.05
+
+    def test_reopening_facet_keeps_earlier_settings(self, mock_fastapi, mock_lg):
+        """Log file set in one opening survives auto-restart set in another."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        builder = ServerBuilder(mock_lg, "test-api")
+        builder.subprocess.with_log_file("/var/log/server.log").done()
+        builder.subprocess.with_auto_restart(False).done()
+
+        assert builder._api.log_file == "/var/log/server.log"
+        assert builder._api.auto_restart is False
+        assert builder._api.restart_delay == ApiConfig().restart_delay
 
     def test_response_timeout(self, mock_fastapi, mock_lg):
         """Test response timeout configuration."""
@@ -382,7 +394,7 @@ class TestSubprocessConfigurer:
             30.0
         ).done()
 
-        assert builder._ipc_config.response_timeout == 30.0
+        assert builder._api.ipc.response_timeout == 30.0
 
     def test_max_pending(self, mock_fastapi, mock_lg):
         """Test max pending configuration."""
@@ -394,7 +406,7 @@ class TestSubprocessConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.subprocess.with_ipc(request_q, response_q).with_max_pending(200).done()
 
-        assert builder._ipc_config.max_pending == 200
+        assert builder._api.ipc.max_pending == 200
 
     def test_health_reporting(self, mock_fastapi, mock_lg):
         """Test health reporting configuration."""
@@ -408,7 +420,7 @@ class TestSubprocessConfigurer:
             False
         ).done()
 
-        assert builder._ipc_config.enable_health_reporting is False
+        assert builder._api.ipc.enable_health_reporting is False
 
 
 @pytest.mark.unit
@@ -429,7 +441,7 @@ class TestUvicornConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.uvicorn.with_workers(4).done()
 
-        assert builder._uvicorn_config.workers == 4
+        assert builder._api.uvicorn.workers == 4
 
     def test_keyword_form_sets_fields_and_returns_parent(self, mock_fastapi, mock_lg):
         """Calling the block with keywords sets fields and returns the ServerBuilder."""
@@ -439,9 +451,21 @@ class TestUvicornConfigurer:
         result = builder.uvicorn(workers=4, access_log=True, log_level="debug")
 
         assert result is builder
-        assert builder._uvicorn_config.workers == 4
-        assert builder._uvicorn_config.access_log is True
-        assert builder._uvicorn_config.log_level == "debug"
+        assert builder._api.uvicorn.workers == 4
+        assert builder._api.uvicorn.access_log is True
+        assert builder._api.uvicorn.log_level == "debug"
+
+    def test_reopening_facet_keeps_earlier_settings(self, mock_fastapi, mock_lg):
+        """The facet is a view on the builder's config, so nothing resets."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        builder = ServerBuilder(mock_lg, "test-api")
+        builder.uvicorn.with_workers(4).done()
+        builder.uvicorn(access_log=False)
+
+        assert builder._api.uvicorn.workers == 4
+        assert builder._api.uvicorn.access_log is False
+        assert builder.build().config.uvicorn.workers == 4
 
     def test_keyword_form_rejects_unknown_field(self, mock_fastapi, mock_lg):
         """A keyword that is not a UvicornConfig field is a TypeError."""
@@ -469,7 +493,7 @@ class TestUvicornConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.uvicorn.with_log_level("debug").done()
 
-        assert builder._uvicorn_config.log_level == "debug"
+        assert builder._api.uvicorn.log_level == "debug"
 
     def test_ssl_configuration(self, mock_fastapi, mock_lg):
         """Test SSL configuration."""
@@ -478,8 +502,8 @@ class TestUvicornConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.uvicorn.with_ssl("/key.pem", "/cert.pem").done()
 
-        assert builder._uvicorn_config.ssl_keyfile == "/key.pem"
-        assert builder._uvicorn_config.ssl_certfile == "/cert.pem"
+        assert builder._api.uvicorn.ssl_keyfile == "/key.pem"
+        assert builder._api.uvicorn.ssl_certfile == "/cert.pem"
 
     def test_access_log_configuration(self, mock_fastapi, mock_lg):
         """Test access log configuration."""
@@ -488,7 +512,7 @@ class TestUvicornConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.uvicorn.with_access_log(True).done()
 
-        assert builder._uvicorn_config.access_log is True
+        assert builder._api.uvicorn.access_log is True
 
     def test_full_config(self, mock_fastapi, mock_lg):
         """Test setting full UvicornConfig."""
@@ -499,7 +523,7 @@ class TestUvicornConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.uvicorn.with_config(config).done()
 
-        assert builder._uvicorn_config is config
+        assert builder._api.uvicorn is config
 
     def test_timeout_keep_alive(self, mock_fastapi, mock_lg):
         """Test timeout_keep_alive configuration."""
@@ -508,7 +532,7 @@ class TestUvicornConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.uvicorn.with_timeout_keep_alive(30).done()
 
-        assert builder._uvicorn_config.timeout_keep_alive == 30
+        assert builder._api.uvicorn.timeout_keep_alive == 30
 
     def test_limit_concurrency(self, mock_fastapi, mock_lg):
         """Test limit_concurrency configuration."""
@@ -517,7 +541,7 @@ class TestUvicornConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.uvicorn.with_limit_concurrency(100).done()
 
-        assert builder._uvicorn_config.limit_concurrency == 100
+        assert builder._api.uvicorn.limit_concurrency == 100
 
     def test_limit_max_requests(self, mock_fastapi, mock_lg):
         """Test limit_max_requests configuration."""
@@ -526,7 +550,7 @@ class TestUvicornConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.uvicorn.with_limit_max_requests(1000).done()
 
-        assert builder._uvicorn_config.limit_max_requests == 1000
+        assert builder._api.uvicorn.limit_max_requests == 1000
 
     def test_backlog(self, mock_fastapi, mock_lg):
         """Test backlog configuration."""
@@ -535,7 +559,7 @@ class TestUvicornConfigurer:
         builder = ServerBuilder(mock_lg, "test-api")
         builder.uvicorn.with_backlog(4096).done()
 
-        assert builder._uvicorn_config.backlog == 4096
+        assert builder._api.uvicorn.backlog == 4096
 
 
 @pytest.mark.unit
@@ -651,7 +675,7 @@ class TestServerBuilderLifecycleCallbacks:
         assert len(builder._startup_callbacks) == 1
         assert len(builder._shutdown_callbacks) == 1
         assert len(builder._request_callbacks) == 1
-        assert builder._port == 8080
+        assert builder._api.port == 8080
 
     def test_configure_adapter_passes_lifecycle_callbacks(self, mock_fastapi, mock_lg):
         """Test _configure_adapter passes lifecycle callbacks to adapter."""

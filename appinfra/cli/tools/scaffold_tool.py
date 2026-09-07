@@ -434,7 +434,7 @@ class ScaffoldTool(Tool):
             f'description = "{name} - infra-based application"',
             'requires-python = ">=3.11"',
             "dependencies = [",
-            '    "infra",',
+            '    "appinfra",',
             "]",
             "",
             "# The base config ships inside the package.",

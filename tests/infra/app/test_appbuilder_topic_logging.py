@@ -4,7 +4,7 @@
 """
 Tests for AppBuilder integration with topic-based logging.
 
-This module tests that LoggingConfigurer methods properly integrate with
+This module tests that LoggingScope methods properly integrate with
 AppBuilder and LogLevelManager.
 """
 
@@ -257,7 +257,7 @@ class TestAppBuilderTopicLogging:
         builder = AppBuilder("test-app")
         configurer = builder.logging
 
-        # Each method should return LoggingConfigurer
+        # Each method should return the LoggingScope
         assert configurer.with_topic_level("/test/*", "debug") is configurer
         assert configurer.with_topic_levels({}) is configurer
         assert configurer.with_runtime_updates(True) is configurer

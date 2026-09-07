@@ -110,8 +110,8 @@ logger = (
     .with_level("info")
     .with_location(1)
     .with_micros(True)
-    .console_handler()
-    .file_handler(".logs/app.log")
+    .with_console_handler()
+    .with_file_handler(".logs/app.log")
     .build()
 )
 ```
