@@ -137,6 +137,12 @@ AppBuilder("myapp").cli(etc_dir=True, log_level=True, quiet=True).build()
 # Every logging flag at once
 AppBuilder("myapp").cli(log=True).build()
 
+# Every standard flag
+AppBuilder("myapp").cli.with_all_flags().done().build()
+
+# Every standard flag except one
+AppBuilder("myapp").cli.with_all_flags().without_flag("log_json").done().build()
+
 # Locked down: clear everything (help included), then name what stays
 AppBuilder("myapp").cli.without_flags().with_flags(etc_dir=True).done().build()
 ```
@@ -160,6 +166,11 @@ AppBuilder("myapp").cli.without_flags().with_flags(etc_dir=True).done().build()
 **Alias:** `log=True` enables the seven log-related flags (`log_level`, `log_location`,
 `log_micros`, `log_topic`, `log_colors`, `log_json`, `quiet`). An explicit key wins over the
 alias.
+
+**Bulk on/off:** `with_all_flags()` enables every standard flag (`help` included);
+`without_flags()` clears everything. `without_flag(name)` disables one flag (singular of
+`without_flags()`); the `log` alias is rejected — use `with_flags(log=False)` for bulk
+disable.
 
 **One flag with its presentation:** `with_flag(name, **argparse_kwargs)` enables one standard
 flag and overrides its argparse presentation (`help`, `metavar`, `choices`, `type`, `nargs`,

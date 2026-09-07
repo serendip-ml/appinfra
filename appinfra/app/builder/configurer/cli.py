@@ -102,10 +102,40 @@ class CliConfigurer:
             standard_args[name] = enabled
         return self
 
+    def with_all_flags(self) -> Self:
+        """Enable every standard flag, ``help`` included.
+
+        The counterpart of ``without_flags()``. An app that wants the
+        framework's full CLI surface calls this instead of naming every
+        flag in ``with_flags``.
+        """
+        for key in self._app_builder._standard_args:
+            self._app_builder._standard_args[key] = True
+        return self
+
     def without_flags(self) -> Self:
         """Disable every standard flag, ``help`` included."""
         for key in self._app_builder._standard_args:
             self._app_builder._standard_args[key] = False
+        return self
+
+    def without_flag(self, name: str) -> Self:
+        """Disable one standard flag.
+
+        The singular of ``without_flags``. Accepts ``help`` (as
+        ``without_flags`` does). Reject the ``log`` alias so bulk
+        disable stays a single spelling: ``with_flags(log=False)``.
+
+        Raises:
+            TypeError: for an unknown name.
+            ValueError: for the ``log`` alias.
+        """
+        _check_flag_name(name)
+        if name == "log":
+            raise ValueError(
+                "'log' is an alias; use with_flags(log=False) to bulk-disable"
+            )
+        self._app_builder._standard_args[name] = False
         return self
 
     def with_flag(self, name: str, **presentation: Any) -> Self:
