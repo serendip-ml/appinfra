@@ -785,9 +785,9 @@ class Config(DotDict):
 
         Example:
             # Install validation support: pip install infra[validation]
-            import logging
+            from appinfra.log import LoggingBuilder
 
-            lg = logging.getLogger(__name__)
+            lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
             config = Config('etc/infra.yaml')
             try:
                 validated = config.validate()

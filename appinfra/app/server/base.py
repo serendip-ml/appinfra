@@ -8,12 +8,12 @@ This module provides the enhanced server base class.
 """
 
 import contextlib
-import logging
 import threading
 from collections.abc import Callable, Generator
 from typing import Any
 
 from ... import time
+from ...log import Logger
 from ..tracing.traceable import Traceable
 from .handlers import Middleware
 from .routes import RouteManager
@@ -172,7 +172,7 @@ class Server(Traceable):
 @contextlib.contextmanager
 def lock_helper(
     lock: threading.Lock,
-    lg: logging.Logger,
+    lg: Logger,
     where: str | None = None,
     timeout: float | None = None,
 ) -> Generator[None, None, None]:

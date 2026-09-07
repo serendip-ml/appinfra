@@ -239,27 +239,24 @@ class PluginManager:
         for plugin_name in self._enabled_plugins:
             visit(plugin_name)
 
-    def cleanup_all(self, application: Any) -> None:
+    def cleanup_all(self, application: App) -> None:
         """
         Clean up all initialized plugins in reverse order.
 
         Cleanup happens in LIFO order (last initialized, first cleaned)
-        to respect dependency relationships.
+        to respect dependency relationships. A failing cleanup is reported
+        through the application logger and the remaining cleanups still run.
 
         Args:
             application: Application instance to pass to cleanup methods
         """
-        import logging
-
-        # Cleanup in reverse order
         for plugin_name in reversed(self._initialized_plugins):
             plugin = self._plugins.get(plugin_name)
             if plugin:
                 try:
                     plugin.cleanup(application)
                 except Exception as e:
-                    # Log error but continue with other cleanups
-                    logging.error(
+                    application.lg.error(
                         "plugin cleanup failed",
                         extra={"plugin": plugin_name, "exception": e},
                     )

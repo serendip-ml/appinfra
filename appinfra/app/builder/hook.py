@@ -8,7 +8,6 @@ This module provides a fluent API for managing application lifecycle hooks
 and event handling.
 """
 
-import logging
 from collections import defaultdict
 from collections.abc import Callable, Iterator
 from typing import Any, Self
@@ -55,9 +54,13 @@ class HookManager:
         self._hooks[event] = [hook for hook, _ in paired]
         self._hook_metadata[event] = [metadata for _, metadata in paired]
 
-    def trigger_hook(self, event: str, *args: Any, **kwargs: Any) -> Any:
+    def trigger_hook(self, event: str, *args: Any, **kwargs: Any) -> list[Any]:
         """
         Trigger all hooks for an event.
+
+        Every hook runs even if an earlier one fails. A failing hook's slot
+        in the results holds the exception it raised; the caller, which has
+        the logger, reports it.
 
         Args:
             event: Event name
@@ -65,7 +68,8 @@ class HookManager:
             **kwargs: Keyword arguments to pass to hooks
 
         Returns:
-            List of results from all hooks
+            One entry per hook that ran: its return value, or the exception
+            it raised
         """
         results = []
         hooks_to_remove = []
@@ -87,9 +91,7 @@ class HookManager:
                     hooks_to_remove.append(i)
 
             except Exception as e:
-                # Log error but continue with other hooks
-                logging.error(f"hook error in {event}", extra={"exception": e})
-                results.append(None)
+                results.append(e)
 
         # Remove hooks marked as once (both hook and metadata)
         for i in reversed(hooks_to_remove):
@@ -311,17 +313,11 @@ class BuiltinHooks:
 
     @staticmethod
     def log_error(context: HookContext) -> None:
-        """Log errors."""
+        """Log the context's error through the application logger."""
         if context.error:
-            if context.application and hasattr(context.application, "lg"):
-                context.application.lg.error(
-                    "error occurred", extra={"exception": context.error}
-                )
-            else:
-                # Fallback to root logger if app logger not available
-                import logging
-
-                logging.error("error occurred", extra={"exception": context.error})
+            context.application.lg.error(
+                "error occurred", extra={"exception": context.error}
+            )
 
     @staticmethod
     def validate_config(context: HookContext) -> None:

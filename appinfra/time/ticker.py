@@ -25,14 +25,14 @@ Key Features:
 - Status monitoring and introspection
 
 Example Usage:
-    import logging
+    from appinfra.log import LoggingBuilder
 
-    lg = logging.getLogger(__name__)
+    lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
 
     # Scheduled execution (every 5 seconds) with handler class
     class MyHandler(TickerHandler):
-        def __init__(self):
-            self.lg = logging.getLogger(__name__)
+        def __init__(self, lg):
+            self.lg = lg
 
         def ticker_start(self, *args, **kwargs):
             self.lg.info("Ticker started")
@@ -128,13 +128,11 @@ class TickerHandler:
     call these methods at appropriate times during its execution.
 
     Example:
-        import logging
-
         class DatabaseMonitor(TickerHandler):
-            def __init__(self, db_connection):
+            def __init__(self, lg, db_connection):
+                self.lg = lg
                 self.db = db_connection
                 self.check_count = 0
-                self.lg = logging.getLogger(__name__)
 
             def ticker_start(self, *args, **kwargs):
                 self.lg.info("Starting database monitoring")
@@ -249,15 +247,16 @@ class Ticker:
     one API pattern throughout its lifetime.
 
     Example:
-        import logging
         import threading
 
-        lg = logging.getLogger(__name__)
+        from appinfra.log import LoggingBuilder
+
+        lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
 
         # Scheduled execution every 10 seconds with handler
         class HealthChecker(TickerHandler):
-            def __init__(self):
-                self.lg = logging.getLogger(__name__)
+            def __init__(self, lg):
+                self.lg = lg
 
             def ticker_tick(self):
                 self.lg.info("Checking system health...")

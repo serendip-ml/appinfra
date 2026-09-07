@@ -11,11 +11,11 @@ is the ``.cli`` block's ``version`` flag; this block supplies its text.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Self, TypedDict, Unpack
 
+from ....log import Logger
 from ....version import BuildInfo, PackageVersionInfo, PackageVersionTracker
 from ..hook import HookContext, HookManager
 from .block import check_fields, close_on_error
@@ -40,7 +40,7 @@ def _format_modified(val: bool | None) -> str:
     return str(val)
 
 
-def _log_build_info(lg: logging.Logger, build_info: BuildInfo) -> None:
+def _log_build_info(lg: Logger, build_info: BuildInfo) -> None:
     """Log the app's own build info."""
     modified = build_info.modified
     extra: dict[str, object] = {
@@ -58,7 +58,7 @@ def _log_build_info(lg: logging.Logger, build_info: BuildInfo) -> None:
         lg.debug("build info", extra=extra)
 
 
-def _log_package_info(lg: logging.Logger, info: PackageVersionInfo) -> None:
+def _log_package_info(lg: Logger, info: PackageVersionInfo) -> None:
     """Log a tracked package's version info."""
     modified = info.modified
     extra: dict[str, object] = {

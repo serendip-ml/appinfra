@@ -12,7 +12,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any, cast
 
-from ...log import LogConfig, LogConfigError, LoggerFactory
+from ...log import LogConfig, LogConfigError, Logger, LoggerFactory
 from ...log.handler_factory import HandlerRegistry
 
 
@@ -157,7 +157,7 @@ def _build_config_overrides(
 
 def _create_logger_without_default_handlers(
     config_overrides: dict[str, Any],
-) -> tuple[logging.Logger, LogConfig]:
+) -> tuple[Logger, LogConfig]:
     """Create logger from config overrides with default handlers removed."""
     # Filter to valid LogConfig parameters
     valid_log_config_params = {
@@ -351,7 +351,7 @@ def setup_logging_from_config(
     config: Any,
     args: Any = None,
     **kwargs: Any,
-) -> tuple[logging.Logger, HandlerRegistry]:
+) -> tuple[Logger, HandlerRegistry]:
     """
     Set up logging from the provided configuration object with command-line overrides.
 

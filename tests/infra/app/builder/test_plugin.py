@@ -12,7 +12,7 @@ Tests key functionality including:
 - Dependency resolution
 """
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
@@ -782,16 +782,17 @@ class TestPluginManagerCleanup:
         builder = Mock(_open_block=None)
         manager.configure_all(builder)
 
-        # Should not raise
-        with patch("logging.error") as mock_log:
-            manager.cleanup_all(app)
+        manager.cleanup_all(app)
 
-            # Both plugins should be attempted
-            plugin_a.cleanup.assert_called_once()
-            plugin_b.cleanup.assert_called_once()
+        # Both plugins should be attempted
+        plugin_a.cleanup.assert_called_once()
+        plugin_b.cleanup.assert_called_once()
 
-            # Error should be logged
-            mock_log.assert_called_once()
+        # The failure is reported through the application logger
+        app.lg.error.assert_called_once()
+        extra = app.lg.error.call_args[1]["extra"]
+        assert extra["plugin"] == "PluginA"
+        assert isinstance(extra["exception"], RuntimeError)
 
     def test_cleanup_all_only_cleans_initialized(self):
         """Test cleanup_all only cleans up initialized plugins."""
