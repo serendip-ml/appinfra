@@ -230,10 +230,10 @@ try:
             ValidationError: If configuration is invalid
 
         Example:
-            import logging
+            from appinfra.log import LoggingBuilder
             from . import validate_config
 
-            lg = logging.getLogger(__name__)
+            lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
             config_data = {...}
             try:
                 validated = validate_config(config_data)

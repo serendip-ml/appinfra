@@ -11,7 +11,6 @@ application lifecycle including tool registration, argument parsing, and executi
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -337,7 +336,7 @@ class App(Traceable):
             help="output logs in JSON format",
         )
 
-    def setup_logging_from_config(self, config: Any) -> tuple[logging.Logger, Any]:
+    def setup_logging_from_config(self, config: Any) -> tuple[Logger, Any]:
         """
         Set up logging from the provided configuration object with command-line overrides.
 
@@ -578,13 +577,12 @@ class App(Traceable):
                 return self.lifecycle.shutdown(return_code)
             return 130
         except Exception as e:
+            # Before setup() has created the logger there is nothing to log
+            # through; the re-raised exception carries the traceback.
             if hasattr(self, "lifecycle") and self.lifecycle.logger:
                 self.lg.error("app exception", extra={"exception": e})
                 # Call shutdown on exception too for cleanup
                 self.lifecycle.shutdown(1)
-            else:
-                # Fallback to root logger if app logger not available
-                logging.error("app error", extra={"exception": e})
             raise  # Always re-raise to preserve stack trace
 
     def run(self) -> int:

@@ -41,11 +41,14 @@ simple, readable, and maintainable.
 import json
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 
-# Log directory for examples (hidden to keep project root clean)
-LOG_DIR = ".logs"
+# Log directory for the demos: a fresh temp directory, so nothing is written
+# into the checkout. Under `make examples.check` TMPDIR is the runner's
+# per-case scratch directory, removed after the run.
+LOG_DIR = tempfile.mkdtemp(prefix="logging-example-")
 
 # Allow running from a source checkout without installing the package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))

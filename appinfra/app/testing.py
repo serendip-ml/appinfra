@@ -44,8 +44,8 @@ class MockApp(Traceable):
         >>> tool.run()
 
     Example with custom logger:
-        >>> import logging
-        >>> logger = logging.getLogger('test')
+        >>> from appinfra.log import LoggingBuilder
+        >>> logger = LoggingBuilder("test").with_level("debug").build()
         >>> mock_app = MockApp(
         ...     args={'file': 'data.txt'},
         ...     logger=logger

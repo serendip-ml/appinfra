@@ -4,6 +4,7 @@
 # SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
 
 # ci-stop: 4
+# ci-requires: port:9001
 
 import json
 import sys

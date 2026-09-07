@@ -25,12 +25,18 @@ For API stability guarantees and deprecation policy, see
   `make test.*` targets. `run_pytest_serial` macro for custom targets that must stay in-process.
 - `make examples.check`: runs every script under `examples/` (or `<pkg>/examples/`) and
   fails on errors or timeouts. Per-file `# ci-run:` / `# ci-stop:` / `# ci-timeout:` /
-  `# ci-skip:` comments declare the cases. CI runs it in the container lane.
+  `# ci-skip:` comments declare the cases. Files run one per CPU (`--jobs`), each case
+  in a private `TMPDIR`, and results print in discovery order. CI runs it in the
+  container lane.
+- `INFRA_DEV_CHECK_EXAMPLES` Makefile variable (default `false`): run the examples as a
+  test subcheck of `make check`. `# ci-requires: pg` and `# ci-requires: port:N` headers
+  mark a file that needs Postgres or a free TCP port; when unavailable the file is skipped
+  with a warning instead of failing.
 - Faceted `AppBuilder`: `.cli` (standard flags, presentation, custom arguments), `.lifecycle`
-  (hooks), `.tools.with_main`, and a keyword form on every block; `.logging` and `.server` are
-  the standalone `LoggingBuilder` and FastAPI `ServerBuilder` bound to the app, so their whole
-  API is available there. One block is open at a time; a block left open fails `build()` with
-  the block name and the line that opened it. See [AppBuilder](appinfra/docs/api/app-builder.md).
+  (hooks), `.tools.with_main`, and a keyword form on every block; `.logging` is the standalone
+  `LoggingBuilder` bound to the app, so its whole API is available there. One block is open at
+  a time; a block left open fails `build()` with the block name and the line that opened it.
+  See [AppBuilder](appinfra/docs/api/app-builder.md).
 - `LoggingBuilder.with_topic_level` / `with_topic_levels`, `LoggerFactory.create_root(extra=)`,
   and a keyword form on `ServerBuilder.uvicorn`.
 - `Logger.set_extra(fields)` replaces a logger's pre-populated extra fields; a repeated
@@ -83,6 +89,9 @@ For API stability guarantees and deprecation policy, see
 - `AppBuilder.with_name`, `with_version`, `with_standard_args`, `with_standard_arg`,
   `without_standard_args`, `with_main_tool` and `.advanced`: the name is the constructor
   argument, the rest moved to the `.cli`, `.version`, `.tools` and `.lifecycle` blocks.
+- `ServerPlugin` and `ServeTool` from `appinfra.app.fastapi`: they took a `Server` built before
+  the app ran, so it never logged through the app's configured logging. Build the server inside
+  a tool's `run()` instead; see [FastAPI Server](appinfra/docs/api/fastapi.md).
 - `.logging.with_format` (nothing read the value), the app-side `ServerConfig` / `LoggingConfig`
   and `.server.with_middleware*` / `with_cors_origins` / `with_ssl` (never reached the app), and
   `ValidationBuilder` / `ValidationRule` (never applied).

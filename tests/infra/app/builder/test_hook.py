@@ -12,8 +12,7 @@ Tests key functionality including:
 - Factory functions
 """
 
-import logging
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
@@ -159,19 +158,15 @@ class TestHookManagerTriggerHook:
         assert results == ["normal"]
 
     def test_handles_hook_errors(self):
-        """Test handles errors and continues (lines 86-89)."""
+        """A failing hook's slot holds its exception; the remaining hooks run."""
         manager = HookManager()
-        error_hook = Mock(side_effect=ValueError("test error"))
-        good_hook = Mock(return_value="good")
-        manager.register_hook("startup", error_hook)
-        manager.register_hook("startup", good_hook)
+        error = ValueError("test error")
+        manager.register_hook("startup", Mock(side_effect=error))
+        manager.register_hook("startup", Mock(return_value="good"))
 
-        with patch("appinfra.app.builder.hook.logging") as mock_logging:
-            results = manager.trigger_hook("startup")
+        results = manager.trigger_hook("startup")
 
-        # Should continue and return None for failed hook
-        assert None in results
-        assert "good" in results
+        assert results == [error, "good"]
 
     def test_returns_empty_for_no_hooks(self):
         """Test returns empty list for event with no hooks."""
@@ -519,17 +514,20 @@ class TestBuiltinHooks:
 
         app.lg.error.assert_called_once()
 
-    def test_log_error_fallback_to_logging(self, caplog):
-        """Test log_error falls back to logging module (lines 270-274)."""
-        error = ValueError("test error")
-        context = HookContext(error=error)
+    def test_log_error_without_error_logs_nothing(self):
+        """A context without an error leaves the application logger alone."""
+        app = Mock()
+        context = HookContext(application=app)
 
-        with caplog.at_level(logging.ERROR):
-            BuiltinHooks.log_error(context)
+        BuiltinHooks.log_error(context)
 
-        # Should have logged to root logger
-        assert len(caplog.records) == 1
-        assert "error occurred" in caplog.text
+        app.lg.error.assert_not_called()
+
+    def test_log_error_without_application_does_not_raise(self):
+        """An error context with no application has no logger to use."""
+        context = HookContext(error=ValueError("test error"))
+
+        BuiltinHooks.log_error(context)
 
     def test_validate_config_passes(self):
         """Test validate_config passes with config (lines 276-282)."""

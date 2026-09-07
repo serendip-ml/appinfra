@@ -18,10 +18,10 @@ Security Notes:
 - Timeouts prevent infinite loops from malicious patterns
 
 Example Usage:
-    import logging
+    from .log import LoggingBuilder
     from .regex_utils import safe_compile, safe_match
 
-    lg = logging.getLogger(__name__)
+    lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
 
     # Compile user-provided pattern with timeout protection
     try:
@@ -178,8 +178,6 @@ def safe_match(
         RegexTimeoutError: If matching exceeds timeout
 
     Example:
-        >>> import logging
-        >>> lg = logging.getLogger(__name__)
         >>> safe_match(r"^test", "test string")
         <re.Match object; span=(0, 4), match='test'>
     """

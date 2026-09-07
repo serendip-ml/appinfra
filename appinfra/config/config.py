@@ -36,6 +36,7 @@ APPINFRA_TOOLING_ENV_VARS: frozenset[str] = frozenset(
         "INFRA_COMPOSE_CMD",
         "INFRA_CONTAINER_CMD",
         "INFRA_DEFAULT_CONFIG_FILE",
+        "INFRA_DEV_CHECK_EXAMPLES",
         "INFRA_DEV_CHECK_SCRIPT",
         "INFRA_DEV_CQ_EXCLUDE",
         "INFRA_DEV_CQ_SPDX",
@@ -785,9 +786,9 @@ class Config(DotDict):
 
         Example:
             # Install validation support: pip install infra[validation]
-            import logging
+            from appinfra.log import LoggingBuilder
 
-            lg = logging.getLogger(__name__)
+            lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
             config = Config('etc/infra.yaml')
             try:
                 validated = config.validate()

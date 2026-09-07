@@ -26,6 +26,7 @@ Requirements:
 """
 
 # ci-timeout: 20
+# ci-requires: pg
 
 import logging
 import sys

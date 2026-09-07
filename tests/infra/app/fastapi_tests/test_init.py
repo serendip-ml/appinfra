@@ -31,13 +31,6 @@ class TestFastAPIImports:
         # Should be available since FastAPI is installed
         assert ServerBuilder is not None
 
-    def test_server_plugin_available(self):
-        """Test ServerPlugin is importable."""
-        from appinfra.app.fastapi import ServerPlugin
-
-        # Should be available since FastAPI is installed
-        assert ServerPlugin is not None
-
     def test_ipc_channel_available(self):
         """Test IPCChannel is importable."""
         from appinfra.app.fastapi import IPCChannel
@@ -63,7 +56,6 @@ class TestFastAPIImports:
             "ApiConfig",
             "UvicornConfig",
             "IPCConfig",
-            "ServerPlugin",
         ]
 
         for name in expected:
@@ -103,16 +95,11 @@ class TestFastAPIStubs:
             def __init__(self, *args, **kwargs):
                 raise ImportError(_INSTALL_MSG)
 
-        class StubServerPlugin:
-            def __init__(self, *args, **kwargs):
-                raise ImportError(_INSTALL_MSG)
-
         # Test each stub raises ImportError with correct message
         for stub_class in [
             StubServerBuilder,
             StubServer,
             StubIPCChannel,
-            StubServerPlugin,
         ]:
             with pytest.raises(ImportError) as exc_info:
                 stub_class("test")
@@ -169,11 +156,6 @@ class IPCChannel:
     """Stub for IPCChannel when FastAPI is not installed."""
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         raise ImportError(_INSTALL_MSG)
-
-class ServerPlugin:
-    """Stub for ServerPlugin when FastAPI is not installed."""
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        raise ImportError(_INSTALL_MSG)
 '''
         # Execute the stub code in a namespace
         stub_namespace: dict = {}
@@ -195,12 +177,7 @@ class ServerPlugin:
             stub_namespace["IPCChannel"](None, None)
         assert "pip install appinfra[fastapi]" in str(exc_info.value)
 
-        with pytest.raises(ImportError) as exc_info:
-            stub_namespace["ServerPlugin"](None)
-        assert "pip install appinfra[fastapi]" in str(exc_info.value)
-
         # Verify docstrings exist
         assert "Stub" in stub_namespace["ServerBuilder"].__doc__
         assert "Stub" in stub_namespace["Server"].__doc__
         assert "Stub" in stub_namespace["IPCChannel"].__doc__
-        assert "Stub" in stub_namespace["ServerPlugin"].__doc__

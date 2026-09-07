@@ -378,7 +378,9 @@ These targets can be extended by defining them again in your Makefile:
 - `fmt::` - Add formatting steps
 - `lint::` - Add linting steps
 - `type::` - Add type checking steps
-- `examples.check::` - Add example checks (runs every script under `examples/`)
+- `examples.check::` - Add example checks (runs every script under `examples/`; a
+  `# ci-requires: pg` or `# ci-requires: port:N` header skips the file with a warning when
+  Postgres is unreachable or the port is in use)
 - `check::` - Add quality checks
 - `check.quick::` - Add quick checks
 
@@ -438,6 +440,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 | `INFRA_DEV_PKG_NAME` | `appinfra` | Package name for install, type, coverage |
 | `INFRA_DEV_CQ_STRICT` | `false` | Code quality: `true`=30-line, `false`=50-line |
 | `INFRA_DEV_DOCSTRING_THRESHOLD` | `80` | Docstring coverage threshold for `make check` (0 to disable) |
+| `INFRA_DEV_CHECK_EXAMPLES` | `false` | Run `examples.check` as a test subcheck of `make check` |
 | `INFRA_DEV_PROJECT_ROOT` | `$(CURDIR)` | Project root for check.sh |
 | `INFRA_DEV_INSTALL_EXTRAS` | (empty) | Optional extras for install (e.g., `ui,fastapi`) |
 | `INFRA_DEV_MYPY_FLAGS` | (empty) | Extra mypy flags (e.g., `--follow-imports=skip` for large deps) |

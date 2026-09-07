@@ -535,19 +535,16 @@ class TestMain:
             with pytest.raises(ValueError, match="test error"):
                 app.main()
 
-    def test_main_handles_exception_without_logger(self):
-        """Test main handles exception without initialized logger."""
+    def test_main_reraises_exception_before_logger_exists(self):
+        """A failure inside setup() propagates as is; no logger exists yet to report it."""
         app = App()
         app.lifecycle._logger = None
 
-        with (
-            patch.object(app, "setup", side_effect=ValueError("test error")),
-            patch("logging.error") as mock_log_error,
-        ):
-            with pytest.raises(ValueError):
+        with patch.object(app, "setup", side_effect=ValueError("test error")):
+            with pytest.raises(ValueError, match="test error"):
                 app.main()
 
-        mock_log_error.assert_called()
+        assert app.lifecycle.logger is None
 
     def test_bare_run_without_tools_reaches_run_no_tool(self):
         """A bare run of an app with no tools ends in run_no_tool, not a crash.

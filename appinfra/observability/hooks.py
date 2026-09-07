@@ -76,9 +76,9 @@ class ObservabilityHooks:
     requiring external observability frameworks.
 
     Example:
-        import logging
+        from appinfra.log import LoggingBuilder
 
-        lg = logging.getLogger(__name__)
+        lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
         hooks = ObservabilityHooks()
 
         # Register a callback for query events
@@ -124,9 +124,9 @@ class ObservabilityHooks:
             Decorator function
 
         Example:
-            import logging
+            from appinfra.log import LoggingBuilder
 
-            lg = logging.getLogger(__name__)
+            lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
 
             @hooks.on(HookEvent.QUERY_START)
             def my_callback(context: HookContext):
@@ -147,9 +147,9 @@ class ObservabilityHooks:
             callback: Callback function that receives HookContext
 
         Example:
-            import logging
+            from appinfra.log import LoggingBuilder
 
-            lg = logging.getLogger(__name__)
+            lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
             hooks.register_global(lambda ctx: lg.info(f"Event: {ctx.event}"))
         """
         self._global_hooks.append(callback)

@@ -6,7 +6,6 @@ hook, and builds an app from four of them.
 ```bash
 python example_plugins.py --help     # tools contributed by the plugins
 python example_plugins.py metrics    # run one of them
-python example_plugins.py serve      # HTTP server with the plugins' routes and middleware
 ```
 
 ## What a plugin can contribute
@@ -15,25 +14,16 @@ python example_plugins.py serve      # HTTP server with the plugins' routes and 
 |---------------------|--------------------------------------------------------------------|
 | `builder.tools`     | `with_tool_builder(ToolBuilder("migrate")...)`                     |
 | `builder.lifecycle` | `with_hook_builder(HookBuilder().on_startup(...).on_shutdown(...))` |
-| `builder.server`    | `routes.with_route("/metrics", handler)`, `routes.with_middleware(cls, **options)` |
 
-Routes and middleware go on the app's HTTP server, so the app must declare `.server`; the
-server is built after every plugin has configured it, and `serve` starts it. A plugin that
-configures `.server` on an app without one fails at `build()`. Inside `configure()` a block is
-closed with `done()` like anywhere else; a plugin that leaves one open fails at `build()` with
-the plugin name and the line that opened it.
+Inside `configure()` a block is closed with `done()` like anywhere else; a plugin that leaves one
+open fails at `build()` with the plugin name and the line that opened it.
 
 ## The plugins
 
 - **DatabasePlugin** - `migrate` and `db-status` tools; connect/disconnect lifecycle hooks.
-- **AuthPlugin** - `login` and `logout` tools; `BearerAuthMiddleware`, which rejects `/api/*`
-  requests without an `Authorization` header.
+- **AuthPlugin** - `login` and `logout` tools.
 - **LoggingPlugin** - `log-level` tool; startup and error hooks.
-- **MetricsPlugin** - `metrics` tool; a `/metrics` route; `RequestCounterMiddleware`, which counts
-  requests per path into the dict the route serves.
-
-The middleware classes are plain ASGI callables, no framework base class: the server adds them
-with `add_middleware(cls, **options)`, which instantiates `cls(app, **options)`.
+- **MetricsPlugin** - `metrics` tool reporting the counts it collects.
 
 ## Building the app
 
@@ -41,7 +31,6 @@ with `add_middleware(cls, **options)`, which instantiates `cls(app, **options)`.
 app = (
     AppBuilder("plugins-demo")
     .cli(log_level=True)
-    .server(port=8090, title="Plugins demo")
     .tools(
         plugins=[
             DatabasePlugin(),

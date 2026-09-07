@@ -570,6 +570,26 @@ class TestShutdownPhases:
         # Should log error
         manager._lifecycle_logger.error.assert_called_once()
 
+    def test_failed_hooks_are_reported_by_the_lifecycle(self):
+        """trigger_hook returns each failure in place; the lifecycle logs them."""
+        app = Mock()
+        manager = LifecycleManager(app)
+        config = DotDict(logging=DotDict(level="info", location=0, micros=False))
+        manager.initialize(config)
+
+        failure = RuntimeError("hook failed")
+        hook_manager = Mock()
+        hook_manager.has_hooks = Mock(return_value=True)
+        hook_manager.trigger_hook = Mock(return_value=["ok", failure, None])
+        manager.register_hook_manager(hook_manager)
+        manager._lifecycle_logger = Mock()
+
+        manager._shutdown_hooks()
+
+        manager._lifecycle_logger.error.assert_called_once()
+        extra = manager._lifecycle_logger.error.call_args[1]["extra"]
+        assert extra == {"event": "shutdown", "exception": failure}
+
     def test_shutdown_plugins_called(self):
         """Test shutdown calls plugin cleanup."""
         app = Mock()

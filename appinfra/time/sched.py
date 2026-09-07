@@ -23,9 +23,9 @@ Key Features:
 - Status monitoring and introspection
 
 Example Usage:
-    import logging
+    from appinfra.log import LoggingBuilder
 
-    lg = logging.getLogger(__name__)
+    lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
 
     # Daily at 2:30 PM
     sched = Sched(lg, Period.DAILY, "14:30")
