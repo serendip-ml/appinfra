@@ -65,7 +65,7 @@ def quick_console_logger(name: str, config: dict[str, Any] | None = None) -> Log
     if config is None:
         config = {"level": "info"}
 
-    return LoggingBuilder(name).with_config(config).with_console_handler().build()
+    return LoggingBuilder(name).with_options(config).with_console_handler().build()
 
 
 def quick_file_logger(
@@ -89,7 +89,7 @@ def quick_file_logger(
     if config is None:
         config = {"level": "info"}
 
-    return LoggingBuilder(name).with_config(config).with_file_handler(filename).build()
+    return LoggingBuilder(name).with_options(config).with_file_handler(filename).build()
 
 
 def quick_both_logger(
@@ -115,7 +115,7 @@ def quick_both_logger(
 
     return (
         LoggingBuilder(name)
-        .with_config(config)
+        .with_options(config)
         .with_console_handler()
         .with_file_handler(filename)
         .build()
@@ -148,7 +148,7 @@ def quick_console_with_colors(
     config_with_colors = config.copy()
     config_with_colors["colors"] = colors_enabled
 
-    return ConsoleLoggingBuilder(name).with_config(config_with_colors).build()
+    return ConsoleLoggingBuilder(name).with_options(config_with_colors).build()
 
 
 # File quick functions from file.py
@@ -181,7 +181,7 @@ def quick_file_with_rotation(
 
     return (
         FileLoggingBuilder(name, filename)
-        .with_config(config)
+        .with_options(config)
         .with_rotation(max_bytes=max_bytes, backup_count=backup_count)
         .build()
     )
@@ -214,7 +214,7 @@ def quick_daily_file_logger(
 
     return (
         FileLoggingBuilder(name, filename)
-        .with_config(config)
+        .with_options(config)
         .daily_rotation(backup_count=backup_count)
         .build()
     )
@@ -244,7 +244,7 @@ def quick_console_and_file(
 
     return (
         LoggingBuilder(name)
-        .with_config(config)
+        .with_options(config)
         .with_console_handler()
         .with_file_handler(filename)
         .build()
@@ -281,7 +281,7 @@ def quick_audit_logger(
 
     return (
         DatabaseLoggingBuilder(name)
-        .with_config(config)
+        .with_options(config)
         .with_audit_table(db_interface)
         .build()
     )
@@ -315,7 +315,7 @@ def quick_error_logger(
 
     return (
         DatabaseLoggingBuilder(name)
-        .with_config(config)
+        .with_options(config)
         .with_error_table(db_interface)
         .build()
     )
@@ -358,7 +358,7 @@ def quick_custom_database_logger(
 
     return (
         DatabaseLoggingBuilder(name)
-        .with_config(config)
+        .with_options(config)
         .with_custom_table(table_name, db_interface, data_mapper)  # type: ignore[arg-type]
         .build()
     )
@@ -383,7 +383,7 @@ def quick_json_console(name: str, config: dict[str, Any] | None = None) -> Logge
     if config is None:
         config = {"level": "info"}
 
-    return JSONLoggingBuilder(name).with_config(config).with_json_console(True).build()
+    return JSONLoggingBuilder(name).with_options(config).with_json_console(True).build()
 
 
 def quick_json_file(
@@ -411,7 +411,7 @@ def quick_json_file(
     if config is None:
         config = {"level": "info"}
 
-    builder = JSONLoggingBuilder(name).with_config(config).with_json_file(filename)
+    builder = JSONLoggingBuilder(name).with_options(config).with_json_file(filename)
 
     if pretty_print:
         builder = builder.with_pretty_print(True)
@@ -446,7 +446,7 @@ def quick_both_outputs(
 
     builder = (
         JSONLoggingBuilder(name)
-        .with_config(config)
+        .with_options(config)
         .with_json_console(True)
         .with_json_file(filename)
     )

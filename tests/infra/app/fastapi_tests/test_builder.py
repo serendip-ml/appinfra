@@ -431,6 +431,37 @@ class TestUvicornConfigurer:
 
         assert builder._uvicorn_config.workers == 4
 
+    def test_keyword_form_sets_fields_and_returns_parent(self, mock_fastapi, mock_lg):
+        """Calling the block with keywords sets fields and returns the ServerBuilder."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        builder = ServerBuilder(mock_lg, "test-api")
+        result = builder.uvicorn(workers=4, access_log=True, log_level="debug")
+
+        assert result is builder
+        assert builder._uvicorn_config.workers == 4
+        assert builder._uvicorn_config.access_log is True
+        assert builder._uvicorn_config.log_level == "debug"
+
+    def test_keyword_form_rejects_unknown_field(self, mock_fastapi, mock_lg):
+        """A keyword that is not a UvicornConfig field is a TypeError."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        builder = ServerBuilder(mock_lg, "test-api")
+
+        with pytest.raises(TypeError, match="unknown uvicorn field"):
+            builder.uvicorn(threads=4)  # type: ignore[call-arg]
+
+    def test_keyword_fields_match_uvicorn_config(self):
+        """UvicornFields keys equal UvicornConfig's fields, so the two cannot drift."""
+        from dataclasses import fields
+
+        from appinfra.app.fastapi.builder.uvicorn import UvicornFields
+
+        assert set(UvicornFields.__annotations__) == {
+            f.name for f in fields(UvicornConfig)
+        }
+
     def test_log_level_configuration(self, mock_fastapi, mock_lg):
         """Test log level configuration."""
         from appinfra.app.fastapi.builder.server import ServerBuilder

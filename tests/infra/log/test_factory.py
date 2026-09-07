@@ -75,6 +75,15 @@ class TestCreateRoot:
         # Cleanup
         logger.handlers.clear()
 
+    def test_create_root_with_extra(self, log_config):
+        """create_root forwards pre-populated extra fields to the logger."""
+        logger = LoggerFactory.create_root(log_config, extra={"service": "api"})
+
+        assert logger._extra == {"service": "api"}
+
+        # Cleanup
+        logger.handlers.clear()
+
 
 # =============================================================================
 # Test logger already exists branch - Lines 64-66

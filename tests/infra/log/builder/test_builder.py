@@ -15,7 +15,7 @@ Tests key functionality including:
 import logging
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -293,16 +293,16 @@ class TestCreateLoggerFunction:
 
 
 # =============================================================================
-# Test with_config Method
+# Test with_options Method
 # =============================================================================
 
 
 @pytest.mark.unit
-class TestWithConfig:
-    """Test with_config method."""
+class TestWithOptions:
+    """Test with_options method."""
 
-    def test_with_config_full_dict(self):
-        """Test with_config with all parameters."""
+    def test_with_options_full_dict(self):
+        """Test with_options with all parameters."""
         builder = LoggingBuilder("test")
         config = {
             "level": "error",
@@ -311,7 +311,7 @@ class TestWithConfig:
             "colors": False,
         }
 
-        result = builder.with_config(config)
+        result = builder.with_options(config)
 
         assert result is builder
         assert builder._level == "error"
@@ -319,10 +319,10 @@ class TestWithConfig:
         assert builder._micros is True
         assert builder._colors is False
 
-    def test_with_config_partial_dict(self):
-        """Test with_config with partial parameters."""
+    def test_with_options_partial_dict(self):
+        """Test with_options with partial parameters."""
         builder = LoggingBuilder("test")
-        builder.with_config({"level": "warning", "micros": True})
+        builder.with_options({"level": "warning", "micros": True})
 
         assert builder._level == "warning"
         assert builder._micros is True
@@ -330,10 +330,10 @@ class TestWithConfig:
         assert builder._location == 0
         assert builder._colors is True
 
-    def test_with_config_empty_dict(self):
-        """Test with_config with empty dict does nothing."""
+    def test_with_options_empty_dict(self):
+        """Test with_options with empty dict does nothing."""
         builder = LoggingBuilder("test")
-        builder.with_config({})
+        builder.with_options({})
 
         # All defaults
         assert builder._level == "info"
@@ -341,8 +341,8 @@ class TestWithConfig:
         assert builder._micros is False
         assert builder._colors is True
 
-    def test_with_config_includes_location_color(self):
-        """Test with_config with location_color parameter."""
+    def test_with_options_includes_location_color(self):
+        """Test with_options with location_color parameter."""
         from appinfra.log.colors import ColorManager
 
         builder = LoggingBuilder("test")
@@ -352,10 +352,92 @@ class TestWithConfig:
             "location_color": ColorManager.CYAN,
         }
 
-        result = builder.with_config(config)
+        result = builder.with_options(config)
 
         assert result is builder
         assert builder._location_color == ColorManager.CYAN
+
+
+# =============================================================================
+# Test explicit-option tracking
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestExplicitTracking:
+    """Options set through the API are recorded by name in ``_explicit``."""
+
+    def test_fresh_builder_has_no_explicit_options(self):
+        """Nothing is explicit until a setter runs."""
+        assert LoggingBuilder("test")._explicit == set()
+
+    def test_setters_record_their_option(self):
+        """Each display-option setter records its own key."""
+        builder = (
+            LoggingBuilder("test")
+            .with_level("debug")
+            .with_location(2)
+            .with_micros()
+            .with_colors(False)
+            .with_location_color("cyan")
+        )
+
+        assert builder._explicit == {
+            "level",
+            "location",
+            "micros",
+            "colors",
+            "location_color",
+        }
+
+    def test_with_options_records_only_given_keys(self):
+        """with_options marks exactly the keys present in the mapping."""
+        builder = LoggingBuilder("test").with_options(
+            {"level": "warning", "micros": True}
+        )
+
+        assert builder._explicit == {"level", "micros"}
+
+    def test_handlers_and_extra_are_not_options(self):
+        """Handlers and extra fields are separate state, not display options."""
+        builder = (
+            LoggingBuilder("test").with_console_handler().with_extra(service="api")
+        )
+
+        assert builder._explicit == set()
+
+
+# =============================================================================
+# Test topic levels
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestTopicLevels:
+    """with_topic_level / with_topic_levels register API-priority rules."""
+
+    def test_with_topic_level_registers_rule(self):
+        """A single pattern goes to the level manager at API priority."""
+        with patch("appinfra.log.level_manager.LogLevelManager.get_instance") as get:
+            builder = LoggingBuilder("test")
+            result = builder.with_topic_level("/infra/db/*", "debug")
+
+        assert result is builder
+        get.return_value.add_rule.assert_called_once_with(
+            "/infra/db/*", "debug", source="api", priority=10
+        )
+
+    def test_with_topic_levels_registers_rules(self):
+        """A mapping goes to the level manager in one call."""
+        levels = {"/a/*": "debug", "/b/**": "warning"}
+
+        with patch("appinfra.log.level_manager.LogLevelManager.get_instance") as get:
+            result = LoggingBuilder("test").with_topic_levels(levels)
+
+        assert isinstance(result, LoggingBuilder)
+        get.return_value.add_rules_from_dict.assert_called_once_with(
+            levels, source="api", priority=10
+        )
 
 
 # =============================================================================

@@ -5,12 +5,30 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import fields
+from typing import TYPE_CHECKING, TypedDict, Unpack
 
 from ..config.uvicorn import UvicornConfig
 
 if TYPE_CHECKING:
     from .server import ServerBuilder
+
+
+class UvicornFields(TypedDict, total=False):
+    """Keyword form of the uvicorn block; keys mirror ``UvicornConfig``."""
+
+    workers: int
+    timeout_keep_alive: int
+    limit_concurrency: int | None
+    limit_max_requests: int | None
+    backlog: int
+    log_level: str
+    access_log: bool
+    ssl_keyfile: str | None
+    ssl_certfile: str | None
+
+
+_UVICORN_KEYS = frozenset(f.name for f in fields(UvicornConfig))
 
 
 class UvicornConfigurer:
@@ -20,6 +38,7 @@ class UvicornConfigurer:
     Follows appinfra configurer pattern:
     - with_*() methods return self for chaining
     - done() returns parent builder
+    - calling the block with keywords sets fields and returns the parent
 
     Example:
         server = (ServerBuilder("myapi")
@@ -29,6 +48,8 @@ class UvicornConfigurer:
                 .with_access_log()
                 .done()
             .build())
+
+        server = ServerBuilder("myapi").uvicorn(workers=4, access_log=True).build()
     """
 
     def __init__(self, parent: ServerBuilder) -> None:
@@ -96,3 +117,16 @@ class UvicornConfigurer:
         """
         self._parent._uvicorn_config = self._config
         return self._parent
+
+    def __call__(self, **fields: Unpack[UvicornFields]) -> ServerBuilder:
+        """Keyword form of the block; sets ``UvicornConfig`` fields and returns the parent.
+
+        Raises:
+            TypeError: for a keyword that is not a ``UvicornConfig`` field.
+        """
+        unknown = set(fields) - _UVICORN_KEYS
+        if unknown:
+            raise TypeError(f"unknown uvicorn field(s): {', '.join(sorted(unknown))}")
+        for key, value in fields.items():
+            setattr(self._config, key, value)
+        return self.done()

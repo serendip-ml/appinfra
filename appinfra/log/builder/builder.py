@@ -90,6 +90,11 @@ class LoggingBuilder(LoggingBuilderInterface):
         # Extra fields to pre-populate in log records
         self._extra: dict[str, Any] | collections.OrderedDict = {}
 
+        # Display options set explicitly through the API, by name. A composing
+        # builder (the AppBuilder logging scope) forwards only these, so an
+        # untouched option keeps whatever the config file says.
+        self._explicit: set[str] = set()
+
     def with_level(self, level: str | int) -> Self:
         """
         Set the log level.
@@ -101,6 +106,7 @@ class LoggingBuilder(LoggingBuilderInterface):
             Self for method chaining
         """
         self._level = level
+        self._explicit.add("level")
         return self
 
     def with_location(self, location: bool | int) -> Self:
@@ -114,6 +120,7 @@ class LoggingBuilder(LoggingBuilderInterface):
             Self for method chaining
         """
         self._location = location
+        self._explicit.add("location")
         return self
 
     def with_micros(self, micros: bool = True) -> Self:
@@ -127,6 +134,7 @@ class LoggingBuilder(LoggingBuilderInterface):
             Self for method chaining
         """
         self._micros = micros
+        self._explicit.add("micros")
         return self
 
     def with_colors(self, enabled: bool = True) -> Self:
@@ -140,6 +148,7 @@ class LoggingBuilder(LoggingBuilderInterface):
             Self for method chaining
         """
         self._colors = enabled
+        self._explicit.add("colors")
         return self
 
     def with_location_color(self, color: str) -> Self:
@@ -162,14 +171,55 @@ class LoggingBuilder(LoggingBuilderInterface):
                 .build())
         """
         self._location_color = color
+        self._explicit.add("location_color")
         return self
 
-    def with_config(self, config: dict[str, Any]) -> Self:
+    def with_topic_level(self, pattern: str, level: str) -> Self:
         """
-        Set multiple configuration parameters at once.
+        Set the log level for a topic pattern.
+
+        Patterns are glob-style: ``*`` matches one path segment, ``**`` any
+        depth, and an exact path matches only itself. Rules added through the
+        API take priority 10, above CLI and YAML rules, and are registered
+        immediately on the process-wide ``LogLevelManager``.
 
         Args:
-            config: Configuration dictionary with keys:
+            pattern: Topic pattern (must start with '/')
+            level: Log level (trace, debug, info, warning, error, critical)
+
+        Returns:
+            Self for method chaining
+        """
+        from ..level_manager import LogLevelManager
+
+        manager = LogLevelManager.get_instance()
+        manager.add_rule(pattern, level, source="api", priority=10)
+        return self
+
+    def with_topic_levels(self, levels: dict[str, str]) -> Self:
+        """
+        Set log levels for several topic patterns at once.
+
+        See ``with_topic_level`` for pattern syntax and priority.
+
+        Args:
+            levels: Mapping of topic pattern to level
+
+        Returns:
+            Self for method chaining
+        """
+        from ..level_manager import LogLevelManager
+
+        manager = LogLevelManager.get_instance()
+        manager.add_rules_from_dict(levels, source="api", priority=10)
+        return self
+
+    def with_options(self, options: dict[str, Any]) -> Self:
+        """
+        Set several display options at once.
+
+        Args:
+            options: Mapping with any of the keys:
                 - level: Log level (string name, numeric value, or False to disable logging)
                 - location: Location display level (bool or int)
                 - micros: Whether to show microsecond precision
@@ -179,16 +229,10 @@ class LoggingBuilder(LoggingBuilderInterface):
         Returns:
             Self for method chaining
         """
-        if "level" in config:
-            self._level = config["level"]
-        if "location" in config:
-            self._location = config["location"]
-        if "micros" in config:
-            self._micros = config["micros"]
-        if "colors" in config:
-            self._colors = config["colors"]
-        if "location_color" in config:
-            self._location_color = config["location_color"]
+        for key in ("level", "location", "micros", "colors", "location_color"):
+            if key in options:
+                setattr(self, f"_{key}", options[key])
+                self._explicit.add(key)
         return self
 
     def with_extra(self, **kwargs: Any) -> Self:

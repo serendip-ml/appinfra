@@ -105,6 +105,16 @@ def _add_optional_overrides(
         overrides["log_json"] = log_json
 
 
+def _add_extra_override(overrides: dict[str, Any], infra_config: Any) -> None:
+    """Carry ``logging.extra`` (pre-populated record fields) to the root logger."""
+    if not hasattr(infra_config, "logging"):
+        return
+    extra = getattr(infra_config.logging, "extra", None)
+    if not extra:
+        return
+    overrides["extra"] = dict(extra.to_dict() if hasattr(extra, "to_dict") else extra)
+
+
 def _build_config_overrides(
     args_dict: dict[str, Any] | None, infra_config: Any, **kwargs: Any
 ) -> dict[str, Any]:
@@ -127,6 +137,7 @@ def _build_config_overrides(
     }
 
     _add_optional_overrides(config_overrides, args_dict, infra_config)
+    _add_extra_override(config_overrides, infra_config)
 
     # Apply kwargs overrides (highest precedence)
     valid_keys = {"level", "location", "micros", "colors", "location_color"}
@@ -158,7 +169,7 @@ def _create_logger_without_default_handlers(
 
     # Create logger and remove default handler
     # The factory sets up the holder on the logger for hot-reload support
-    logger = LoggerFactory.create_root(log_config)
+    logger = LoggerFactory.create_root(log_config, extra=config_overrides.get("extra"))
     if logger.handlers:
         logger.handlers.clear()
 

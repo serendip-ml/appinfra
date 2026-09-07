@@ -125,6 +125,17 @@ class TestConfigOverrides:
 
         assert logger is not None
 
+    def test_extra_from_config_reaches_root_logger(self):
+        """logging.extra pre-populates every record of the root logger."""
+        logging.root.manager.loggerDict.pop("/", None)
+        config = DotDict(
+            logging=DotDict(level="info", extra=DotDict(service="api", version="1.0"))
+        )
+
+        logger, _ = setup_logging_from_config(config, {"log_level": "info"})
+
+        assert logger._extra == {"service": "api", "version": "1.0"}
+
     def test_kwargs_overrides(self):
         """Test kwargs overrides (lines 119-120)."""
         config = DotDict(
