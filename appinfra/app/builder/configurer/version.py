@@ -14,10 +14,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Self, TypedDict, Unpack
+from typing import TYPE_CHECKING, Self, TypedDict, Unpack
+
+from ..hook import HookManager
+from .block import check_fields
 
 if TYPE_CHECKING:
-    from ....version import BuildInfo, PackageVersionInfo
+    from ....version import BuildInfo, PackageVersionInfo, PackageVersionTracker
     from ..app import AppBuilder
 
 
@@ -74,8 +77,34 @@ def _log_package_info(lg: logging.Logger, info: PackageVersionInfo) -> None:
         lg.debug("package", extra=extra)
 
 
+def register_startup_hook(
+    hooks: HookManager,
+    tracker: PackageVersionTracker | None,
+    build_info: BuildInfo | None,
+) -> None:
+    """Register the startup hook that logs build info and tracked packages."""
+    from ..hook import HookContext
+
+    def log_versions(context: HookContext) -> None:
+        if not hasattr(context.application, "lg"):
+            return
+
+        if build_info:
+            _log_build_info(context.application.lg, build_info)
+
+        if tracker and len(tracker) > 0:
+            for info in tracker.get_all().values():
+                _log_package_info(context.application.lg, info)
+
+    hooks.register_hook("startup", log_versions, priority=90)
+
+
 class VersionConfigurer:
     """Version block: semver, build info, tracked packages, startup logging.
+
+    Every setter writes through to the AppBuilder, so the block can be
+    opened more than once and the packages accumulate. The AppBuilder
+    creates the tracker and registers the startup hook at ``build()``.
 
     Chained::
 
@@ -86,12 +115,11 @@ class VersionConfigurer:
         AppBuilder("myapp").version(semver="1.0.0", build_info=True, package="mylib")
     """
 
+    block = "version"
+
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
         self._app_builder = app_builder
-        self._packages: list[str] = []
-        self._build_info: BuildInfo | None = None
-        self._log_on_startup = True
 
     def with_semver(self, version: str) -> Self:
         """Set the application version string (e.g., '1.0.0')."""
@@ -118,7 +146,7 @@ class VersionConfigurer:
         elif isinstance(path, str):
             path = Path(path)
 
-        self._build_info = BuildInfo.from_path(path)
+        self._app_builder._build_info = BuildInfo.from_path(path)
         return self
 
     def _find_build_info_path(self) -> Path:
@@ -139,58 +167,27 @@ class VersionConfigurer:
 
     def with_package(self, name: str) -> Self:
         """Track a specific package by distribution name."""
-        self._packages.append(name)
+        self._app_builder._version_packages.append(name)
         return self
 
     def with_startup_log(self) -> Self:
         """Enable startup logging of package versions (default)."""
-        self._log_on_startup = True
+        self._app_builder._version_startup_log = True
         return self
 
     def without_startup_log(self) -> Self:
         """Disable startup logging of package versions."""
-        self._log_on_startup = False
+        self._app_builder._version_startup_log = False
         return self
 
     def done(self) -> AppBuilder:
-        """Finish version configuration and return to main builder."""
-        from ....version import PackageVersionTracker
-
-        tracker: PackageVersionTracker | None = None
-        if self._packages:
-            tracker = PackageVersionTracker()
-            tracker.track(*self._packages)
-            self._app_builder._version_tracker = tracker
-
-        if self._build_info is not None:
-            self._app_builder._build_info = self._build_info
-
-        if self._log_on_startup and (self._build_info or tracker):
-            self._register_startup_hook(tracker, self._build_info)
-
+        """Return to the AppBuilder."""
+        self._app_builder._close(self)
         return self._app_builder
-
-    def _register_startup_hook(
-        self, tracker: Any, build_info: BuildInfo | None
-    ) -> None:
-        """Register a startup hook to log version info."""
-        from ..hook import HookContext
-
-        def log_versions(context: HookContext) -> None:
-            if not hasattr(context.application, "lg"):
-                return
-
-            if build_info:
-                _log_build_info(context.application.lg, build_info)
-
-            if tracker and len(tracker) > 0:
-                for info in tracker.get_all().values():
-                    _log_package_info(context.application.lg, info)
-
-        self._app_builder._hooks.register_hook("startup", log_versions, priority=90)
 
     def __call__(self, **fields: Unpack[VersionFields]) -> AppBuilder:
         """Keyword form of the block; returns the AppBuilder."""
+        check_fields("version", fields, VersionFields.__annotations__)
         if "semver" in fields:
             self.with_semver(fields["semver"])
         build_info = fields.get("build_info")

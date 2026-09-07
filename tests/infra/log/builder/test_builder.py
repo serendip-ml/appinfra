@@ -341,6 +341,13 @@ class TestWithOptions:
         assert builder._micros is False
         assert builder._colors is True
 
+    def test_with_options_rejects_none(self):
+        """None is not a value; the key must be left out instead."""
+        builder = LoggingBuilder("test")
+
+        with pytest.raises(TypeError, match="micros cannot be None"):
+            builder.with_options({"micros": None})
+
     def test_with_options_includes_location_color(self):
         """Test with_options with location_color parameter."""
         from appinfra.log.colors import ColorManager

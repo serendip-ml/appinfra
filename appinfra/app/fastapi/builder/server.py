@@ -142,37 +142,37 @@ class ServerBuilder:
 
     # Direct configuration methods
 
-    def with_host(self, host: str) -> ServerBuilder:
+    def with_host(self, host: str) -> Self:
         """Set the bind address (default: "0.0.0.0")."""
         self._host = host
         return self
 
-    def with_port(self, port: int) -> ServerBuilder:
+    def with_port(self, port: int) -> Self:
         """Set the bind port (default: 8000)."""
         self._port = port
         return self
 
-    def with_title(self, title: str) -> ServerBuilder:
+    def with_title(self, title: str) -> Self:
         """Set API title for OpenAPI docs."""
         self._title = title
         return self
 
-    def with_description(self, description: str) -> ServerBuilder:
+    def with_description(self, description: str) -> Self:
         """Set API description for OpenAPI docs."""
         self._description = description
         return self
 
-    def with_version(self, version: str) -> ServerBuilder:
+    def with_version(self, version: str) -> Self:
         """Set API version."""
         self._version = version
         return self
 
-    def with_timeout(self, timeout: float) -> ServerBuilder:
+    def with_timeout(self, timeout: float) -> Self:
         """Set default response timeout in seconds."""
         self._response_timeout = timeout
         return self
 
-    def with_config(self, config: ApiConfig) -> ServerBuilder:
+    def with_config(self, config: ApiConfig) -> Self:
         """
         Set entire API configuration at once.
 
@@ -202,7 +202,7 @@ class ServerBuilder:
         callback: Callable[[FastAPI], Awaitable[None]] | Lazy,
         name: str | None = None,
         after_lifespan: bool = True,
-    ) -> ServerBuilder:
+    ) -> Self:
         """
         Register a startup callback.
 
@@ -232,7 +232,7 @@ class ServerBuilder:
         self,
         callback: Callable[[FastAPI], Awaitable[None]] | Lazy,
         name: str | None = None,
-    ) -> ServerBuilder:
+    ) -> Self:
         """
         Register a shutdown callback.
 
@@ -257,7 +257,7 @@ class ServerBuilder:
     def with_lifespan(
         self,
         lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | Lazy,
-    ) -> ServerBuilder:
+    ) -> Self:
         """
         Register a lifespan context manager.
 
@@ -285,7 +285,7 @@ class ServerBuilder:
         self,
         callback: Callable[[Request], Awaitable[None]] | Lazy,
         name: str | None = None,
-    ) -> ServerBuilder:
+    ) -> Self:
         """
         Register a request callback.
 
@@ -316,7 +316,7 @@ class ServerBuilder:
         self,
         callback: Callable[[Request, Response], Awaitable[Response]] | Lazy,
         name: str | None = None,
-    ) -> ServerBuilder:
+    ) -> Self:
         """
         Register a response callback.
 
@@ -344,7 +344,7 @@ class ServerBuilder:
         self,
         callback: Callable[[Request, Exception], Awaitable[None]] | Lazy,
         name: str | None = None,
-    ) -> ServerBuilder:
+    ) -> Self:
         """
         Register an exception callback.
 
@@ -375,7 +375,7 @@ class ServerBuilder:
         limiter: RateLimiter | Lazy,
         exempt_paths: list[str] | None = None,
         cleanup_interval: float = 60.0,
-    ) -> ServerBuilder:
+    ) -> Self:
         """Configure HTTP rate limiting.
 
         The limiter controls both the algorithm (token bucket, sliding window,

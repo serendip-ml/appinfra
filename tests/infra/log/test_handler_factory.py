@@ -427,6 +427,18 @@ class TestHandlerFactoryCreateHandlerConfig:
 
         assert isinstance(result, ConsoleHandlerConfig)
 
+    def test_console_keeps_format_options(self):
+        """format_* keys reach the console constructor through its **kwargs."""
+        result = HandlerFactory.create_handler_config(
+            "console",
+            {"format": "json", "format_pretty_print": True, "_handler_name": "x"},
+        )
+
+        from appinfra.log.builder.console import ConsoleHandlerConfig
+
+        assert isinstance(result, ConsoleHandlerConfig)
+        assert result.format_options == {"pretty_print": True}
+
     def test_raises_on_invalid_config(self):
         """Test raises LogConfigError on invalid config."""
         with pytest.raises(LogConfigError):

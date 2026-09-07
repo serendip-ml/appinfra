@@ -29,17 +29,19 @@ from typing import Any, Self
 
 from ...config import Config, ConfigSpec
 from ...dot_dict import DotDict
+from ...version import BuildInfo, PackageVersionTracker
 from ...yaml import deep_merge
 from ..core.app import DEFAULT_STANDARD_ARGS, App
 from ..tools.base import Tool, ToolConfig
 from ..tracing.traceable import Traceable
+from .configurer.block import Block, OpenBlock, caller_location
 from .configurer.cli import CliConfigurer
 from .configurer.config import ConfigConfigurer
 from .configurer.lifecycle import LifecycleConfigurer
 from .configurer.logging import LoggingScope
 from .configurer.server import ServerScope
 from .configurer.tool import ToolConfigurer
-from .configurer.version import VersionConfigurer
+from .configurer.version import VersionConfigurer, register_startup_hook
 from .hook import HookManager
 from .plugin import PluginManager
 
@@ -247,14 +249,19 @@ class AppBuilder:
         # .lifecycle
         self._hooks: HookManager = HookManager()
         # .version
-        self._version_tracker: Any | None = None
-        self._build_info: Any | None = None
+        self._version_packages: list[str] = []
+        self._version_tracker: PackageVersionTracker | None = None
+        self._build_info: BuildInfo | None = None
+        self._version_startup_log = True
         # Scopes that subclass a standalone builder hold their own state, so
         # one instance per builder.
         self._logging_scope: LoggingScope | None = None
         self._server_scope: ServerScope | None = None
+        self._open_block: OpenBlock | None = None
+        # True once the app declared .server, as opposed to a plugin creating
+        # the scope during configure().
         self._server_registered = False
-        self._version_flag_added = False
+        self._built = False
 
     def with_description(self, description: str) -> Self:
         """Set the application description."""
@@ -278,15 +285,33 @@ class AppBuilder:
         return DotDict(**merged)
 
     def build(self) -> App:
-        """Build the application with all configured components."""
-        if self._logging_scope is not None:
-            self._logging_scope._apply()
+        """Build the application with all configured components.
+
+        Builds once: the hook and plugin managers are handed to the App, so
+        a second App from the same builder would share their state.
+        """
+        if self._built:
+            raise ValueError(
+                "build() was already called on this AppBuilder; create a new one"
+            )
+        if self._open_block is not None:
+            raise ValueError(
+                f"the {self._open_block.name} block opened at "
+                f"{self._open_block.where} is still open; close it with done()"
+            )
+        if self._logging_scope is not None and self._logging_scope._pending():
+            raise ValueError(
+                "the logging block has changes made after done(); "
+                "close it again so they reach the config"
+            )
         self._register_server()
+        self._register_version()
         self._add_version_flag()
         app = _create_base_app(self._main_cls, self._config)
         _initialize_foundation(app, self)
         _register_components(app, self)
         _configure_hooks(app, self._hooks)
+        self._built = True
         return app
 
     def _register_server(self) -> None:
@@ -303,9 +328,21 @@ class AppBuilder:
         self._plugins.register_plugin(ServerPlugin(self._server_scope))
         self._server_registered = True
 
+    def _register_version(self) -> None:
+        """Create the package tracker and the startup hook from the version block.
+
+        The tracker covers every package added across the block's openings;
+        ``_add_version_flag`` reads it.
+        """
+        if self._version_packages:
+            self._version_tracker = PackageVersionTracker()
+            self._version_tracker.track(*self._version_packages)
+        if self._version_startup_log and (self._build_info or self._version_tracker):
+            register_startup_hook(self._hooks, self._version_tracker, self._build_info)
+
     def _add_version_flag(self) -> None:
         """Expose ``-v/--version`` from the version block when the cli flag is on."""
-        if not self._standard_args.get("version", False) or self._version_flag_added:
+        if not self._standard_args.get("version", False):
             return
         if self._version is None:
             raise ValueError("cli flag 'version' requires .version.with_semver(...)")
@@ -320,11 +357,31 @@ class AppBuilder:
             **self._standard_arg_overrides.get("version", {}),
         }
         self._custom_args.append((("-v", "--version"), kwargs))
-        self._version_flag_added = True
 
     # ========================================================================
     # Blocks
     # ========================================================================
+
+    def _open(self, block: Block) -> None:
+        """Record ``block`` as the open block; one block is open at a time.
+
+        Every block is closed with ``done()``. Opening another block, or
+        building, while one is open is an error: a block left open would
+        otherwise lose what was set on it or fold it late. The error names
+        the block and where it was opened.
+        """
+        if self._open_block is not None:
+            raise ValueError(
+                f"the {self._open_block.name} block opened at "
+                f"{self._open_block.where} is still open; close it with done() "
+                f"before opening {block.block}"
+            )
+        self._open_block = OpenBlock(block, caller_location())
+
+    def _close(self, block: Block) -> None:
+        """Close ``block`` if it is the open one; ``done()`` calls this."""
+        if self._open_block is not None and self._open_block.block is block:
+            self._open_block = None
 
     @property
     def config(self) -> ConfigConfigurer:
@@ -335,7 +392,9 @@ class AppBuilder:
             AppBuilder("myapp").config.with_spec("myorg", "myapp").done()
             AppBuilder("myapp").config(namespace="myorg", name="myapp")
         """
-        return ConfigConfigurer(self)
+        block = ConfigConfigurer(self)
+        self._open(block)
+        return block
 
     @property
     def cli(self) -> CliConfigurer:
@@ -346,7 +405,9 @@ class AppBuilder:
             AppBuilder("myapp").cli.with_flags(etc_dir=True, log=True).done()
             AppBuilder("myapp").cli(etc_dir=True, log=True)
         """
-        return CliConfigurer(self)
+        block = CliConfigurer(self)
+        self._open(block)
+        return block
 
     @property
     def logging(self) -> LoggingScope:
@@ -359,6 +420,7 @@ class AppBuilder:
         """
         if self._logging_scope is None:
             self._logging_scope = LoggingScope(self)
+        self._open(self._logging_scope)
         return self._logging_scope
 
     @property
@@ -374,6 +436,7 @@ class AppBuilder:
         """
         if self._server_scope is None:
             self._server_scope = ServerScope(self)
+        self._open(self._server_scope)
         return self._server_scope
 
     @property
@@ -385,7 +448,9 @@ class AppBuilder:
             AppBuilder("myapp").tools.with_tool(MyTool()).with_main("run").done()
             AppBuilder("myapp").tools(MyTool(), main="run")
         """
-        return ToolConfigurer(self)
+        block = ToolConfigurer(self)
+        self._open(block)
+        return block
 
     @property
     def lifecycle(self) -> LifecycleConfigurer:
@@ -396,7 +461,9 @@ class AppBuilder:
             AppBuilder("myapp").lifecycle.with_hook("startup", init_db).done()
             AppBuilder("myapp").lifecycle(startup=init_db)
         """
-        return LifecycleConfigurer(self)
+        block = LifecycleConfigurer(self)
+        self._open(block)
+        return block
 
     @property
     def version(self) -> VersionConfigurer:
@@ -407,7 +474,9 @@ class AppBuilder:
             AppBuilder("myapp").version.with_semver("1.0.0").with_build_info().done()
             AppBuilder("myapp").version(semver="1.0.0", build_info=True)
         """
-        return VersionConfigurer(self)
+        block = VersionConfigurer(self)
+        self._open(block)
+        return block
 
 
 def create_app_builder(name: str) -> AppBuilder:

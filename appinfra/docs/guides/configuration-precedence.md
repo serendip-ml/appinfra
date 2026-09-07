@@ -82,7 +82,7 @@ logging:
 
 ```python
 # Code
-builder.logging.with_topic_level("/infra/db/**", "debug")  # priority=10
+builder.logging.with_topic_level("/infra/db/**", "debug").done()  # priority=10
 ```
 
 **Result:** `/infra/db/**` logs at `debug` level (API priority=10 wins)

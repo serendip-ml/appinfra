@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any, Self, TypedDict, Unpack
 
 from ....log.builder.builder import LoggingBuilder
 from ....log.logger import Logger
+from .block import check_fields
+from .config import ConfigConfigurer
 
 if TYPE_CHECKING:
     from ..app import AppBuilder
@@ -52,13 +54,18 @@ class LoggingScope(LoggingBuilder):
     Handlers and extra fields added here reach the app's root logger
     through ``logging.handlers`` and ``logging.extra`` in the programmatic
     layer. ``build()`` raises: the app's lifecycle builds the logger; close
-    the block with ``done()``.
+    the block with ``done()``. ``done()`` is the only fold, so a later
+    ``.config`` write to the same key wins; a block left open with unfolded
+    changes fails at ``AppBuilder.build()``.
     """
+
+    block = "logging"
 
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
         super().__init__(app_builder._name or "app")
         self._app_builder = app_builder
+        self._folded: dict[str, Any] = {}
 
     def with_runtime_updates(self, enabled: bool = True) -> Self:
         """Apply later topic-level changes to loggers that already exist.
@@ -85,10 +92,24 @@ class LoggingScope(LoggingBuilder):
     def done(self) -> AppBuilder:
         """Fold what was set into the programmatic layer and return to the AppBuilder."""
         self._apply()
+        self._app_builder._close(self)
         return self._app_builder
 
     def _apply(self) -> None:
         """Write explicit options, handlers and extra into ``logging``. Idempotent."""
+        values = self._values()
+        if values:
+            # Direct construction: the property would open the config block
+            # while this block is the open one.
+            ConfigConfigurer(self._app_builder).with_overrides({"logging": values})
+        self._folded = values
+
+    def _pending(self) -> bool:
+        """True when something was set after the last ``done()``."""
+        return self._values() != self._folded
+
+    def _values(self) -> dict[str, Any]:
+        """The ``logging`` section the block currently describes."""
         values: dict[str, Any] = {
             name: getattr(self, f"_{name}") for name in sorted(self._explicit)
         }
@@ -97,8 +118,7 @@ class LoggingScope(LoggingBuilder):
             values["handlers"] = handlers
         if self._extra:
             values["extra"] = dict(self._extra)
-        if values:
-            self._app_builder.config.with_overrides({"logging": values})
+        return values
 
     def _serialized_handlers(self) -> dict[str, dict[str, Any]]:
         """Handlers as ``logging.handlers`` entries, keyed by position."""
@@ -106,12 +126,17 @@ class LoggingScope(LoggingBuilder):
         for index, handler in enumerate(self._handlers):
             try:
                 handlers[f"handler{index}"] = handler.to_dict()
-            except NotImplementedError:
-                continue  # database handlers cannot be expressed as config
+            except NotImplementedError as e:
+                raise ValueError(
+                    f"{type(handler).__name__} cannot be expressed as config, so "
+                    "the logging block cannot carry it; add it to the root "
+                    "logger from a startup hook instead"
+                ) from e
         return handlers
 
     def __call__(self, **fields: Unpack[LoggingFields]) -> AppBuilder:
         """Keyword form of the block; returns the AppBuilder."""
+        check_fields("logging", fields, LoggingFields.__annotations__)
         self.with_options({k: v for k, v in fields.items() if k in _OPTION_KEYS})
         if "topic_levels" in fields:
             self.with_topic_levels(fields["topic_levels"])

@@ -35,6 +35,8 @@ class LifecycleConfigurer:
     ``after_parse``, ``before_setup``, ``after_setup`` and custom names).
     """
 
+    block = "lifecycle"
+
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
         self._app_builder = app_builder
@@ -54,10 +56,15 @@ class LifecycleConfigurer:
 
     def done(self) -> AppBuilder:
         """Return to the AppBuilder."""
+        self._app_builder._close(self)
         return self._app_builder
 
     def __call__(self, **hooks: Callable) -> AppBuilder:
-        """Keyword form of the block: one callback per event name."""
+        """Keyword form of the block: one callback per event name.
+
+        Any name is accepted as an event, so a misspelled standard event
+        registers a hook that nothing fires.
+        """
         for event, callback in hooks.items():
             self.with_hook(event, callback)
-        return self._app_builder
+        return self.done()

@@ -228,9 +228,17 @@ class LoggingBuilder(LoggingBuilderInterface):
 
         Returns:
             Self for method chaining
+
+        Raises:
+            TypeError: If a value is ``None``; leave the key out to keep the
+                file's value.
         """
         for key in ("level", "location", "micros", "colors", "location_color"):
             if key in options:
+                if options[key] is None:
+                    raise TypeError(
+                        f"{key} cannot be None; leave the key out to keep the file's value"
+                    )
                 setattr(self, f"_{key}", options[key])
                 self._explicit.add(key)
         return self

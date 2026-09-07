@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Self, TypedDict, Unpack
 
 from ...core.app import DEFAULT_STANDARD_ARGS
+from .block import check_fields
 
 if TYPE_CHECKING:
     from ..app import AppBuilder
@@ -67,6 +68,8 @@ class CliConfigurer:
     locked-down CLI. ``version=True`` exposes ``-v/--version`` with the text
     of the ``.version`` block at build time.
     """
+
+    block = "cli"
 
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
@@ -135,12 +138,14 @@ class CliConfigurer:
 
     def done(self) -> AppBuilder:
         """Return to the AppBuilder."""
+        self._app_builder._close(self)
         return self._app_builder
 
     def __call__(self, **flags: Unpack[CliFlags]) -> AppBuilder:
         """Keyword form of the block; same arguments as ``with_flags``."""
+        check_fields("cli", flags, CliFlags.__annotations__)
         self.with_flags(**flags)
-        return self._app_builder
+        return self.done()
 
 
 def _check_flag_name(name: str) -> None:

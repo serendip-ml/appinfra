@@ -28,6 +28,8 @@ class ToolConfigurer:
     following the Single Responsibility Principle.
     """
 
+    block = "tools"
+
     def __init__(self, app_builder: AppBuilder):
         """
         Initialize the tool configurer.
@@ -159,6 +161,7 @@ class ToolConfigurer:
         Returns:
             Parent AppBuilder instance for continued chaining
         """
+        self._app_builder._close(self)
         return self._app_builder
 
     def __call__(
@@ -172,4 +175,4 @@ class ToolConfigurer:
         self.with_plugins(*plugins)
         if main is not None:
             self.with_main(main)
-        return self._app_builder
+        return self.done()

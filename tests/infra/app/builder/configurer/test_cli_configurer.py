@@ -48,10 +48,10 @@ class TestWithFlags:
         """Explicit False and True both apply, last one wins."""
         builder = AppBuilder("test")
 
-        builder.cli.with_flags(etc_dir=True).with_flags(etc_dir=False)
+        builder.cli.with_flags(etc_dir=True).with_flags(etc_dir=False).done()
         assert builder._standard_args["etc_dir"] is False
 
-        builder.cli.with_flags(etc_dir=True)
+        builder.cli.with_flags(etc_dir=True).done()
         assert builder._standard_args["etc_dir"] is True
 
     def test_no_flags_raises(self):
@@ -130,9 +130,9 @@ class TestWithoutFlags:
     def test_disables_all_flags(self):
         """Every key goes False."""
         builder = AppBuilder("test")
-        builder.cli.with_flags(log=True, etc_dir=True)
+        builder.cli.with_flags(log=True, etc_dir=True).done()
 
-        builder.cli.without_flags()
+        builder.cli.without_flags().done()
 
         assert all(not v for v in builder._standard_args.values())
 
@@ -176,6 +176,11 @@ class TestKeywordForm:
         """An empty call is rejected like with_flags()."""
         with pytest.raises(ValueError, match="at least one flag"):
             AppBuilder("test").cli()
+
+    def test_call_unknown_keyword_raises(self):
+        """The keyword form fails like the other blocks; with_flags keeps ValueError."""
+        with pytest.raises(TypeError, match="unknown cli field\\(s\\): foo"):
+            AppBuilder("test").cli(foo=True)
 
     def test_fields_match_default_standard_args(self):
         """CliFlags keys equal DEFAULT_STANDARD_ARGS plus the log alias."""

@@ -35,7 +35,7 @@ include $(INFRA_ROOT)/scripts/make/Makefile.clean
 include $(INFRA_ROOT)/scripts/make/Makefile.dev
 include $(INFRA_ROOT)/scripts/make/Makefile.pytest
 # Uncomment if using PostgreSQL:
-# pg_docker_cfg := etc/pg.yaml
+# pg_docker_cfg := $(INFRA_DEV_PKG_NAME)/etc/pg.yaml
 # include $(INFRA_ROOT)/scripts/make/Makefile.pg
 
 ##@ Application

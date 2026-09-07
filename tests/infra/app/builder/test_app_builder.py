@@ -368,15 +368,18 @@ class TestLoggingBlockFold:
         assert builder._config.logging.level == "debug"
         assert builder._config.logging.micros is True
 
-    def test_build_applies_unclosed_block(self):
-        """build() folds a block that was never closed with done()."""
+    def test_build_rejects_unclosed_block(self):
+        """build() refuses a block that was never closed with done()."""
         builder = AppBuilder("test")
         builder.logging.with_level("debug")
 
         with patch("appinfra.app.builder.app.App"):
-            builder.build()
+            with pytest.raises(
+                ValueError, match="logging block opened at .* is still open"
+            ):
+                builder.build()
 
-        assert builder._config.logging.level == "debug"
+        assert builder._config is None
 
 
 # =============================================================================
@@ -646,7 +649,9 @@ class TestAppBuilderBlocks:
     def test_logging_block_is_one_instance_per_builder(self):
         """The scope holds builder state, so repeated access returns the same one."""
         builder = AppBuilder()
-        assert builder.logging is builder.logging
+        block = builder.logging
+        block.done()
+        assert builder.logging is block
 
     def test_server_block(self):
         builder = AppBuilder()
@@ -656,7 +661,9 @@ class TestAppBuilderBlocks:
 
     def test_server_block_is_one_instance_per_builder(self):
         builder = AppBuilder()
-        assert builder.server is builder.server
+        block = builder.server
+        block.done()
+        assert builder.server is block
 
     def test_tools_block(self):
         builder = AppBuilder()
@@ -825,7 +832,7 @@ class TestPluginContributedTools:
                     ToolBuilder("from-plugin")
                     .with_help("added by a plugin")
                     .with_run_function(lambda tool, **kwargs: 0)
-                )
+                ).done()
 
         app = AppBuilder("myapp").tools.with_plugin(ToolPlugin()).done().build()
 

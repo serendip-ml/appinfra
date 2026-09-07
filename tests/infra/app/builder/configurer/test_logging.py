@@ -9,6 +9,7 @@ done() folds explicit options, handlers and extra fields into the
 builder's programmatic config layer under ``logging``.
 """
 
+import io
 import logging
 from dataclasses import fields
 from unittest.mock import patch
@@ -45,8 +46,10 @@ class TestLoggingScopeIsABuilder:
     def test_same_instance_per_builder(self):
         """State lives on the scope, so the builder hands out one instance."""
         builder = AppBuilder("test")
+        block = builder.logging
+        block.done()
 
-        assert builder.logging is builder.logging
+        assert builder.logging is block
 
     def test_build_raises_pointing_at_done(self):
         """The app's lifecycle builds the logger, not the scope."""
@@ -142,14 +145,58 @@ class TestDoneFoldsIntoConfig:
 
         assert _logging_section(builder)["extra"] == {"service": "api"}
 
-    def test_build_applies_without_done(self):
-        """build() folds the scope even when the chain never called done()."""
+    def test_handler_without_config_form_raises_at_done(self):
+        """A handler that cannot be expressed as config fails instead of vanishing."""
+        block = AppBuilder("test").logging.with_console_handler(stream=io.StringIO())
+
+        with pytest.raises(ValueError, match="cannot be expressed as config"):
+            block.done()
+
+    def test_build_raises_when_block_not_closed(self):
+        """An open block fails at build(), naming the block and where it was opened."""
         builder = AppBuilder("test")
         builder.logging.with_level("error")
+
+        with pytest.raises(
+            ValueError,
+            match=r"logging block opened at .*test_logging.py:\d+ is still open",
+        ):
+            builder.build()
+
+    def test_build_raises_when_held_scope_changes_after_done(self):
+        """Changes on a held scope after done() need another done()."""
+        builder = AppBuilder("test")
+        scope = builder.logging
+        scope.with_level("error").done()
+        scope.with_micros(True)
+
+        with pytest.raises(ValueError, match="changes made after done"):
+            builder.build()
+
+    def test_build_accepts_held_scope_without_changes(self):
+        """Re-setting the same value on a held scope after done() is not a change."""
+        builder = AppBuilder("test")
+        scope = builder.logging
+        scope.with_level("error").done()
+        scope.with_level("error")
 
         app = builder.build()
 
         assert app.config.logging.level == "error"
+
+    def test_config_write_after_done_wins(self):
+        """done() is the only fold, so a later .config write to the key wins."""
+        builder = (
+            AppBuilder("test")
+            .logging.with_level("debug")
+            .done()
+            .config.with_value("logging.level", "info")
+            .done()
+        )
+
+        app = builder.build()
+
+        assert app.config.logging.level == "info"
 
 
 @pytest.mark.integration
@@ -223,6 +270,16 @@ class TestTopicAndRuntimeMethods:
 @pytest.mark.unit
 class TestKeywordForm:
     """Calling the block sets fields, folds them, and returns the AppBuilder."""
+
+    def test_call_unknown_keyword_raises(self):
+        """A misspelled key fails instead of being ignored."""
+        with pytest.raises(TypeError, match="unknown logging field\\(s\\): levl"):
+            AppBuilder("test").logging(levl="debug")
+
+    def test_call_rejects_none(self):
+        """None is not a value; an unset argument must be left out."""
+        with pytest.raises(TypeError, match="level cannot be None"):
+            AppBuilder("test").logging(level=None)
 
     def test_call_sets_options_and_returns_builder(self):
         """Display options land in the programmatic layer."""

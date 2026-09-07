@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 from ....log.logger import Logger
 from ...fastapi.builder.server import ServerBuilder
 from ...fastapi.runtime.server import Server
+from .block import check_fields
 
 if TYPE_CHECKING:
     from ..app import AppBuilder
@@ -56,6 +57,8 @@ class ServerScope(ServerBuilder):
     with ``done()``.
     """
 
+    block = "server"
+
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
         name = app_builder._name or "server"
@@ -64,6 +67,7 @@ class ServerScope(ServerBuilder):
 
     def done(self) -> AppBuilder:
         """Return to the AppBuilder."""
+        self._app_builder._close(self)
         return self._app_builder
 
     def build(self) -> Server:
@@ -75,6 +79,7 @@ class ServerScope(ServerBuilder):
 
     def __call__(self, **fields: Unpack[ServerFields]) -> AppBuilder:
         """Keyword form of the block; ``uvicorn`` takes ``UvicornFields``."""
+        check_fields("server", fields, ServerFields.__annotations__)
         setters: dict[str, Any] = {
             "host": self.with_host,
             "port": self.with_port,
@@ -89,4 +94,4 @@ class ServerScope(ServerBuilder):
         for key, value in fields.items():
             if key != "uvicorn":
                 setters[key](value)
-        return self._app_builder
+        return self.done()

@@ -10,6 +10,7 @@ verifying generated files, and testing that the generated projects
 work correctly.
 """
 
+import os
 import shutil
 import subprocess
 import sys
@@ -97,7 +98,9 @@ class TestScaffoldWorkflow:
     def _verify_directories(self, project_path: Path):
         """Verify project directories exist."""
         assert project_path.exists(), f"Project directory should exist: {project_path}"
-        assert (project_path / "etc").exists(), "etc/ directory should exist"
+        assert (project_path / project_path.name / "etc").exists(), (
+            "etc/ directory should exist inside the package"
+        )
         assert (project_path / "tests").exists(), "tests/ directory should exist"
         assert (project_path / project_path.name).exists(), (
             "Package directory should exist"
@@ -105,8 +108,8 @@ class TestScaffoldWorkflow:
 
     def _verify_config_files(self, project_path: Path):
         """Verify configuration files exist."""
-        assert (project_path / "etc" / "infra.yaml").exists(), (
-            "Configuration file should exist"
+        assert (project_path / project_path.name / "etc" / "infra.yaml").exists(), (
+            "Configuration file should exist inside the package"
         )
         assert (project_path / "Makefile").exists(), "Makefile should exist"
         assert (project_path / "README.md").exists(), "README should exist"
@@ -139,6 +142,24 @@ class TestScaffoldWorkflow:
         self._verify_config_files(project_path)
         self._verify_package_structure(project_path)
 
+    def _run_generated_app(self, project_path: Path) -> subprocess.CompletedProcess:
+        """Run the scaffolded app's ``--help`` the way its Makefile does.
+
+        The repo goes first on ``PYTHONPATH`` so the app resolves this
+        appinfra rather than one installed in the environment.
+        """
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join(
+            p for p in (str(self.infra_root), env.get("PYTHONPATH", "")) if p
+        )
+        return subprocess.run(
+            [sys.executable, "-m", project_path.name, "--help"],
+            capture_output=True,
+            text=True,
+            cwd=str(project_path),
+            env=env,
+        )
+
     def test_standalone_scaffold_generation(self):
         """Test generating project with standalone Makefile."""
         project_name = "testapp_standalone"
@@ -153,6 +174,11 @@ class TestScaffoldWorkflow:
 
         # Verify basic structure
         self._verify_basic_structure(project_path)
+
+        # The generated app resolves its base config and starts
+        run = self._run_generated_app(project_path)
+        assert run.returncode == 0, f"Generated app should start. stderr: {run.stderr}"
+        assert "usage:" in run.stdout
 
         # Verify standalone Makefile content
         makefile_content = (project_path / "Makefile").read_text()
@@ -314,7 +340,9 @@ class TestScaffoldWorkflow:
         project_path = self.temp_dir / project_name
 
         # Verify database configuration exists
-        config_content = (project_path / "etc" / "infra.yaml").read_text()
+        config_content = (
+            project_path / project_name / "etc" / "infra.yaml"
+        ).read_text()
         assert "pgserver:" in config_content
         assert "dbs:" in config_content
 

@@ -72,14 +72,13 @@ class TestVersionFlag:
 
         assert builder._custom_args[0][1]["help"] == "show version"
 
-    def test_build_twice_adds_once(self):
-        """A second build() does not duplicate the argument."""
+    def test_build_twice_raises(self):
+        """A builder builds once; its managers are handed to the App."""
         builder = AppBuilder("test").version(semver="1.0.0").cli(version=True)
-
-        builder.build()
         builder.build()
 
-        assert len(builder._custom_args) == 1
+        with pytest.raises(ValueError, match="already called"):
+            builder.build()
 
 
 @pytest.mark.integration
@@ -144,4 +143,4 @@ class TestTopLevelSurface:
             "lifecycle",
             "version",
         ):
-            assert hasattr(builder, name), name
+            assert getattr(builder, name).done() is builder, name

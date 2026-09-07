@@ -272,37 +272,18 @@ class HandlerFactory:
         """
         import inspect
 
-        # Get the constructor parameters
-        sig = inspect.signature(handler_class.__init__)
-        valid_params = set(sig.parameters.keys()) - {"self"}  # Exclude 'self'
+        params = inspect.signature(handler_class.__init__).parameters
+        if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+            # The constructor reads arbitrary keywords (console handlers take
+            # format_* options that way); only internal metadata is dropped.
+            return {k: v for k, v in config.items() if not k.startswith("_")}
+
+        valid_params = set(params) - {"self"}
 
         # Special handling for file handlers - they accept 'file' as a parameter
         # even though their constructor signature shows 'filename'
         if handler_class == FileHandlerConfigClass and "file" in config:
             valid_params.add("file")
-
-        # Filter config to only include valid parameters
-        return {k: v for k, v in config.items() if k in valid_params}
-
-    @classmethod
-    def _get_valid_constructor_params(
-        cls, handler_class: type[HandlerConfig], config: dict[str, Any]
-    ) -> dict[str, Any]:
-        """
-        Filter configuration to only include valid constructor parameters.
-
-        Args:
-            handler_class: The handler configuration class
-            config: The raw configuration dictionary
-
-        Returns:
-            Dictionary with only valid constructor parameters
-        """
-        import inspect
-
-        # Get the constructor parameters
-        sig = inspect.signature(handler_class.__init__)
-        valid_params = set(sig.parameters.keys()) - {"self"}  # Exclude 'self'
 
         # Filter config to only include valid parameters
         return {k: v for k, v in config.items() if k in valid_params}

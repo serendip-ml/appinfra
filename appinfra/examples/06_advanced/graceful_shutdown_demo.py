@@ -84,7 +84,7 @@ class ShutdownDemoPlugin(Plugin):
         # Add a startup hook to simulate resource allocation
         builder.lifecycle.with_hook_builder(
             HookBuilder().on_startup(self._allocate_resources)
-        )
+        ).done()
 
     def initialize(self, application: App) -> None:
         """Initialize plugin resources."""

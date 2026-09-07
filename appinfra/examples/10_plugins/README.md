@@ -19,7 +19,9 @@ python example_plugins.py serve      # HTTP server with the plugins' routes and 
 
 Routes and middleware go on the app's HTTP server, so the app must declare `.server`; the
 server is built after every plugin has configured it, and `serve` starts it. A plugin that
-configures `.server` on an app without one fails at `build()`.
+configures `.server` on an app without one fails at `build()`. Inside `configure()` a block is
+closed with `done()` like anywhere else; a plugin that leaves one open fails at `build()` with
+the plugin name and the line that opened it.
 
 ## The plugins
 
@@ -68,7 +70,7 @@ class MyPlugin(Plugin):
             ToolBuilder("my-command")
             .with_help("My custom command")
             .with_run_function(self._run)
-        )
+        ).done()
 
     def _run(self, tool, **kwargs):
         tool.lg.info("Running my custom command")

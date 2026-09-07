@@ -204,9 +204,9 @@ class TestVersionConfigurer:
         """Test VersionConfigurer initialization."""
         configurer = VersionConfigurer(app_builder)
         assert configurer._app_builder is app_builder
-        assert configurer._packages == []
-        assert configurer._build_info is None
-        assert configurer._log_on_startup is True
+        assert app_builder._version_packages == []
+        assert app_builder._build_info is None
+        assert app_builder._version_startup_log is True
 
     def test_with_semver(self, app_builder):
         """Test setting version string."""
@@ -222,24 +222,23 @@ class TestVersionConfigurer:
         result = configurer.with_package("mylib")
 
         assert result is configurer
-        assert "mylib" in configurer._packages
+        assert app_builder._version_packages == ["mylib"]
 
     def test_with_multiple_packages(self, app_builder):
         """Test tracking multiple packages."""
         configurer = VersionConfigurer(app_builder)
         configurer.with_package("lib1").with_package("lib2")
 
-        assert "lib1" in configurer._packages
-        assert "lib2" in configurer._packages
+        assert app_builder._version_packages == ["lib1", "lib2"]
 
     def test_with_startup_log(self, app_builder):
         """Test enabling startup logging."""
         configurer = VersionConfigurer(app_builder)
-        configurer._log_on_startup = False
+        app_builder._version_startup_log = False
         result = configurer.with_startup_log()
 
         assert result is configurer
-        assert configurer._log_on_startup is True
+        assert app_builder._version_startup_log is True
 
     def test_without_startup_log(self, app_builder):
         """Test disabling startup logging."""
@@ -247,7 +246,7 @@ class TestVersionConfigurer:
         result = configurer.without_startup_log()
 
         assert result is configurer
-        assert configurer._log_on_startup is False
+        assert app_builder._version_startup_log is False
 
     def test_with_build_info_default_path(self, app_builder, tmp_path, monkeypatch):
         """Test with_build_info uses cwd by default."""
@@ -261,7 +260,7 @@ class TestVersionConfigurer:
         result = configurer.with_build_info()
 
         assert result is configurer
-        assert configurer._build_info is not None
+        assert app_builder._build_info is not None
 
     def test_with_build_info_string_path(self, app_builder, tmp_path):
         """Test with_build_info with string path."""
@@ -272,7 +271,7 @@ class TestVersionConfigurer:
         result = configurer.with_build_info(str(build_info_file))
 
         assert result is configurer
-        assert configurer._build_info is not None
+        assert app_builder._build_info is not None
 
     def test_with_build_info_path_object(self, app_builder, tmp_path):
         """Test with_build_info with Path object."""
@@ -283,7 +282,7 @@ class TestVersionConfigurer:
         result = configurer.with_build_info(build_info_file)
 
         assert result is configurer
-        assert configurer._build_info is not None
+        assert app_builder._build_info is not None
 
     def test_done_returns_app_builder(self, app_builder):
         """Test done() returns the app builder."""
@@ -292,20 +291,32 @@ class TestVersionConfigurer:
 
         assert result is app_builder
 
-    def test_done_with_packages_creates_tracker(self, app_builder):
-        """Test done() creates tracker when packages specified."""
-        configurer = VersionConfigurer(app_builder)
-        configurer.with_package("pytest")
-        configurer.done()
+    def test_build_with_packages_creates_tracker(self, app_builder):
+        """build() creates the tracker from the packages added on the block."""
+        app_builder.version.with_package("pytest").done()
+
+        app_builder.build()
 
         assert app_builder._version_tracker is not None
+        assert "pytest" in app_builder._version_tracker.get_all()
 
-    def test_done_without_packages_no_tracker(self, app_builder):
-        """Test done() doesn't create tracker when no packages."""
-        configurer = VersionConfigurer(app_builder)
-        configurer.done()
+    def test_build_without_packages_no_tracker(self, app_builder):
+        """No packages, no tracker."""
+        app_builder.version.done()
+
+        app_builder.build()
 
         assert app_builder._version_tracker is None
+
+    def test_reopened_block_accumulates_packages(self, app_builder):
+        """Opening the block twice tracks both packages and registers one hook."""
+        app_builder.version.with_package("pytest").done()
+        app_builder.version.with_package("packaging").done()
+
+        app_builder.build()
+
+        assert set(app_builder._version_tracker.get_all()) >= {"pytest", "packaging"}
+        assert len(_startup_hooks(app_builder)) == 1
 
     def test_done_sets_build_info(self, app_builder, tmp_path):
         """Test done() sets build info on app builder."""
@@ -318,36 +329,35 @@ class TestVersionConfigurer:
 
         assert app_builder._build_info is not None
 
-    def test_done_registers_startup_hook(self, app_builder, tmp_path):
-        """done() registers one startup hook at priority 90 when logging enabled."""
+    def test_build_registers_startup_hook(self, app_builder, tmp_path):
+        """build() registers one startup hook at priority 90 when logging enabled."""
         build_info_file = tmp_path / "_build_info.py"
         build_info_file.write_text(BUILD_INFO_SRC)
+        app_builder.version.with_build_info(build_info_file).done()
 
-        configurer = VersionConfigurer(app_builder)
-        configurer.with_build_info(build_info_file)
-        configurer.done()
+        app_builder.build()
 
         assert len(_startup_hooks(app_builder)) == 1
         assert app_builder._hooks._hook_metadata["startup"][0]["priority"] == 90
 
-    def test_done_no_hook_when_logging_disabled(self, app_builder, tmp_path):
-        """Test done() doesn't register hook when logging disabled."""
+    def test_build_no_hook_when_logging_disabled(self, app_builder, tmp_path):
+        """without_startup_log suppresses the hook."""
         build_info_file = tmp_path / "_build_info.py"
         build_info_file.write_text(BUILD_INFO_SRC)
+        app_builder.version.with_build_info(
+            build_info_file
+        ).without_startup_log().done()
 
-        configurer = VersionConfigurer(app_builder)
-        configurer.with_build_info(build_info_file)
-        configurer.without_startup_log()
-        configurer.done()
+        app_builder.build()
 
         assert not app_builder._hooks.has_hooks("startup")
 
-    def test_done_no_hook_when_nothing_to_log(self, app_builder):
-        """Test done() doesn't register hook when nothing to log."""
-        configurer = VersionConfigurer(app_builder)
-        configurer.done()
+    def test_build_no_hook_when_nothing_to_log(self, app_builder):
+        """No build info and no packages means no hook."""
+        app_builder.version.done()
 
-        # No build_info and no packages = no hook
+        app_builder.build()
+
         assert not app_builder._hooks.has_hooks("startup")
 
     def test_done_does_not_add_version_argument(self, app_builder):
@@ -357,6 +367,11 @@ class TestVersionConfigurer:
         configurer.done()
 
         assert app_builder._custom_args == []
+
+    def test_call_unknown_keyword_raises(self, app_builder):
+        """A misspelled key fails instead of being ignored."""
+        with pytest.raises(TypeError, match="unknown version field\\(s\\): semvr"):
+            app_builder.version(semvr="1.0.0")
 
     def test_call_keyword_form(self, app_builder, tmp_path):
         """__call__ maps keywords onto the chained methods and returns the builder."""
@@ -373,8 +388,8 @@ class TestVersionConfigurer:
         assert result is app_builder
         assert app_builder._version == "2.0.0"
         assert app_builder._build_info is not None
-        assert app_builder._version_tracker is not None
-        assert not app_builder._hooks.has_hooks("startup")
+        assert app_builder._version_packages == ["pytest", "packaging"]
+        assert app_builder._version_startup_log is False
 
 
 class TestVersionFlag:
@@ -458,14 +473,6 @@ class TestVersionFlag:
         _, kwargs = self._version_arg(builder)
         assert kwargs["help"] == "Print version and exit"
 
-    def test_version_argument_added_once_across_builds(self):
-        """A second build() does not append a duplicate argument."""
-        builder = AppBuilder("testapp").version(semver="1.0.0").cli(version=True)
-        builder.build()
-        builder.build()
-
-        self._version_arg(builder)
-
 
 class TestStartupHookBehavior:
     """Tests for the startup hook callback behavior."""
@@ -478,6 +485,7 @@ class TestStartupHookBehavior:
         builder = AppBuilder("testapp")
         VersionConfigurer(builder).with_build_info(build_info_file).done()
 
+        builder.build()
         hooks = _startup_hooks(builder)
         assert hooks
 
@@ -494,6 +502,7 @@ class TestStartupHookBehavior:
         builder = AppBuilder("testapp")
         VersionConfigurer(builder).with_package("pytest").done()  # a real package
 
+        builder.build()
         hooks = _startup_hooks(builder)
         assert hooks
 
@@ -510,6 +519,7 @@ class TestStartupHookBehavior:
         builder = AppBuilder("testapp")
         VersionConfigurer(builder).with_package("pytest").done()
 
+        builder.build()
         hooks = _startup_hooks(builder)
         assert hooks
 

@@ -110,17 +110,17 @@ class DatabasePlugin(Plugin):
             ToolBuilder("migrate")
             .with_help("Run database migrations")
             .with_run_function(self._migrate)
-        )
+        ).done()
 
         builder.tools.with_tool_builder(
             ToolBuilder("db-status")
             .with_help("Check database status")
             .with_run_function(self._check_status)
-        )
+        ).done()
 
         builder.lifecycle.with_hook_builder(
             HookBuilder().on_startup(self._connect_db).on_shutdown(self._disconnect_db)
-        )
+        ).done()
 
     def initialize(self, application: App) -> None:
         """Initialize database connection."""
@@ -170,18 +170,18 @@ class AuthPlugin(Plugin):
             ToolBuilder("login")
             .with_help("Authenticate user")
             .with_run_function(self._login)
-        )
+        ).done()
 
         builder.tools.with_tool_builder(
             ToolBuilder("logout")
             .with_help("Logout user")
             .with_run_function(self._logout)
-        )
+        ).done()
 
         # Middleware on the app's HTTP server; the app must declare .server
         builder.server.routes.with_middleware(
             BearerAuthMiddleware, auth_type=self.auth_type
-        )
+        ).done().done()
 
     def _login(self, tool: Any, **kwargs: Any) -> int:
         """Handle user login."""
@@ -207,11 +207,11 @@ class LoggingPlugin(Plugin):
             ToolBuilder("log-level")
             .with_help("Set log level")
             .with_run_function(self._set_log_level)
-        )
+        ).done()
 
         builder.lifecycle.with_hook_builder(
             HookBuilder().on_startup(self._setup_logging).on_error(self._log_error)
-        )
+        ).done()
 
     def _set_log_level(self, tool: Any, **kwargs: Any) -> int:
         """Set log level."""
@@ -244,12 +244,12 @@ class MetricsPlugin(Plugin):
             ToolBuilder("metrics")
             .with_help("Show application metrics")
             .with_run_function(self._show_metrics)
-        )
+        ).done()
 
         # Route and middleware on the app's HTTP server
         builder.server.routes.with_route("/metrics", self._metrics).with_middleware(
             RequestCounterMiddleware, counts=self._counts
-        )
+        ).done().done()
 
     def _metrics(self) -> dict[str, dict[str, int]]:
         """Serve the request counts."""
@@ -272,7 +272,9 @@ def main() -> int:
         AppBuilder("plugins-demo")
         .with_description("Tools, hooks, routes and middleware contributed by plugins")
         .cli(log_level=True)
-        .server(port=8090, title="Plugins demo")
+        .server.with_port(8090)
+        .with_title("Plugins demo")
+        .done()
         .tools(
             plugins=[
                 DatabasePlugin(connection_string="postgresql://localhost/demo"),

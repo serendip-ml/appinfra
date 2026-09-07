@@ -29,7 +29,8 @@ For API stability guarantees and deprecation policy, see
 - Faceted `AppBuilder`: `.cli` (standard flags, presentation, custom arguments), `.lifecycle`
   (hooks), `.tools.with_main`, and a keyword form on every block; `.logging` and `.server` are
   the standalone `LoggingBuilder` and FastAPI `ServerBuilder` bound to the app, so their whole
-  API is available there. See [AppBuilder](appinfra/docs/api/app-builder.md).
+  API is available there. One block is open at a time; a block left open fails `build()` with
+  the block name and the line that opened it. See [AppBuilder](appinfra/docs/api/app-builder.md).
 - `LoggingBuilder.with_topic_level` / `with_topic_levels`, `LoggerFactory.create_root(extra=)`,
   and a keyword form on `ServerBuilder.uvicorn`.
 
@@ -86,6 +87,8 @@ For API stability guarantees and deprecation policy, see
   `include_root` and `project_local()`.
 
 ### Fixed
+- `appinfra scaffold` writes the base config to `<name>/etc/infra.yaml` inside the package and
+  lists it as package data, so the generated app resolves it under the config protocol and starts.
 - `appinfra pg` and `make pg.*` targets exit with install guidance when
   no container runtime is on `PATH`.
 - `make pg.server.up` readiness wait probes over TCP. On a fresh volume the

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Self, TypedDict, Unpack
 
 from ....config import AUTO, Auto, ConfigSpec
 from ....dot_dict import DotDict
+from .block import check_fields
 
 if TYPE_CHECKING:
     from ..app import AppBuilder
@@ -49,6 +50,8 @@ class ConfigConfigurer:
 
         AppBuilder("myapp").config(namespace="myorg", name="myapp", hot_reload=True)
     """
+
+    block = "config"
 
     def __init__(self, app_builder: AppBuilder):
         """Bind the block to its parent builder."""
@@ -140,6 +143,7 @@ class ConfigConfigurer:
 
     def done(self) -> AppBuilder:
         """Return to the AppBuilder."""
+        self._app_builder._close(self)
         return self._app_builder
 
     def __call__(self, **fields: Unpack[ConfigFields]) -> AppBuilder:
@@ -150,6 +154,7 @@ class ConfigConfigurer:
         to the methods of the same name; ``debounce_ms`` only with
         ``hot_reload``.
         """
+        check_fields("config", fields, ConfigFields.__annotations__)
         spec_keys = {"namespace", "name", "origin", "etc_dir", "filename", "path"}
         if spec_keys & fields.keys():
             if "namespace" not in fields or "name" not in fields:
@@ -168,4 +173,4 @@ class ConfigConfigurer:
             raise ValueError("debounce_ms requires hot_reload")
         if "hot_reload" in fields:
             self.with_hot_reload(fields["hot_reload"], fields.get("debounce_ms", 500))
-        return self._app_builder
+        return self.done()

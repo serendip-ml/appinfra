@@ -43,8 +43,10 @@ class TestServerScopeIsABuilder:
     def test_same_instance_per_builder(self):
         """State lives on the scope, so the builder hands out one instance."""
         builder = AppBuilder("test")
+        block = builder.server
+        block.done()
 
-        assert builder.server is builder.server
+        assert builder.server is block
 
     def test_name_follows_app(self):
         """The server is named after the app."""
@@ -113,6 +115,11 @@ class TestChainedConfiguration:
 @pytest.mark.unit
 class TestKeywordForm:
     """Calling the block sets fields and returns the AppBuilder."""
+
+    def test_call_unknown_keyword_raises(self):
+        """A misspelled key fails with the block's error, not a KeyError."""
+        with pytest.raises(TypeError, match="unknown server field\\(s\\): prot"):
+            AppBuilder("test").server(prot=1)
 
     def test_call_sets_fields_and_returns_builder(self):
         """Each key maps onto the builder's direct setter."""
@@ -197,7 +204,7 @@ class TestBuildRegistersServer:
             def configure(self, builder):
                 builder.server.routes.with_route("/metrics", _health).with_middleware(
                     object
-                )
+                ).done().done()
 
         builder = AppBuilder("test").server.done().tools(plugins=[MetricsPlugin()])
 
@@ -219,7 +226,7 @@ class TestBuildRegistersServer:
                 super().__init__("routes")
 
             def configure(self, builder):
-                builder.server.routes.with_route("/x", _health)
+                builder.server.routes.with_route("/x", _health).done().done()
 
         builder = AppBuilder("test").tools(plugins=[RoutePlugin()])
 

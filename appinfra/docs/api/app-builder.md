@@ -2,7 +2,9 @@
 
 Faceted builder for CLI applications: one block per axis, each closed with `done()` or called
 with keywords, which returns the `AppBuilder` directly. Mixing both spellings in one chain is the
-norm.
+norm. One block is open at a time: opening another block, or calling `build()`, while a block is
+open raises `ValueError` naming the block and the line that opened it. Plugins that touch a block
+inside `configure()` close it the same way.
 
 ## AppBuilder
 
@@ -115,7 +117,12 @@ With `.cli(etc_dir=True)`, the `--etc-dir` CLI argument redirects the load:
 
 Without a spec, no file is loaded; config comes from `.config.with_overrides()` and CLI args:
 ```python
-app = AppBuilder("myapp").config.with_overrides({"logging": {"level": "info"}}).build()
+app = (
+    AppBuilder("myapp")
+    .config.with_overrides({"logging": {"level": "info"}})
+    .done()
+    .build()
+)
 ```
 
 See [AppBuilder.config](config.md#appbuilderconfig) for the full block.
@@ -301,7 +308,7 @@ chained only.
 For single-purpose apps, `with_main()` runs a tool without requiring a subcommand:
 
 ```python
-app = AppBuilder("proxy").tools(main="run")
+app = AppBuilder("proxy").tools(main="run").build()
 
 
 @app.tool(name="run")
