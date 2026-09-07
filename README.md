@@ -84,17 +84,14 @@ from appinfra.app import AppBuilder
 app = (
     AppBuilder("myapp")
     .with_description("Data processing tool")
-    .with_standard_args(etc_dir=True, config_file=True)
     .config.with_spec("myorg", "myapp")  # etc/myapp.yaml beside the module or script
     .done()
-    .logging.with_level("info")
-    .with_location(1)
-    .done()
+    .cli(etc_dir=True, config_file=True)
+    .logging(level="info", location=1)
     .tools.with_tool(ProcessorTool())
+    .with_main(MainTool())
     .done()
-    .with_main_tool(MainTool())
-    .advanced.with_hook("startup", init_database)
-    .done()
+    .lifecycle(startup=init_database)
     .build()
 )
 
@@ -110,9 +107,9 @@ from appinfra.log import LoggingBuilder
 logger = (
     LoggingBuilder("my_app")
     .with_level("info")
-    .with_format("%(asctime)s [%(levelname)s] %(message)s")
-    .console_handler(colors=True)
-    .file_handler("logs/app.log", rotate_mb=10)
+    .with_location(1)
+    .with_console_handler()
+    .with_rotating_file_handler("logs/app.log", max_bytes=10_000_000, backup_count=5)
     .build()
 )
 ```

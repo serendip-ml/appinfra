@@ -195,7 +195,7 @@ class MyTool(Tool):
 app = (
     AppBuilder("myapp")
     .with_description("My awesome application")
-    .with_version("1.0.0")
+    .version(semver="1.0.0")
     .tools.with_tool(MyTool())
     .done()
     .logging.with_level("info")
@@ -228,8 +228,8 @@ if __name__ == "__main__":
 
 > **Standard CLI flags are opt-in.** Only `-h/--help` is registered by default.
 > For `--log-level`, `-q/--quiet`, `--etc-dir`, `--log-json`, etc., add
-> `.with_standard_args(log=True, etc_dir=True)` to the builder chain. See
-> [AppBuilder — Standard Arguments](api/app-builder.md#standard-arguments).
+> `.cli(log=True, etc_dir=True)` to the builder chain. See
+> [AppBuilder — cli block](api/app-builder.md#cli-block).
 
 See the [Application Framework API](api/app.md) for more details.
 

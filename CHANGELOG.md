@@ -26,8 +26,18 @@ For API stability guarantees and deprecation policy, see
 - `make examples.check`: runs every script under `examples/` (or `<pkg>/examples/`) and
   fails on errors or timeouts. Per-file `# ci-run:` / `# ci-stop:` / `# ci-timeout:` /
   `# ci-skip:` comments declare the cases. CI runs it in the container lane.
+- Faceted `AppBuilder`: `.cli` (standard flags, presentation, custom arguments), `.lifecycle`
+  (hooks), `.tools.with_main`, and a keyword form on every block; `.logging` and `.server` are
+  the standalone `LoggingBuilder` and FastAPI `ServerBuilder` bound to the app, so their whole
+  API is available there. See [AppBuilder](appinfra/docs/api/app-builder.md).
+- `LoggingBuilder.with_topic_level` / `with_topic_levels`, `LoggerFactory.create_root(extra=)`,
+  and a keyword form on `ServerBuilder.uvicorn`.
 
 ### Changed
+- `-v/--version` is the `.cli` block's `version` flag and prints the `.version` block's text;
+  `.version.with_semver` no longer adds the argument on its own.
+- `LoggingBuilder.with_config(dict)` is `with_options(dict)`.
+- `with_hook_builder` keeps each hook's priority, `once` and condition.
 - `AppBuilder.with_config_spec(namespace, package, base_config)` is
   `.config.with_spec(namespace, name)`; the packaged base is derived from the name and
   each layout deviation is a keyword (`origin`, `etc_dir`, `filename`, `path`).
@@ -57,6 +67,12 @@ For API stability guarantees and deprecation policy, see
   `--yes` skips (required in non-interactive contexts).
 
 ### Removed
+- `AppBuilder.with_name`, `with_version`, `with_standard_args`, `with_standard_arg`,
+  `without_standard_args`, `with_main_tool` and `.advanced`: the name is the constructor
+  argument, the rest moved to the `.cli`, `.version`, `.tools` and `.lifecycle` blocks.
+- `.logging.with_format` (nothing read the value), the app-side `ServerConfig` / `LoggingConfig`
+  and `.server.with_middleware*` / `with_cors_origins` / `with_ssl` (never reached the app), and
+  `ValidationBuilder` / `ValidationRule` (never applied).
 - `AppBuilder.with_config_file` and the etc-dir fallback chain behind it (`resolve_etc_dir`,
   `get_etc_dir`, `get_project_root`, `get_config_file_path`, `get_default_config`,
   `PROJECT_ROOT`, `ETC_DIR`, `DEFAULT_CONFIG_FILE`, `DEFAULT_CONFIG_FILENAME`): declare the

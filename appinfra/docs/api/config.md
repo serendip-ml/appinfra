@@ -448,7 +448,7 @@ Resolution rules:
 
 - **Spec declared** — `app.etc_dir` is the directory of the file the spec resolved to
   (`app.config_path.parent`), whichever precedence rule chose it.
-- **`with_standard_args(etc_dir=True)` only** (no spec):
+- **`.cli(etc_dir=True)` only** (no spec):
   - `--etc-dir /foo` valid → `app.etc_dir` is `/foo` (resolved).
   - `--etc-dir /bad` missing → raises `FileNotFoundError` at setup (fail-fast).
   - flag omitted → `None`; there is no default directory without a spec.
@@ -512,7 +512,7 @@ The keyword form takes `namespace` and `name` together, the layout keywords, `ov
 `hot_reload` and `debounce_ms`.
 
 Flag exposure is orthogonal. To expose the `--etc-dir` and `--config` escape hatches, compose
-with `.with_standard_args(etc_dir=True, config_file=True)`; a locked-down CLI skips that call
+with `.cli(etc_dir=True, config_file=True)`; a locked-down CLI skips that call
 and the loader reads a missing flag as `None`.
 
 An app built without a spec loads no file: its config is the programmatic layer plus CLI
