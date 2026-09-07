@@ -162,23 +162,38 @@ class TestWithoutFlags:
 class TestWithAllFlags:
     """with_all_flags enables every standard flag, help included."""
 
-    def test_enables_every_flag(self):
-        """Every key in the standard set goes True."""
+    def test_enables_every_flag_except_version_without_config(self):
+        """Every key except version goes True when no version configured."""
         builder = AppBuilder("test")
 
         builder.cli.with_all_flags().done()
 
-        assert all(v for v in builder._standard_args.values())
         for name in DEFAULT_STANDARD_ARGS:
-            assert builder._standard_args[name] is True, name
+            if name == "version":
+                assert builder._standard_args[name] is False, "version stays off"
+            else:
+                assert builder._standard_args[name] is True, name
 
-    def test_after_without_flags_restores_full_set(self):
-        """without_flags then with_all_flags reinstates every flag."""
+    def test_enables_version_when_configured(self):
+        """version flag enabled when version block is configured first."""
+        builder = AppBuilder("test")
+
+        builder.version.with_semver("1.0.0").done()
+        builder.cli.with_all_flags().done()
+
+        assert builder._standard_args["version"] is True
+
+    def test_after_without_flags_restores_full_set_except_version(self):
+        """without_flags then with_all_flags reinstates flags (version needs config)."""
         builder = AppBuilder("test")
 
         builder.cli.without_flags().with_all_flags().done()
 
-        assert all(v for v in builder._standard_args.values())
+        for name in DEFAULT_STANDARD_ARGS:
+            if name == "version":
+                assert builder._standard_args[name] is False
+            else:
+                assert builder._standard_args[name] is True
 
     def test_returns_block_for_chaining(self):
         """with_all_flags returns the block."""

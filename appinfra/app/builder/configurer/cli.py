@@ -108,8 +108,14 @@ class CliConfigurer:
         The counterpart of ``without_flags()``. An app that wants the
         framework's full CLI surface calls this instead of naming every
         flag in ``with_flags``.
+
+        The ``version`` flag is skipped when no version is configured
+        (no prior ``.version.with_semver(...)``). Configure the version
+        block before the cli block if you need ``-v/--version``.
         """
         for key in self._app_builder._standard_args:
+            if key == "version" and self._app_builder._version is None:
+                continue  # skip version flag when no version configured
             self._app_builder._standard_args[key] = True
         return self
 

@@ -43,8 +43,8 @@ For API stability guarantees and deprecation policy, see
   `LoggerFactory.create_root(extra=)` applies them to the existing root.
 - `HookManager.iter_hooks()` yields every hook with its event and registration metadata.
 - `AppBuilder.cli.with_all_flags()` enables every standard flag (`help` included), the
-  counterpart of `without_flags()`. `without_flag(name)` disables one flag, singular of
-  `without_flags()`.
+  counterpart of `without_flags()`. The `version` flag is skipped when no version is
+  configured. `without_flag(name)` disables one flag, singular of `without_flags()`.
 
 ### Changed
 - `-v/--version` is the `.cli` block's `version` flag and prints the `.version` block's text;
