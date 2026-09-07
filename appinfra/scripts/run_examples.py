@@ -27,7 +27,9 @@ as usual. Whatever is left in the case's process group is killed afterwards.
 ``ci-requires`` names a service or resource the file needs. Each is probed
 once before anything runs; when one is unavailable, every file declaring it
 is reported with a warning mark and counted as skipped instead of failing.
-Two forms are known, any other is rejected:
+Files declaring the same requirement share it, so they run one at a time
+while everything else stays concurrent around them. Two forms are known,
+any other is rejected:
 
 - ``pg``: a real Postgres connection. The endpoint (``--pg``, else
   ``INFRA_PGSERVER_HOST`` / ``INFRA_PGSERVER_PORT``, else 127.0.0.1:25432)
@@ -154,6 +156,13 @@ def parse_spec(path: Path, default_timeout_s: float) -> Spec:
     return spec
 
 
+def parse_port(text: str, source: str) -> int:
+    """Parse a TCP port, 1 to 65535. Raises ``ValueError`` naming ``source``."""
+    if text.isdigit() and 1 <= int(text) <= 65535:
+        return int(text)
+    raise ValueError(f"{source}: port must be 1-65535, got '{text}'")
+
+
 def parse_requirement(path: Path, value: str) -> str:
     """Validate one ``ci-requires`` value and return its key.
 
@@ -162,9 +171,8 @@ def parse_requirement(path: Path, value: str) -> str:
     if value == _PG_REQUIREMENT:
         return value
     if value.startswith(_PORT_PREFIX):
-        port_text = value[len(_PORT_PREFIX) :]
-        if port_text.isdigit() and 1 <= int(port_text) <= 65535:
-            return f"{_PORT_PREFIX}{int(port_text)}"
+        port = parse_port(value[len(_PORT_PREFIX) :], f"{path}: ci-requires '{value}'")
+        return f"{_PORT_PREFIX}{port}"
     raise ValueError(
         f"{path}: unknown ci-requires '{value}' (known: {_PG_REQUIREMENT}, port:N)"
     )
@@ -173,16 +181,19 @@ def parse_requirement(path: Path, value: str) -> str:
 def resolve_pg_endpoint(override: str | None) -> tuple[str, int]:
     """Pick the Postgres endpoint to probe: ``--pg``, else env, else default.
 
-    Raises ``ValueError`` on a malformed ``--pg`` value.
+    Raises ``ValueError`` on a malformed ``--pg`` or ``INFRA_PGSERVER_PORT``;
+    a bad value must not fall back to the default and probe the wrong port.
     """
     if override:
         host, sep, port_text = override.rpartition(":")
-        if not sep or not host or not port_text.isdigit():
+        if not sep or not host:
             raise ValueError(f"--pg expects HOST:PORT, got '{override}'")
-        return host, int(port_text)
+        return host, parse_port(port_text, "--pg")
     host = os.environ.get("INFRA_PGSERVER_HOST", _DEFAULT_PG_HOST)
-    port_text = os.environ.get("INFRA_PGSERVER_PORT", str(_DEFAULT_PG_PORT))
-    return host, int(port_text) if port_text.isdigit() else _DEFAULT_PG_PORT
+    env_port = os.environ.get("INFRA_PGSERVER_PORT")
+    if env_port is None:
+        return host, _DEFAULT_PG_PORT
+    return host, parse_port(env_port, "INFRA_PGSERVER_PORT")
 
 
 def probe_tcp(host: str, port: int) -> bool:
@@ -347,18 +358,30 @@ def _kill_group(proc: subprocess.Popen[str]) -> None:
         pass
 
 
-def run_spec(spec: Spec, unmet: dict[str, str]) -> list[Result]:
+def run_spec(
+    spec: Spec, unmet: dict[str, str], locks: dict[str, threading.Lock]
+) -> list[Result]:
     """Run every case of one file in order, or skip the file.
 
     A file whose requirement is in ``unmet`` is not started: it would only
-    crash on the missing service.
+    crash on the missing service. Otherwise the file holds the lock of every
+    requirement it declares for all its cases, so two files sharing a
+    database or a port never overlap. Locks are taken in sorted key order,
+    the same order in every file, so no two files can deadlock.
     """
     if spec.skip_reason is not None:
         return [Result(spec, "", "SKIP", spec.skip_reason)]
     missing = sorted(spec.requires & unmet.keys())
     if missing:
         return [Result(spec, "", "UNMET", "; ".join(unmet[name] for name in missing))]
-    return [run_case(spec, args) for args in spec.cases]
+    held = [locks[key] for key in sorted(spec.requires)]
+    for lock in held:
+        lock.acquire()
+    try:
+        return [run_case(spec, args) for args in spec.cases]
+    finally:
+        for lock in reversed(held):
+            lock.release()
 
 
 def run_all(
@@ -371,11 +394,14 @@ def run_all(
 
     Futures are drained in submission order, so a file's results are printed
     once it and every file before it have finished. The report therefore
-    reads exactly like a serial run, only sooner.
+    reads exactly like a serial run, only sooner. Files sharing a
+    requirement queue on its lock while the rest of the pool keeps going.
     """
+    declared: set[str] = set().union(*(spec.requires for spec in specs))
+    locks = {key: threading.Lock() for key in declared}
     results: list[Result] = []
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        futures = [pool.submit(run_spec, spec, unmet) for spec in specs]
+        futures = [pool.submit(run_spec, spec, unmet, locks) for spec in specs]
         for future in futures:
             for result in future.result():
                 report(result)

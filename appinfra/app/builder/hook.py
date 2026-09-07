@@ -314,7 +314,7 @@ class BuiltinHooks:
     @staticmethod
     def log_error(context: HookContext) -> None:
         """Log the context's error through the application logger."""
-        if context.error:
+        if context.error and context.application and hasattr(context.application, "lg"):
             context.application.lg.error(
                 "error occurred", extra={"exception": context.error}
             )

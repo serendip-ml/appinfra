@@ -523,6 +523,12 @@ class TestBuiltinHooks:
 
         app.lg.error.assert_not_called()
 
+    def test_log_error_without_application_does_not_raise(self):
+        """An error context with no application has no logger to use."""
+        context = HookContext(error=ValueError("test error"))
+
+        BuiltinHooks.log_error(context)
+
     def test_validate_config_passes(self):
         """Test validate_config passes with config (lines 276-282)."""
         app = Mock()
