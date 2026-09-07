@@ -9,6 +9,7 @@ particularly useful for examples and CLI applications.
 """
 
 import logging
+from collections.abc import Mapping
 from typing import Any, cast
 
 from ...log import LogConfig, LoggerFactory
@@ -112,7 +113,15 @@ def _add_extra_override(overrides: dict[str, Any], infra_config: Any) -> None:
     extra = getattr(infra_config.logging, "extra", None)
     if not extra:
         return
-    overrides["extra"] = dict(extra.to_dict() if hasattr(extra, "to_dict") else extra)
+    if hasattr(extra, "to_dict"):
+        extra = extra.to_dict()
+    if not isinstance(extra, Mapping):
+        from ...log.handler_factory import LogConfigError
+
+        raise LogConfigError(
+            f"logging.extra must be a mapping, got {type(extra).__name__}"
+        )
+    overrides["extra"] = dict(extra)
 
 
 def _build_config_overrides(

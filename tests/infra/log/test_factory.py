@@ -84,6 +84,18 @@ class TestCreateRoot:
         # Cleanup
         logger.handlers.clear()
 
+    def test_create_root_again_applies_new_extra(self, log_config):
+        """A repeated root setup replaces the extra fields instead of dropping them."""
+        first = LoggerFactory.create_root(log_config, extra={"service": "api"})
+
+        second = LoggerFactory.create_root(log_config, extra={"service": "worker"})
+
+        assert second is first
+        assert second._extra == {"service": "worker"}
+
+        # Cleanup
+        first.handlers.clear()
+
 
 # =============================================================================
 # Test logger already exists branch - Lines 64-66

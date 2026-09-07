@@ -405,8 +405,13 @@ class ServerBuilder:
     # Build
 
     def _build_config(self) -> ApiConfig:
-        """A copy of the builder's config, so the Server owns its own."""
-        return replace(self._api)
+        """A copy of the builder's config, nested objects included, so the
+        Server owns its own and later facet calls cannot reach it."""
+        return replace(
+            self._api,
+            uvicorn=replace(self._api.uvicorn),
+            ipc=replace(self._api.ipc) if self._api.ipc is not None else None,
+        )
 
     def _configure_adapter(self, adapter: FastAPIAdapter) -> None:
         """Configure adapter with routes, middleware, handlers, and lifecycle callbacks."""

@@ -339,6 +339,20 @@ class TestSubprocessConfigurer:
 
         assert builder._api.log_file == "/var/log/server.log"
 
+    def test_ipc_stays_unset_until_an_ipc_setting(self, mock_fastapi, mock_lg):
+        """Opening the facet keeps the direct-mode ipc value of None."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        builder = ServerBuilder(mock_lg, "test-api")
+        builder.subprocess.with_log_file("/var/log/api.log").done()
+
+        assert builder._api.ipc is None
+
+        builder.subprocess.with_poll_interval(0.05).done()
+
+        assert builder._api.ipc is not None
+        assert builder._api.ipc.poll_interval == 0.05
+
     def test_ipc_config(self, mock_fastapi, mock_lg):
         """Test IPCConfig configuration."""
         from appinfra.app.fastapi.builder.server import ServerBuilder
@@ -465,7 +479,22 @@ class TestUvicornConfigurer:
 
         assert builder._api.uvicorn.workers == 4
         assert builder._api.uvicorn.access_log is False
-        assert builder.build().config.uvicorn.workers == 4
+        assert builder._build_config().uvicorn.workers == 4
+
+    def test_built_config_is_independent_of_later_facet_calls(
+        self, mock_fastapi, mock_lg
+    ):
+        """The built config owns its nested objects; the builder stays mutable."""
+        from appinfra.app.fastapi.builder.server import ServerBuilder
+
+        builder = ServerBuilder(mock_lg, "test-api")
+        builder.uvicorn.with_workers(4).done()
+        built = builder._build_config()
+
+        builder.uvicorn.with_workers(8).done()
+
+        assert built.uvicorn.workers == 4
+        assert built.uvicorn is not builder._api.uvicorn
 
     def test_keyword_form_rejects_unknown_field(self, mock_fastapi, mock_lg):
         """A keyword that is not a UvicornConfig field is a TypeError."""

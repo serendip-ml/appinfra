@@ -261,6 +261,12 @@ builder's.
 from `configure(builder)`; the server is built after every plugin has run. Requires
 `pip install appinfra[fastapi]`.
 
+The server built from `.server` logs through a default `Logger` named after the app, not through
+the app's configured logging: it is built before the app's logger exists, so `.logging` settings
+and `--log-level` do not reach it. An app that needs the server on its own logging builds it
+standalone with `ServerBuilder(lg, name)` and registers it with `ServerPlugin(server)`; see
+[FastAPI Integration](fastapi.md).
+
 ```python
 app = (
     AppBuilder("myapp")

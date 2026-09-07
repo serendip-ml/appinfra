@@ -52,9 +52,16 @@ class SubprocessConfigurer(Generic[P]):
             parent: Parent ServerBuilder instance
         """
         self._parent: P = parent
-        if parent._api.ipc is None:
-            parent._api.ipc = IPCConfig()
-        self._config = parent._api.ipc  # the parent's, mutated in place
+
+    def _ipc(self) -> IPCConfig:
+        """The parent's IPC config, created on the first IPC setting.
+
+        Lazy so that merely opening the facet leaves ``ApiConfig.ipc`` at
+        ``None``, the documented value for a server without IPC.
+        """
+        if self._parent._api.ipc is None:
+            self._parent._api.ipc = IPCConfig()
+        return self._parent._api.ipc
 
     def with_ipc(
         self,
@@ -104,7 +111,7 @@ class SubprocessConfigurer(Generic[P]):
         Returns:
             Self for method chaining
         """
-        self._config.poll_interval = interval
+        self._ipc().poll_interval = interval
         return self
 
     def with_response_timeout(self, timeout: float) -> Self:
@@ -117,7 +124,7 @@ class SubprocessConfigurer(Generic[P]):
         Returns:
             Self for method chaining
         """
-        self._config.response_timeout = timeout
+        self._ipc().response_timeout = timeout
         return self
 
     def with_max_pending(self, max_pending: int) -> Self:
@@ -132,7 +139,7 @@ class SubprocessConfigurer(Generic[P]):
         Returns:
             Self for method chaining
         """
-        self._config.max_pending = max_pending
+        self._ipc().max_pending = max_pending
         return self
 
     def with_health_reporting(self, enabled: bool = True) -> Self:
@@ -145,7 +152,7 @@ class SubprocessConfigurer(Generic[P]):
         Returns:
             Self for method chaining
         """
-        self._config.enable_health_reporting = enabled
+        self._ipc().enable_health_reporting = enabled
         return self
 
     def with_auto_restart(
@@ -173,7 +180,6 @@ class SubprocessConfigurer(Generic[P]):
     def with_config(self, config: IPCConfig) -> Self:
         """Set entire IPC config at once."""
         self._parent._api.ipc = config
-        self._config = config
         return self
 
     def done(self) -> P:

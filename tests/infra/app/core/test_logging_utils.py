@@ -136,6 +136,15 @@ class TestConfigOverrides:
 
         assert logger._extra == {"service": "api", "version": "1.0"}
 
+    def test_extra_that_is_not_a_mapping_is_rejected(self):
+        """A scalar or list under logging.extra fails with a config error, not dict()."""
+        from appinfra.log.handler_factory import LogConfigError
+
+        config = DotDict(logging=DotDict(level="info", extra="production"))
+
+        with pytest.raises(LogConfigError, match="logging.extra must be a mapping"):
+            setup_logging_from_config(config, {"log_level": "info"})
+
     def test_kwargs_overrides(self):
         """Test kwargs overrides (lines 119-120)."""
         config = DotDict(

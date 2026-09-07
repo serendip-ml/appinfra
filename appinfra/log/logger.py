@@ -159,6 +159,15 @@ class Logger(logging.Logger):
         # Explicitly clear our own cache since we may not be in loggerDict
         self._cache.clear()  # type: ignore[attr-defined]
 
+    def set_extra(self, extra: dict[str, Any] | collections.OrderedDict) -> None:
+        """Replace the pre-populated extra fields included in every record.
+
+        Raises:
+            ReservedKeyError: If any key collides with a LogRecord attribute.
+        """
+        self._validate_extra_keys(extra)
+        self._extra = extra.copy()
+
     def _validate_extra_keys(self, extra: dict[str, Any] | None) -> None:
         """Validate that extra dict doesn't contain reserved LogRecord keys.
 
