@@ -514,7 +514,7 @@ jobs:
           make setup
 
       - name: Run make check (raw-parallel for readable logs)
-        run: PYTHON=$(which python) bash appinfra/scripts/check.sh --raw-parallel
+        run: PYTHON=$(which python) INFRA_DEV_PROJECT_ROOT=$(pwd) bash appinfra/scripts/check.sh --raw-parallel
 
       - name: Stop postgres
         if: always()
