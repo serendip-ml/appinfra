@@ -26,14 +26,13 @@ class AppBuilder:
 | `.config`    | config source: spec, programmatic overrides, hot reload  | app-only         |
 | `.cli`       | standard flags, flag presentation, custom arguments      | app-only         |
 | `.logging`   | display options, topic levels, handlers, extra fields    | `LoggingBuilder` |
-| `.server`    | FastAPI server: routes, uvicorn, subprocess              | `ServerBuilder`  |
 | `.tools`     | tools, commands, plugins, main tool                      | app-only         |
 | `.lifecycle` | hooks by event                                           | app-only         |
 | `.version`   | semver, build info, tracked packages                     | app-only         |
 
-`.logging` and `.server` are the standalone builders bound to the app: every method of
-[`LoggingBuilder`](logging.md) and [`ServerBuilder`](fastapi.md) is available on the block, and
-`build()` on the block raises, since the app builds the logger and the server itself.
+`.logging` is the standalone builder bound to the app: every method of
+[`LoggingBuilder`](logging.md) is available on the block, and `build()` on the block raises,
+since the app builds the logger itself.
 
 Two spellings per block write the same state:
 
@@ -257,38 +256,6 @@ console handler on a stream other than stdout/stderr, fails at `done()`; add suc
 the root logger from a startup hook instead. `with_runtime_updates()` is the one scope-only
 method; everything else is the standalone builder's.
 
-## server block
-
-`ServerScope` is the FastAPI [`ServerBuilder`](fastapi.md) bound to the app. Declaring it adds a
-`serve` tool at build time, through `ServerPlugin`. Plugins can add routes and middleware to it
-from `configure(builder)`; the server is built after every plugin has run. Requires
-`pip install appinfra[fastapi]`.
-
-The server built from `.server` logs through a default `Logger` named after the app, not through
-the app's configured logging: it is built before the app's logger exists, so `.logging` settings
-and `--log-level` do not reach it. An app that needs the server on its own logging builds it
-standalone with `ServerBuilder(lg, name)` and registers it with `ServerPlugin(server)`; see
-[FastAPI Integration](fastapi.md).
-
-```python
-app = (
-    AppBuilder("myapp")
-    .server.with_port(8080)
-    .routes.with_route("/health", health)
-    .done()
-    .uvicorn(workers=4)
-    .done()
-    .build()
-)
-
-app = AppBuilder("myapp").server(port=8080, uvicorn={"workers": 4}).build()
-```
-
-Keyword fields: `host`, `port`, `title`, `description`, `version`, `timeout`, and `uvicorn`, a
-mapping of `UvicornConfig` fields. Lifecycle callbacks and rate limiting are direct methods on
-the block; routes, CORS and middleware are chained through `.routes`, and Uvicorn and subprocess
-settings through `.uvicorn` and `.subprocess`, each closing back onto the block.
-
 ## tools block
 
 ```python
@@ -400,5 +367,5 @@ See [Hot-Reload Logging Guide](../guides/hot-reload-logging.md) for full documen
 - [Decorator API with Config Files](../guides/decorator-config-pattern.md) - Build app, then decorate
 - [Application Framework](app.md) - Tool and ToolConfig
 - [Logging System](logging.md) - LoggingBuilder, the standalone builder behind `.logging`
-- [FastAPI Server](fastapi.md) - ServerBuilder, the standalone builder behind `.server`
+- [FastAPI Server](fastapi.md) - ServerBuilder, for a tool that serves HTTP
 - [Hot-Reload Logging](../guides/hot-reload-logging.md) - Dynamic config reloading

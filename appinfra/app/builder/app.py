@@ -11,14 +11,14 @@ or called with keywords, which returns the AppBuilder directly::
         .config.with_spec("myorg", "myapp").done()
         .cli.with_flags(etc_dir=True, log=True).done()
         .logging.with_level("info").done()
-        .tools.with_tool(ServeTool()).with_main("serve").done()
+        .tools.with_tool(MigrateTool()).with_main("migrate").done()
         .lifecycle.with_hook("startup", init_db).done()
         .version.with_semver("1.0.0").done()
         .build()
 
-``.logging`` and ``.server`` are the standalone ``LoggingBuilder`` and
-FastAPI ``ServerBuilder`` bound to the AppBuilder, so every method of
-those builders is available on the block without re-declaration.
+``.logging`` is the standalone ``LoggingBuilder`` bound to the AppBuilder,
+so every method of that builder is available on the block without
+re-declaration.
 
 One block is open at a time: ``build()``, opening another block, or a
 plugin returning from ``configure()`` with a block open raises, naming
@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Self
+from typing import Any, Self
 
 from ...config import Config, ConfigSpec
 from ...dot_dict import DotDict
@@ -47,12 +47,6 @@ from .configurer.tool import ToolConfigurer
 from .configurer.version import VersionConfigurer, _register_startup_hook
 from .hook import HookManager
 from .plugin import PluginManager
-
-if TYPE_CHECKING:
-    # Deferred, not a cycle: the server scope's module imports the FastAPI
-    # runtime, which only apps that declare .server should load. The
-    # ``server`` property imports it on first use.
-    from .configurer.server import ServerScope
 
 # Helper functions for AppBuilder.build()
 
@@ -227,8 +221,8 @@ class AppBuilder:
 
     Top level carries identity only: the name (constructor), a description
     and an optional ``App`` subclass. Everything else lives on a block:
-    ``.config``, ``.cli``, ``.logging``, ``.server``, ``.tools``,
-    ``.lifecycle``, ``.version``.
+    ``.config``, ``.cli``, ``.logging``, ``.tools``, ``.lifecycle``,
+    ``.version``.
     """
 
     def __init__(self, name: str | None = None):
@@ -260,14 +254,10 @@ class AppBuilder:
 
     def _init_block_state(self) -> None:
         """State about the blocks themselves rather than what they hold."""
-        # Scopes that subclass a standalone builder hold their own state, so
-        # one instance per builder.
+        # The logging scope subclasses the standalone builder and holds its
+        # own state, so one instance per builder.
         self._logging_scope: LoggingScope | None = None
-        self._server_scope: ServerScope | None = None
         self._open_block: OpenBlock | None = None
-        # True once the app declared .server, as opposed to a plugin creating
-        # the scope during configure().
-        self._server_registered = False
         self._built = False
 
     def with_description(self, description: str) -> Self:
@@ -319,8 +309,7 @@ class AppBuilder:
             )
         self._check_blocks_closed()
         self._built = True
-        self._register_server()
-        self._configure_plugins()
+        self._plugins.configure_all(self)
         self._check_blocks_closed()
         self._register_version()
         self._add_version_flag()
@@ -342,33 +331,6 @@ class AppBuilder:
                 "the logging block has changes made after done(); "
                 "close it again so they reach the config"
             )
-
-    def _configure_plugins(self) -> None:
-        """Let every plugin configure the builder, the server plugin last.
-
-        The server plugin is registered last, so it builds the server after
-        the other plugins have added their routes and middleware.
-        """
-        self._plugins.configure_all(self)
-        if self._server_scope is not None and not self._server_registered:
-            raise ValueError(
-                "a plugin configured .server but the app declared no server; "
-                "declare .server on the builder to expose it"
-            )
-
-    def _register_server(self) -> None:
-        """Register the plugin that builds the declared server and adds ``serve``.
-
-        The plugin builds the server when it is configured, which happens
-        after every plugin registered before it, so those can add routes and
-        middleware to the scope first.
-        """
-        if self._server_scope is None or self._server_registered:
-            return
-        from ..fastapi.plugin import ServerPlugin
-
-        self._plugins.register_plugin(ServerPlugin(self._server_scope))
-        self._server_registered = True
 
     def _register_version(self) -> None:
         """Create the package tracker and the startup hook from the version block.
@@ -464,24 +426,6 @@ class AppBuilder:
             self._logging_scope = LoggingScope(self)
         self._open(self._logging_scope)
         return self._logging_scope
-
-    @property
-    def server(self) -> ServerScope:
-        """
-        Server block: the FastAPI ``ServerBuilder`` bound to this app.
-
-        Declaring it adds a ``serve`` tool at build time.
-
-        Example:
-            AppBuilder("myapp").server.with_port(8080).done()
-            AppBuilder("myapp").server(port=8080, uvicorn={"workers": 4})
-        """
-        if self._server_scope is None:
-            from .configurer.server import ServerScope
-
-            self._server_scope = ServerScope(self)
-        self._open(self._server_scope)
-        return self._server_scope
 
     @property
     def tools(self) -> ToolConfigurer:

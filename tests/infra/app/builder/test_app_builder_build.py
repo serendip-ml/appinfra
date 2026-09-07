@@ -138,7 +138,6 @@ class TestTopLevelSurface:
             "config",
             "cli",
             "logging",
-            "server",
             "tools",
             "lifecycle",
             "version",
