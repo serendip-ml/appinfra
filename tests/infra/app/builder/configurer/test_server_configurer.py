@@ -185,3 +185,43 @@ class TestBuildRegistersServer:
 
         (plugin,) = builder._plugins._plugins.values()
         assert plugin._server.config.port == 8123
+
+    def test_plugin_routes_reach_declared_server(self):
+        """A plugin's routes and middleware land on the server built at build()."""
+        from appinfra.app.builder.plugin import Plugin
+
+        class MetricsPlugin(Plugin):
+            def __init__(self):
+                super().__init__("metrics")
+
+            def configure(self, builder):
+                builder.server.routes.with_route("/metrics", _health).with_middleware(
+                    object
+                )
+
+        builder = AppBuilder("test").server.done().tools(plugins=[MetricsPlugin()])
+
+        with patch(ADAPTER) as adapter:
+            adapter.return_value = MagicMock()
+            app = builder.build()
+
+        assert app.registry.is_registered("serve")
+        assert [r.path for r in builder._server_scope._routes] == ["/metrics"]
+        assert adapter.return_value.add_route.call_count == 1
+        assert adapter.return_value.add_middleware.call_count == 1
+
+    def test_plugin_server_without_declaration_raises(self):
+        """A plugin touching .server on an app that declared none is an error."""
+        from appinfra.app.builder.plugin import Plugin
+
+        class RoutePlugin(Plugin):
+            def __init__(self):
+                super().__init__("routes")
+
+            def configure(self, builder):
+                builder.server.routes.with_route("/x", _health)
+
+        builder = AppBuilder("test").tools(plugins=[RoutePlugin()])
+
+        with pytest.raises(ValueError, match="declared no server"):
+            builder.build()

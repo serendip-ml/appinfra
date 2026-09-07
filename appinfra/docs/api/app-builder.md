@@ -251,7 +251,9 @@ builder's.
 ## server block
 
 `ServerScope` is the FastAPI [`ServerBuilder`](fastapi.md) bound to the app. Declaring it adds a
-`serve` tool at build time, through `ServerPlugin`. Requires `pip install appinfra[fastapi]`.
+`serve` tool at build time, through `ServerPlugin`. Plugins can add routes and middleware to it
+from `configure(builder)`; the server is built after every plugin has run. Requires
+`pip install appinfra[fastapi]`.
 
 ```python
 app = (

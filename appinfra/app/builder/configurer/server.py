@@ -6,8 +6,9 @@ Server block for AppBuilder.
 
 ``ServerScope`` is the standalone FastAPI ``ServerBuilder`` bound to an
 ``AppBuilder``: every builder method and facet (``.routes``,
-``.subprocess``, ``.uvicorn``) is inherited. ``AppBuilder.build()`` builds
-the server and registers a ``ServerPlugin`` for it, which adds the
+``.subprocess``, ``.uvicorn``) is inherited. ``AppBuilder.build()``
+registers a ``ServerPlugin`` for the scope, which builds the server after
+the other plugins have added their routes and middleware, and adds the
 ``serve`` tool. Serving requires the ``fastapi`` extra.
 """
 
@@ -71,10 +72,6 @@ class ServerScope(ServerBuilder):
             "ServerScope does not build the server; close the block with done() "
             "and let the AppBuilder build it"
         )
-
-    def _build_server(self) -> Server:
-        """Build the ``Server``; called by ``AppBuilder.build()``."""
-        return ServerBuilder.build(self)
 
     def __call__(self, **fields: Unpack[ServerFields]) -> AppBuilder:
         """Keyword form of the block; ``uvicorn`` takes ``UvicornFields``."""

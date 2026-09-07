@@ -159,9 +159,16 @@ def _initialize_foundation(app: App, builder: AppBuilder) -> None:
 
 def _register_components(app: App, builder: AppBuilder) -> None:
     """Register all app components: plugins, tools, lifecycle, arguments."""
-    # Plugins first: configure() may add tools and hooks to the builder, and
-    # those must exist before the tool registry is populated from it.
+    # Plugins first: configure() may add tools, hooks, routes and middleware
+    # to the builder, and those must exist before the tool registry is
+    # populated from it. The server plugin is registered last, so it builds
+    # the server after the other plugins have configured it.
     builder._plugins.configure_all(builder)
+    if builder._server_scope is not None and not builder._server_registered:
+        raise ValueError(
+            "a plugin configured .server but the app declared no server; "
+            "declare .server on the builder to expose it"
+        )
     _register_tools_and_commands(app, builder._tools, builder._commands)
     if builder._main_tool:
         app.set_main_tool(builder._main_tool)
@@ -283,13 +290,17 @@ class AppBuilder:
         return app
 
     def _register_server(self) -> None:
-        """Build the declared server and register the plugin that adds ``serve``."""
+        """Register the plugin that builds the declared server and adds ``serve``.
+
+        The plugin builds the server when it is configured, which happens
+        after every plugin registered before it, so those can add routes and
+        middleware to the scope first.
+        """
         if self._server_scope is None or self._server_registered:
             return
         from ..fastapi.plugin import ServerPlugin
 
-        server = self._server_scope._build_server()
-        self._plugins.register_plugin(ServerPlugin(server))
+        self._plugins.register_plugin(ServerPlugin(self._server_scope))
         self._server_registered = True
 
     def _add_version_flag(self) -> None:
