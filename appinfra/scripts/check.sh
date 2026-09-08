@@ -17,10 +17,16 @@ shopt -s nullglob
 
 PARALLEL=true
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
-PYTEST_JOBS=$(( NPROC / 4 > 2 ? NPROC / 4 : 2 ))
 # --dist=worksteal (xdist ≥ 3.2): idle workers pull tests from busy peers,
 # smoothing the tail when one shard's tests are slower than others'.
+# Standalone suites use NPROC/4 workers so several suites in the parallel
+# group don't oversubscribe cores. Coverage gets NPROC/2 because it
+# absorbs one or more standalone suites (see FOLDED_MARKERS below), stays
+# alive longer, and benefits from more workers as the others drop out.
+PYTEST_JOBS=$(( NPROC / 4 > 2 ? NPROC / 4 : 2 ))
 PYTEST_PARALLEL="-n ${PYTEST_JOBS} --dist=worksteal"
+PYTEST_JOBS_COVERAGE=$(( NPROC / 2 > 2 ? NPROC / 2 : 2 ))
+PYTEST_PARALLEL_COVERAGE="-n ${PYTEST_JOBS_COVERAGE} --dist=worksteal"
 COVERAGE_TARGET=""
 FAIL_FAST=false
 RAW=false
@@ -29,13 +35,14 @@ SKIP_TESTS=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --sequential) PARALLEL=false; PYTEST_PARALLEL="-n 0"; shift ;;
+        --sequential) PARALLEL=false; PYTEST_PARALLEL="-n 0"; PYTEST_PARALLEL_COVERAGE="-n 0"; shift ;;
         --coverage-target) COVERAGE_TARGET="$2"; shift 2 ;;
         --fail-fast) FAIL_FAST=true; shift ;;
         --raw)
             RAW=true
             PARALLEL=false
             PYTEST_PARALLEL="-n 0"
+            PYTEST_PARALLEL_COVERAGE="-n 0"
             FAIL_FAST=true
             shift
             ;;
@@ -71,6 +78,49 @@ CHECK_EXAMPLES="${INFRA_DEV_CHECK_EXAMPLES:-false}"
 # HOST:PORT for run_examples.py --pg; Makefile.dev derives it from Makefile.pg.
 EXAMPLES_PG="${_INFRA_DEV_EXAMPLES_PG:-}"
 COVERAGE_MARKERS="${INFRA_PYTEST_COVERAGE_MARKERS:-unit}"
+
+# Coverage's marker expression can subsume standalone test suites. When
+# check.sh runs both a standalone suite and coverage over the same marker
+# set, both execute the same work with only a fraction of the effective
+# parallelism. Parse the marker expression so we can drop the redundant
+# standalone lines.
+#
+# Recognizes:
+#   ""            → coverage runs all tests → fold every standalone suite
+#   "<name>"      → fold that suite if it's in the standalone set
+#   "<a> or <b>…" → fold each named suite in the standalone set
+# Anything else (`and`, `not`, parens, unknown names) → no folding.
+# Performance is never folded — perf runs isolated for accurate timing.
+FOLDED_MARKERS=""
+_STANDALONE_MARKERS="unit integration e2e security"
+if [ -z "$COVERAGE_MARKERS" ]; then
+    FOLDED_MARKERS="$_STANDALONE_MARKERS"
+elif [[ "$COVERAGE_MARKERS" =~ ^[a-z0-9_]+([[:space:]]+or[[:space:]]+[a-z0-9_]+)*$ ]]; then
+    for _m in $(echo "$COVERAGE_MARKERS" | sed -E 's/[[:space:]]+or[[:space:]]+/ /g'); do
+        case " $_STANDALONE_MARKERS " in
+            *" $_m "*) FOLDED_MARKERS="${FOLDED_MARKERS:+$FOLDED_MARKERS }$_m" ;;
+        esac
+    done
+fi
+
+# Coverage subcheck's display label: fold-prefixed. E.g. FOLDED_MARKERS
+# = "unit integration" → "Unit & Integration & Coverage"; empty → just
+# "Coverage".
+_cov_prefix=""
+for _m in unit integration e2e security; do
+    case " $FOLDED_MARKERS " in
+        *" $_m "*)
+            case "$_m" in
+                unit) _label="Unit" ;;
+                integration) _label="Integration" ;;
+                e2e) _label="E2E" ;;
+                security) _label="Security" ;;
+            esac
+            _cov_prefix="${_cov_prefix}${_label} & "
+            ;;
+    esac
+done
+COVERAGE_LABEL="${_cov_prefix}Coverage tests"
 MYPY_FLAGS="${INFRA_DEV_MYPY_FLAGS:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${INFRA_DEV_PROJECT_ROOT:-$(dirname "$SCRIPT_DIR")}"
@@ -175,30 +225,35 @@ fi
 
 # INFRA_CHECK_PYTEST_SUITE prevents schema collisions when test suites run in parallel.
 # Each suite gets unique schema names: unit_gw0, integ_gw0, e2e_gw0, etc.
-declare -a TEST_SUBCHECKS=(
-    "Unit tests|test.unit|INFRA_CHECK_PYTEST_SUITE=unit ${PYTHON} -m pytest tests/ -m unit --tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}|"
-    "Integration tests|test.integration|INFRA_CHECK_PYTEST_SUITE=integ ${PYTHON} -m pytest tests/ -m integration --tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}|"
-    "E2E tests|test.e2e|INFRA_CHECK_PYTEST_SUITE=e2e ${PYTHON} -m pytest tests/ -m e2e --tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}|"
-    "Security tests|test.security|INFRA_CHECK_PYTEST_SUITE=sec ${PYTHON} -m pytest tests/ -m security --tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}|"
-    "Performance tests|test.perf|INFRA_CHECK_PYTEST_SUITE=perf ${PYTHON} -m pytest tests/ -m performance --tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}|"
-)
-# Add coverage check only if threshold > 0 (awk is more portable than bc)
+#
+# Standalone suites are skipped when coverage subsumes their marker (see
+# FOLDED_MARKERS above). Perf is always separate — coverage never folds it.
+_standalone_suite() {
+    local marker="$1" name="$2" target="$3" suite="$4"
+    case " $FOLDED_MARKERS " in
+        *" $marker "*) return ;;
+    esac
+    TEST_SUBCHECKS+=("$name|$target|INFRA_CHECK_PYTEST_SUITE=$suite ${PYTHON} -m pytest tests/ -m $marker --tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}|")
+    TEST_SUBCHECKS_RAW+=("$name|$target.v|INFRA_CHECK_PYTEST_SUITE=$suite ${PYTHON} -m pytest tests/ -m $marker -v --tb=short -rEfs ${PYTEST_PARALLEL}|")
+}
+declare -a TEST_SUBCHECKS=()
+declare -a TEST_SUBCHECKS_RAW=()
+
+# Coverage subcheck goes first — it subsumes at least one standalone
+# suite (see FOLDED_MARKERS above) and stays alive longest in the
+# parallel group; leading the list keeps its running/completed state
+# obvious. Uses NPROC/2 workers (see PYTEST_PARALLEL_COVERAGE above).
 if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then
-    TEST_SUBCHECKS+=("Code coverage|test.coverage|${COVERAGE_CORE_ENV}INFRA_CHECK_PYTEST_SUITE=cov ${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term -q -rEfs ${PYTEST_PARALLEL}|${COVERAGE_TARGET}")
+    TEST_SUBCHECKS+=("${COVERAGE_LABEL}|test.coverage|${COVERAGE_CORE_ENV}INFRA_CHECK_PYTEST_SUITE=cov ${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term -q -rEfs ${PYTEST_PARALLEL_COVERAGE}|${COVERAGE_TARGET}")
+    TEST_SUBCHECKS_RAW+=("${COVERAGE_LABEL}|test.coverage|${COVERAGE_CORE_ENV}INFRA_CHECK_PYTEST_SUITE=cov ${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term-missing -rEfs ${PYTEST_PARALLEL_COVERAGE}|${COVERAGE_TARGET}")
 fi
 
-# Verbose versions for raw mode
-declare -a TEST_SUBCHECKS_RAW=(
-    "Unit tests|test.unit.v|INFRA_CHECK_PYTEST_SUITE=unit ${PYTHON} -m pytest tests/ -m unit -v --tb=short -rEfs ${PYTEST_PARALLEL}|"
-    "Integration tests|test.integration.v|INFRA_CHECK_PYTEST_SUITE=integ ${PYTHON} -m pytest tests/ -m integration -v --tb=short -rEfs ${PYTEST_PARALLEL}|"
-    "E2E tests|test.e2e.v|INFRA_CHECK_PYTEST_SUITE=e2e ${PYTHON} -m pytest tests/ -m e2e -v --tb=short -rEfs ${PYTEST_PARALLEL}|"
-    "Security tests|test.security.v|INFRA_CHECK_PYTEST_SUITE=sec ${PYTHON} -m pytest tests/ -m security -v --tb=short -rEfs ${PYTEST_PARALLEL}|"
-    "Performance tests|test.perf.v|INFRA_CHECK_PYTEST_SUITE=perf ${PYTHON} -m pytest tests/ -m performance -v --tb=short -rEfs ${PYTEST_PARALLEL}|"
-)
-# Add coverage check only if threshold > 0 (awk is more portable than bc)
-if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then
-    TEST_SUBCHECKS_RAW+=("Code coverage|test.coverage|${COVERAGE_CORE_ENV}INFRA_CHECK_PYTEST_SUITE=cov ${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term-missing -rEfs ${PYTEST_PARALLEL}|${COVERAGE_TARGET}")
-fi
+_standalone_suite unit        "Unit tests"        test.unit        unit
+_standalone_suite integration "Integration tests" test.integration integ
+_standalone_suite e2e         "E2E tests"         test.e2e         e2e
+_standalone_suite security    "Security tests"    test.security    sec
+TEST_SUBCHECKS+=("Performance tests|test.perf|INFRA_CHECK_PYTEST_SUITE=perf ${PYTHON} -m pytest tests/ -m performance --tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}|")
+TEST_SUBCHECKS_RAW+=("Performance tests|test.perf.v|INFRA_CHECK_PYTEST_SUITE=perf ${PYTHON} -m pytest tests/ -m performance -v --tb=short -rEfs ${PYTEST_PARALLEL}|")
 
 # Run the example scripts as the last test subcheck when opted in
 # (INFRA_DEV_CHECK_EXAMPLES=true) and an examples directory exists. Same
