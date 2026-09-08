@@ -82,8 +82,8 @@ def mark_pending(stream: TextIO = sys.stdout) -> str:
 
 
 def mark_running(stream: TextIO = sys.stdout) -> str:
-    """Yellow ``[...]`` — work in progress."""
-    return yellow("[...]", stream)
+    """Yellow ``[…]`` — work in progress."""
+    return yellow("[…]", stream)
 
 
 def mark_ok(stream: TextIO = sys.stdout) -> str:
@@ -113,7 +113,7 @@ def ui_warn(message: str, stream: TextIO = sys.stdout) -> None:
 
 
 def ui_running(message: str, stream: TextIO = sys.stdout) -> None:
-    """Print ``[...] <message>`` to ``stream`` (stdout by default)."""
+    """Print ``[…] <message>`` to ``stream`` (stdout by default)."""
     print(f"{mark_running(stream)} {message}", file=stream)
 
 

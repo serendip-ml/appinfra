@@ -201,10 +201,25 @@ _pg_up() {
         _pg_compose_run single down
     fi
 
+    # Header describes the action, not the assumed state. When the
+    # desired mode is already running, compose up -d is a no-op and
+    # _pg_wait_up serves as the ground-truth check — if detection was
+    # wrong and pg isn't actually responsive, the wait will time out
+    # and surface the failure.
+    local _already_up="false"
+    [ "${_INFRA_PG_MODE}" = "${running_mode}" ] && _already_up="true"
     if [ "${_INFRA_PG_MODE}" = "repl" ]; then
-        ui_running "Starting pgserver '${_INFRA_PG_CONTAINER_NAME}' (repl mode; primary ${_INFRA_PG_PORT}, standby ${_INFRA_PG_PORT_R})"
+        if [ "${_already_up}" = "true" ]; then
+            ui_running "pgserver '${_INFRA_PG_CONTAINER_NAME}' already up (repl mode; primary ${_INFRA_PG_PORT}, standby ${_INFRA_PG_PORT_R}) — verifying"
+        else
+            ui_running "Starting pgserver '${_INFRA_PG_CONTAINER_NAME}' (repl mode; primary ${_INFRA_PG_PORT}, standby ${_INFRA_PG_PORT_R})"
+        fi
     else
-        ui_running "Starting pgserver '${_INFRA_PG_CONTAINER_NAME}' (single mode, port ${_INFRA_PG_PORT})"
+        if [ "${_already_up}" = "true" ]; then
+            ui_running "pgserver '${_INFRA_PG_CONTAINER_NAME}' already up (single mode, port ${_INFRA_PG_PORT}) — verifying"
+        else
+            ui_running "Starting pgserver '${_INFRA_PG_CONTAINER_NAME}' (single mode, port ${_INFRA_PG_PORT})"
+        fi
     fi
     _pg_compose_run "${_INFRA_PG_MODE}" up -d
 
@@ -226,6 +241,7 @@ _pg_down() {
 
     case "${running_mode}" in
         repl)
+            ui_running "Stopping pgserver '${_INFRA_PG_CONTAINER_NAME}' (repl mode)"
             if [ -n "${_INFRA_PG_PORT_R:-}" ]; then
                 _pg_compose_run repl down || true
             else
@@ -235,11 +251,25 @@ _pg_down() {
                 ${runtime} rm -f "${_INFRA_PG_CONTAINER_NAME}-primary" "${_INFRA_PG_CONTAINER_NAME}-standby" 2>/dev/null || true
             fi
             ;;
-        single) _pg_compose_run single down || true ;;
-        none)
-            # Nothing running; still run single-mode down to sweep any lingering
-            # network/volume artifacts. Matches historic Makefile behavior.
+        single)
+            ui_running "Stopping pgserver '${_INFRA_PG_CONTAINER_NAME}' (single mode)"
             _pg_compose_run single down || true
+            ;;
+        none)
+            # Header describes the state so the output reads honestly on
+            # the idempotent no-op path. _pg_wait_down still runs and
+            # serves as the ground-truth check — if detection is wrong
+            # and containers are actually present, the wait catches it.
+            ui_running "pgserver '${_INFRA_PG_CONTAINER_NAME}' already down — verifying"
+            # Still run single-mode down to sweep any lingering
+            # network/volume artifacts. Matches historic Makefile behavior.
+            # Filter podman's "no such container/pod" lines from stderr —
+            # those are expected when there is nothing to stop and would
+            # contradict the "Server is DOWN" message that follows. Any
+            # other stderr line still surfaces so real failures aren't lost.
+            _pg_compose_run single down \
+                2> >(grep -vE '^Error: no (container|pod) with .*: no such (container|pod)$' >&2) \
+                || true
             ;;
     esac
 
@@ -439,10 +469,23 @@ _pg_wait_down() {
     : "${_INFRA_PG_CONTAINER_NAME:?_INFRA_PG_CONTAINER_NAME required}"
     : "${_INFRA_PG_WAIT_TIMEOUT:=30}"
 
-    local runtime i
+    local runtime i present_count noun
     runtime="$(_pg_container_runtime)"
 
-    ui_running "Waiting for ${_INFRA_PG_CONTAINER_NAME} container(s) to be removed..."
+    # Count matching containers up front so the wait line pluralizes
+    # correctly (single mode → 1, repl → 2) — and skip the "Waiting…"
+    # line entirely when nothing is there (idempotent no-op path).
+    present_count=$(
+        ${runtime} ps -a --format '{{.Names}}' 2>/dev/null \
+            | grep -cE "^${_INFRA_PG_CONTAINER_NAME}(-primary|-standby)?$" || true
+    )
+    if [ "$present_count" -eq 0 ]; then
+        ui_ok "Server is DOWN"
+        return 0
+    fi
+    [ "$present_count" -eq 1 ] && noun="container" || noun="containers"
+
+    ui_running "Waiting for ${_INFRA_PG_CONTAINER_NAME} ${noun} to be removed..."
     for i in $(seq 1 "${_INFRA_PG_WAIT_TIMEOUT}"); do
         if ! ${runtime} ps -a --format '{{.Names}}' 2>/dev/null | grep -qE "^${_INFRA_PG_CONTAINER_NAME}(-primary|-standby)?$"; then
             ui_ok "Server is DOWN"
@@ -453,7 +496,13 @@ _pg_wait_down() {
         fi
         sleep 1
     done
-    ui_fail "container(s) for ${_INFRA_PG_CONTAINER_NAME} still present after teardown"
+    # Recount so the failure message reflects what actually remained.
+    present_count=$(
+        ${runtime} ps -a --format '{{.Names}}' 2>/dev/null \
+            | grep -cE "^${_INFRA_PG_CONTAINER_NAME}(-primary|-standby)?$" || true
+    )
+    [ "$present_count" -eq 1 ] && noun="container" || noun="containers"
+    ui_fail "${noun} for ${_INFRA_PG_CONTAINER_NAME} still present after teardown"
     exit 1
 }
 

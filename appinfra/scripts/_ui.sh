@@ -24,7 +24,7 @@ UI_CLEAR=$'\033[K'
 # Status marks — the canonical five. Every progress/status line in appinfra
 # uses one of these; anything outside the set is a design decision.
 UI_MARK_PENDING="${UI_GRAY}[ ]${UI_RESET}"
-UI_MARK_RUNNING="${UI_YELLOW}[...]${UI_RESET}"
+UI_MARK_RUNNING="${UI_YELLOW}[…]${UI_RESET}"
 UI_MARK_OK="${UI_GREEN}[✓]${UI_RESET}"
 UI_MARK_WARN="${UI_YELLOW}[⚠]${UI_RESET}"
 UI_MARK_FAIL="${UI_RED}[✗]${UI_RESET}"

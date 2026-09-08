@@ -50,7 +50,7 @@ def test_marks_include_ansi_on_tty() -> None:
     tty = _TTYStream()
     with patch.dict("os.environ", {}, clear=True):
         assert status.mark_pending(tty) == "\033[0;90m[ ]\033[0m"
-        assert status.mark_running(tty) == "\033[0;33m[...]\033[0m"
+        assert status.mark_running(tty) == "\033[0;33m[…]\033[0m"
         assert status.mark_ok(tty) == "\033[0;32m[✓]\033[0m"
         assert status.mark_warn(tty) == "\033[0;33m[⚠]\033[0m"
         assert status.mark_fail(tty) == "\033[0;31m[✗]\033[0m"
@@ -95,4 +95,4 @@ def test_ui_helpers_use_expected_marks() -> None:
     status.ui_running("working", buf)
     status.ui_warn("careful", buf)
     status.ui_pending("queued", buf)
-    assert buf.getvalue() == "[...] working\n[⚠] careful\n[ ] queued\n"
+    assert buf.getvalue() == "[…] working\n[⚠] careful\n[ ] queued\n"
