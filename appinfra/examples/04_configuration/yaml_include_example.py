@@ -50,9 +50,8 @@ from pathlib import Path
 
 import yaml
 
-project_root = str(pathlib.Path(__file__).resolve().parents[3])
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# Allow running from a source checkout without installing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from appinfra import Config
 
@@ -83,7 +82,7 @@ def demo_basic_include():
     print_file_content(ETC_DIR / "01_basic_database.yaml")
 
     # Load and display
-    config = Config(str(ETC_DIR / "01_basic_main.yaml"))
+    config = Config.from_path(ETC_DIR / "01_basic_main.yaml")
 
     print("\nResolved configuration:")
     print(f"  app_name: {config.get('app_name')}")
@@ -105,7 +104,7 @@ def demo_nested_includes():
     print_file_content(ETC_DIR / "02_nested_main.yaml")
 
     # Load and display
-    config = Config(str(ETC_DIR / "02_nested_main.yaml"))
+    config = Config.from_path(ETC_DIR / "02_nested_main.yaml")
 
     print("\nResolved configuration:")
     print(f"  config.value: {config.get('config.value')}")
@@ -126,7 +125,7 @@ def demo_variable_substitution():
     print_file_content(ETC_DIR / "03_variables_databases.yaml")
 
     # Load and display
-    config = Config(str(ETC_DIR / "03_variables_main.yaml"))
+    config = Config.from_path(ETC_DIR / "03_variables_main.yaml")
 
     print("\nResolved configuration:")
     print(f"  dbs.main.url: {config.get('dbs.main.url')}")
@@ -143,7 +142,7 @@ def demo_multiple_includes():
     print_file_content(ETC_DIR / "04_multiple_main.yaml")
 
     # Load and display
-    config = Config(str(ETC_DIR / "04_multiple_main.yaml"))
+    config = Config.from_path(ETC_DIR / "04_multiple_main.yaml")
 
     print("\nResolved configuration:")
     print(f"  app_name: {config.get('app_name')}")
@@ -181,7 +180,7 @@ def demo_organized_config():
     print("\nMain file (05_organized_main.yaml):")
     print_file_content(ETC_DIR / "05_organized_main.yaml")
 
-    config = Config(str(ETC_DIR / "05_organized_main.yaml"))
+    config = Config.from_path(ETC_DIR / "05_organized_main.yaml")
 
     print("\nResolved configuration:")
     print(f"  app_name: {config.get('app_name')}")
@@ -213,7 +212,7 @@ def _show_dev_config():
     print("\nDevelopment config (06_env_dev.yaml):")
     print_file_content(ETC_DIR / "06_env_dev.yaml")
 
-    dev_config = Config(str(ETC_DIR / "06_env_dev.yaml"))
+    dev_config = Config.from_path(ETC_DIR / "06_env_dev.yaml")
     print("\nResolved development configuration:")
     print(f"  common.app_name: {dev_config.get('common.app_name')}")
     print(f"  environment: {dev_config.get('environment')}")
@@ -227,7 +226,7 @@ def _show_prod_config():
     print("\nProduction config (06_env_prod.yaml):")
     print_file_content(ETC_DIR / "06_env_prod.yaml")
 
-    prod_config = Config(str(ETC_DIR / "06_env_prod.yaml"))
+    prod_config = Config.from_path(ETC_DIR / "06_env_prod.yaml")
     print("\nResolved production configuration:")
     print(f"  common.app_name: {prod_config.get('common.app_name')}")
     print(f"  environment: {prod_config.get('environment')}")
@@ -262,7 +261,7 @@ def demo_circular_detection():
     print("\nAttempting to load (this will fail with circular dependency error)...")
 
     try:
-        config = Config(str(ETC_DIR / "07_circular_a.yaml"))
+        config = Config.from_path(ETC_DIR / "07_circular_a.yaml")
         print("ERROR: Should have detected circular dependency!")
     except yaml.YAMLError as e:
         print("\n✓ Circular dependency detected correctly:")

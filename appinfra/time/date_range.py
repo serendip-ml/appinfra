@@ -23,9 +23,9 @@ Key Features:
 - Set operations for date collections
 
 Example Usage:
-    import logging
+    from appinfra.log import LoggingBuilder
 
-    lg = logging.getLogger(__name__)
+    lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
 
     # Iterate over dates from start to today
     start_date = datetime.date(2025, 12, 1)
@@ -74,8 +74,6 @@ def iter_dates(
         datetime.date: Each date in the range
 
     Example:
-        >>> import logging
-        >>> lg = logging.getLogger(__name__)
         >>> start_date = datetime.date(2025, 12, 1)
         >>> for date in iter_dates(start_date, skip_weekends=True):
         ...     lg.info(f"Business day: {date}")

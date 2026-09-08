@@ -11,12 +11,28 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
+from appinfra.app.builder.app import AppBuilder
 from appinfra.app.builder.configurer.version import (
     VersionConfigurer,
     _format_modified,
     _log_build_info,
     _log_package_info,
 )
+from appinfra.version.actions import VersionWithTrackerAction
+
+BUILD_INFO_SRC = 'COMMIT_HASH = "abc123"\nCOMMIT_SHORT = "abc123"\n'
+
+
+def _startup_hooks(builder: AppBuilder) -> list:
+    """Startup callbacks registered on the builder's hook manager."""
+    return builder._hooks.get_hooks("startup")
+
+
+def _make_context(application: object) -> MagicMock:
+    """A HookContext stand-in carrying ``application``."""
+    context = MagicMock()
+    context.application = application
+    return context
 
 
 class TestFormatModified:
@@ -180,218 +196,296 @@ class TestVersionConfigurer:
     """Tests for VersionConfigurer class."""
 
     @pytest.fixture
-    def mock_app_builder(self):
-        """Create a mock AppBuilder."""
-        builder = MagicMock()
-        builder._name = "testapp"
-        builder._version = None
-        builder._version_tracker = None
-        builder._build_info = None
-        builder._custom_args = []
-        builder.advanced = MagicMock()
-        builder.advanced.with_hook_builder.return_value = builder.advanced
-        builder.advanced.done.return_value = builder
-        return builder
+    def app_builder(self):
+        """A real AppBuilder: done() writes to its version fields and hook manager."""
+        return AppBuilder("testapp")
 
-    def test_init(self, mock_app_builder):
+    def test_init(self, app_builder):
         """Test VersionConfigurer initialization."""
-        configurer = VersionConfigurer(mock_app_builder)
-        assert configurer._app_builder is mock_app_builder
-        assert configurer._packages == []
-        assert configurer._build_info is None
-        assert configurer._log_on_startup is True
+        configurer = VersionConfigurer(app_builder)
+        assert configurer._app_builder is app_builder
+        assert app_builder._version_packages == []
+        assert app_builder._build_info is None
+        assert app_builder._version_startup_log is True
 
-    def test_with_semver(self, mock_app_builder):
+    def test_with_semver(self, app_builder):
         """Test setting version string."""
-        configurer = VersionConfigurer(mock_app_builder)
+        configurer = VersionConfigurer(app_builder)
         result = configurer.with_semver("1.2.3")
 
         assert result is configurer  # Fluent API
-        assert mock_app_builder._version == "1.2.3"
+        assert app_builder._version == "1.2.3"
 
-    def test_with_package(self, mock_app_builder):
+    def test_with_package(self, app_builder):
         """Test tracking a package."""
-        configurer = VersionConfigurer(mock_app_builder)
+        configurer = VersionConfigurer(app_builder)
         result = configurer.with_package("mylib")
 
         assert result is configurer
-        assert "mylib" in configurer._packages
+        assert app_builder._version_packages == ["mylib"]
 
-    def test_with_multiple_packages(self, mock_app_builder):
+    def test_with_multiple_packages(self, app_builder):
         """Test tracking multiple packages."""
-        configurer = VersionConfigurer(mock_app_builder)
+        configurer = VersionConfigurer(app_builder)
         configurer.with_package("lib1").with_package("lib2")
 
-        assert "lib1" in configurer._packages
-        assert "lib2" in configurer._packages
+        assert app_builder._version_packages == ["lib1", "lib2"]
 
-    def test_with_startup_log(self, mock_app_builder):
+    def test_with_startup_log(self, app_builder):
         """Test enabling startup logging."""
-        configurer = VersionConfigurer(mock_app_builder)
-        configurer._log_on_startup = False
+        configurer = VersionConfigurer(app_builder)
+        app_builder._version_startup_log = False
         result = configurer.with_startup_log()
 
         assert result is configurer
-        assert configurer._log_on_startup is True
+        assert app_builder._version_startup_log is True
 
-    def test_without_startup_log(self, mock_app_builder):
+    def test_without_startup_log(self, app_builder):
         """Test disabling startup logging."""
-        configurer = VersionConfigurer(mock_app_builder)
+        configurer = VersionConfigurer(app_builder)
         result = configurer.without_startup_log()
 
         assert result is configurer
-        assert configurer._log_on_startup is False
+        assert app_builder._version_startup_log is False
 
-    def test_with_build_info_default_path(
-        self, mock_app_builder, tmp_path, monkeypatch
-    ):
+    def test_with_build_info_default_path(self, app_builder, tmp_path, monkeypatch):
         """Test with_build_info uses cwd by default."""
         # Create a fake _build_info.py
         build_info_file = tmp_path / "_build_info.py"
-        build_info_file.write_text('COMMIT_HASH = "abc123"\nCOMMIT_SHORT = "abc123"\n')
+        build_info_file.write_text(BUILD_INFO_SRC)
 
         monkeypatch.chdir(tmp_path)
 
-        configurer = VersionConfigurer(mock_app_builder)
+        configurer = VersionConfigurer(app_builder)
         result = configurer.with_build_info()
 
         assert result is configurer
-        assert configurer._build_info is not None
+        assert app_builder._build_info is not None
 
-    def test_with_build_info_string_path(self, mock_app_builder, tmp_path):
+    def test_with_build_info_string_path(self, app_builder, tmp_path):
         """Test with_build_info with string path."""
         build_info_file = tmp_path / "_build_info.py"
         build_info_file.write_text('COMMIT_HASH = "def456"\nCOMMIT_SHORT = "def456"\n')
 
-        configurer = VersionConfigurer(mock_app_builder)
+        configurer = VersionConfigurer(app_builder)
         result = configurer.with_build_info(str(build_info_file))
 
         assert result is configurer
-        assert configurer._build_info is not None
+        assert app_builder._build_info is not None
 
-    def test_with_build_info_path_object(self, mock_app_builder, tmp_path):
+    def test_with_build_info_path_object(self, app_builder, tmp_path):
         """Test with_build_info with Path object."""
         build_info_file = tmp_path / "_build_info.py"
         build_info_file.write_text('COMMIT_HASH = "ghi789"\nCOMMIT_SHORT = "ghi789"\n')
 
-        configurer = VersionConfigurer(mock_app_builder)
+        configurer = VersionConfigurer(app_builder)
         result = configurer.with_build_info(build_info_file)
 
         assert result is configurer
-        assert configurer._build_info is not None
+        assert app_builder._build_info is not None
 
-    def test_done_returns_app_builder(self, mock_app_builder):
+    def test_done_returns_app_builder(self, app_builder):
         """Test done() returns the app builder."""
-        configurer = VersionConfigurer(mock_app_builder)
+        configurer = VersionConfigurer(app_builder)
         result = configurer.done()
 
-        assert result is mock_app_builder
+        assert result is app_builder
 
-    def test_done_with_packages_creates_tracker(self, mock_app_builder):
-        """Test done() creates tracker when packages specified."""
-        configurer = VersionConfigurer(mock_app_builder)
-        configurer.with_package("pytest")
-        configurer.done()
+    def test_build_with_packages_creates_tracker(self, app_builder):
+        """build() creates the tracker from the packages added on the block."""
+        app_builder.version.with_package("pytest").done()
 
-        assert mock_app_builder._version_tracker is not None
+        app_builder.build()
 
-    def test_done_without_packages_no_tracker(self, mock_app_builder):
-        """Test done() doesn't create tracker when no packages."""
-        configurer = VersionConfigurer(mock_app_builder)
-        configurer.done()
+        assert app_builder._version_tracker is not None
+        assert "pytest" in app_builder._version_tracker.get_all()
 
-        assert mock_app_builder._version_tracker is None
+    def test_build_without_packages_no_tracker(self, app_builder):
+        """No packages, no tracker."""
+        app_builder.version.done()
 
-    def test_done_sets_build_info(self, mock_app_builder, tmp_path):
+        app_builder.build()
+
+        assert app_builder._version_tracker is None
+
+    def test_reopened_block_accumulates_packages(self, app_builder):
+        """Opening the block twice tracks both packages and registers one hook."""
+        app_builder.version.with_package("pytest").done()
+        app_builder.version.with_package("packaging").done()
+
+        app_builder.build()
+
+        assert set(app_builder._version_tracker.get_all()) >= {"pytest", "packaging"}
+        assert len(_startup_hooks(app_builder)) == 1
+
+    def test_done_sets_build_info(self, app_builder, tmp_path):
         """Test done() sets build info on app builder."""
         build_info_file = tmp_path / "_build_info.py"
-        build_info_file.write_text('COMMIT_HASH = "abc123"\nCOMMIT_SHORT = "abc123"\n')
+        build_info_file.write_text(BUILD_INFO_SRC)
 
-        configurer = VersionConfigurer(mock_app_builder)
+        configurer = VersionConfigurer(app_builder)
         configurer.with_build_info(build_info_file)
         configurer.done()
 
-        assert mock_app_builder._build_info is not None
+        assert app_builder._build_info is not None
 
-    def test_done_registers_startup_hook(self, mock_app_builder, tmp_path):
-        """Test done() registers startup hook when logging enabled."""
+    def test_build_registers_startup_hook(self, app_builder, tmp_path):
+        """build() registers one startup hook at priority 90 when logging enabled."""
         build_info_file = tmp_path / "_build_info.py"
-        build_info_file.write_text('COMMIT_HASH = "abc123"\nCOMMIT_SHORT = "abc123"\n')
+        build_info_file.write_text(BUILD_INFO_SRC)
+        app_builder.version.with_build_info(build_info_file).done()
 
-        configurer = VersionConfigurer(mock_app_builder)
-        configurer.with_build_info(build_info_file)
-        configurer.done()
+        app_builder.build()
 
-        # Should have registered a hook via advanced configurer
-        mock_app_builder.advanced.with_hook_builder.assert_called_once()
+        assert len(_startup_hooks(app_builder)) == 1
+        assert app_builder._hooks._hook_metadata["startup"][0]["priority"] == 90
 
-    def test_done_no_hook_when_logging_disabled(self, mock_app_builder, tmp_path):
-        """Test done() doesn't register hook when logging disabled."""
+    def test_build_no_hook_when_logging_disabled(self, app_builder, tmp_path):
+        """without_startup_log suppresses the hook."""
         build_info_file = tmp_path / "_build_info.py"
-        build_info_file.write_text('COMMIT_HASH = "abc123"\nCOMMIT_SHORT = "abc123"\n')
+        build_info_file.write_text(BUILD_INFO_SRC)
+        app_builder.version.with_build_info(
+            build_info_file
+        ).without_startup_log().done()
 
-        configurer = VersionConfigurer(mock_app_builder)
-        configurer.with_build_info(build_info_file)
-        configurer.without_startup_log()
+        app_builder.build()
+
+        assert not app_builder._hooks.has_hooks("startup")
+
+    def test_build_no_hook_when_nothing_to_log(self, app_builder):
+        """No build info and no packages means no hook."""
+        app_builder.version.done()
+
+        app_builder.build()
+
+        assert not app_builder._hooks.has_hooks("startup")
+
+    def test_done_does_not_add_version_argument(self, app_builder):
+        """The -v/--version flag is the cli block's, added at build(), not here."""
+        configurer = VersionConfigurer(app_builder)
+        configurer.with_semver("1.0.0")
         configurer.done()
 
-        # Should not have registered a hook
-        mock_app_builder.advanced.with_hook_builder.assert_not_called()
+        assert app_builder._custom_args == []
 
-    def test_done_no_hook_when_nothing_to_log(self, mock_app_builder):
-        """Test done() doesn't register hook when nothing to log."""
-        configurer = VersionConfigurer(mock_app_builder)
-        configurer.done()
+    def test_call_unknown_keyword_raises(self, app_builder):
+        """A misspelled key fails instead of being ignored."""
+        with pytest.raises(TypeError, match="unknown version field\\(s\\): semvr"):
+            app_builder.version(semvr="1.0.0")
 
-        # No build_info and no packages = no hook
-        mock_app_builder.advanced.with_hook_builder.assert_not_called()
+    def test_call_keyword_form(self, app_builder, tmp_path):
+        """__call__ maps keywords onto the chained methods and returns the builder."""
+        build_info_file = tmp_path / "_build_info.py"
+        build_info_file.write_text(BUILD_INFO_SRC)
 
-    def test_done_adds_version_argument(self, mock_app_builder):
-        """Test done() adds --version argument when version is set."""
-        mock_app_builder._version = "1.0.0"
-        configurer = VersionConfigurer(mock_app_builder)
-        configurer.done()
+        result = app_builder.version(
+            semver="2.0.0",
+            build_info=build_info_file,
+            package=["pytest", "packaging"],
+            startup_log=False,
+        )
 
-        # Should have added --version to custom args
-        assert len(mock_app_builder._custom_args) == 1
-        args, kwargs = mock_app_builder._custom_args[0]
-        assert "--version" in args
+        assert result is app_builder
+        assert app_builder._version == "2.0.0"
+        assert app_builder._build_info is not None
+        assert app_builder._version_packages == ["pytest", "packaging"]
+        assert app_builder._version_startup_log is False
+
+        app_builder.build()
+
+        assert app_builder._version_tracker is not None
+        assert not app_builder._hooks.has_hooks("startup")
+
+    def test_call_startup_log_true_re_enables(self, app_builder):
+        """The keyword form applies both states of startup_log."""
+        app_builder.version.with_package("pytest").without_startup_log().done()
+        app_builder.version(startup_log=True)
+
+        app_builder.build()
+
+        assert len(_startup_hooks(app_builder)) == 1
+
+
+class TestVersionFlag:
+    """The cli block's ``version`` flag exposes ``-v/--version`` at build()."""
+
+    @staticmethod
+    def _version_arg(builder: AppBuilder) -> tuple[tuple, dict]:
+        matches = [(a, kw) for a, kw in builder._custom_args if "--version" in a]
+        assert len(matches) == 1
+        return matches[0]
+
+    def test_build_adds_version_argument(self):
+        """build() appends -v/--version bound to the version block's text."""
+        builder = AppBuilder("testapp").version(semver="1.0.0").cli(version=True)
+        builder.build()
+
+        args, kwargs = self._version_arg(builder)
+        assert args == ("-v", "--version")
+        assert kwargs["action"] is VersionWithTrackerAction
         assert kwargs["app_name"] == "testapp"
         assert kwargs["app_version"] == "1.0.0"
+        assert kwargs["tracker"] is None
+        assert kwargs["build_info"] is None
 
-    def test_done_no_version_argument_without_version(self, mock_app_builder):
-        """Test done() doesn't add --version when version not set."""
-        configurer = VersionConfigurer(mock_app_builder)
-        configurer.done()
+    def test_no_version_argument_without_cli_flag(self):
+        """A semver alone does not expose the flag."""
+        builder = AppBuilder("testapp").version(semver="1.0.0")
+        builder.build()
 
-        # No version set = no --version argument
-        assert len(mock_app_builder._custom_args) == 0
+        assert builder._custom_args == []
 
-    def test_done_version_argument_includes_build_info(
-        self, mock_app_builder, tmp_path
-    ):
-        """Test done() passes build_info to version argument."""
-        mock_app_builder._version = "1.0.0"
+    def test_build_raises_when_flag_on_without_semver(self):
+        """The flag needs text to print; build() refuses without a semver."""
+        builder = AppBuilder("testapp").cli(version=True)
+
+        with pytest.raises(ValueError, match="with_semver"):
+            builder.build()
+
+    def test_version_argument_includes_build_info(self, tmp_path):
+        """build_info set on the version block reaches the argument."""
         build_info_file = tmp_path / "_build_info.py"
-        build_info_file.write_text('COMMIT_HASH = "abc123"\nCOMMIT_SHORT = "abc123"\n')
+        build_info_file.write_text(BUILD_INFO_SRC)
 
-        configurer = VersionConfigurer(mock_app_builder)
-        configurer.with_build_info(build_info_file)
-        configurer.done()
+        builder = (
+            AppBuilder("testapp")
+            .version.with_semver("1.0.0")
+            .with_build_info(build_info_file)
+            .done()
+            .cli(version=True)
+        )
+        builder.build()
 
-        args, kwargs = mock_app_builder._custom_args[0]
-        assert kwargs["build_info"] is not None
+        _, kwargs = self._version_arg(builder)
+        assert kwargs["build_info"] is builder._build_info
         assert kwargs["build_info"].commit == "abc123"
 
-    def test_done_version_argument_includes_tracker(self, mock_app_builder):
-        """Test done() passes tracker to version argument."""
-        mock_app_builder._version = "1.0.0"
-        configurer = VersionConfigurer(mock_app_builder)
-        configurer.with_package("pytest")
-        configurer.done()
+    def test_version_argument_includes_tracker(self):
+        """A tracked package produces a tracker that reaches the argument."""
+        builder = (
+            AppBuilder("testapp")
+            .version(semver="1.0.0", package="pytest")
+            .cli(version=True)
+        )
+        builder.build()
 
-        args, kwargs = mock_app_builder._custom_args[0]
+        _, kwargs = self._version_arg(builder)
         assert kwargs["tracker"] is not None
+        assert kwargs["tracker"] is builder._version_tracker
+
+    def test_version_argument_takes_presentation_override(self):
+        """cli.with_flag('version', ...) merges into the argument's kwargs."""
+        builder = (
+            AppBuilder("testapp")
+            .version(semver="1.0.0")
+            .cli.with_flags(version=True)
+            .with_flag("version", help="Print version and exit")
+            .done()
+        )
+        builder.build()
+
+        _, kwargs = self._version_arg(builder)
+        assert kwargs["help"] == "Print version and exit"
 
 
 class TestStartupHookBehavior:
@@ -399,119 +493,50 @@ class TestStartupHookBehavior:
 
     def test_startup_hook_logs_build_info(self, tmp_path):
         """Test startup hook actually logs build info when invoked."""
-
         build_info_file = tmp_path / "_build_info.py"
-        build_info_file.write_text('COMMIT_HASH = "abc123"\nCOMMIT_SHORT = "abc123"\n')
+        build_info_file.write_text(BUILD_INFO_SRC)
 
-        mock_builder = MagicMock()
-        mock_builder._version = None
-        mock_builder._version_tracker = None
-        mock_builder._build_info = None
-        mock_builder.advanced = MagicMock()
+        builder = AppBuilder("testapp")
+        VersionConfigurer(builder).with_build_info(build_info_file).done()
 
-        # Capture the hook builder to get the callback
-        captured_hook_builder = None
+        builder.build()
+        hooks = _startup_hooks(builder)
+        assert hooks
 
-        def capture_hook(hook_builder):
-            nonlocal captured_hook_builder
-            captured_hook_builder = hook_builder
-            return mock_builder.advanced
-
-        mock_builder.advanced.with_hook_builder.side_effect = capture_hook
-        mock_builder.advanced.done.return_value = mock_builder
-
-        configurer = VersionConfigurer(mock_builder)
-        configurer.with_build_info(build_info_file)
-        configurer.done()
-
-        # Verify hook was registered
-        assert captured_hook_builder is not None
-
-        # Now invoke the callback directly
         mock_app = MagicMock()
         mock_app.lg = MagicMock(spec=logging.Logger)
-
-        context = MagicMock()
-        context.application = mock_app
-
-        # Get the on_startup callback from the hook builder
-        for callback, priority, is_async, condition in captured_hook_builder._hooks[
-            "startup"
-        ]:
-            callback(context)
+        for callback in hooks:
+            callback(_make_context(mock_app))
 
         # Verify build info was logged
         mock_app.lg.debug.assert_called()
 
-    def test_startup_hook_logs_packages(self, tmp_path):
+    def test_startup_hook_logs_packages(self):
         """Test startup hook logs tracked packages when invoked."""
+        builder = AppBuilder("testapp")
+        VersionConfigurer(builder).with_package("pytest").done()  # a real package
 
-        mock_builder = MagicMock()
-        mock_builder._version = None
-        mock_builder._version_tracker = None
-        mock_builder._build_info = None
-        mock_builder.advanced = MagicMock()
+        builder.build()
+        hooks = _startup_hooks(builder)
+        assert hooks
 
-        captured_hook_builder = None
-
-        def capture_hook(hook_builder):
-            nonlocal captured_hook_builder
-            captured_hook_builder = hook_builder
-            return mock_builder.advanced
-
-        mock_builder.advanced.with_hook_builder.side_effect = capture_hook
-        mock_builder.advanced.done.return_value = mock_builder
-
-        configurer = VersionConfigurer(mock_builder)
-        configurer.with_package("pytest")  # Track a real package
-        configurer.done()
-
-        assert captured_hook_builder is not None
-
-        # Invoke the callback
         mock_app = MagicMock()
         mock_app.lg = MagicMock(spec=logging.Logger)
-
-        context = MagicMock()
-        context.application = mock_app
-
-        for callback, priority, is_async, condition in captured_hook_builder._hooks[
-            "startup"
-        ]:
-            callback(context)
+        for callback in hooks:
+            callback(_make_context(mock_app))
 
         # Verify package was logged
         mock_app.lg.debug.assert_called()
 
     def test_startup_hook_handles_missing_logger(self):
         """Test startup hook handles application without lg attribute."""
+        builder = AppBuilder("testapp")
+        VersionConfigurer(builder).with_package("pytest").done()
 
-        mock_builder = MagicMock()
-        mock_builder._version = None
-        mock_builder._version_tracker = None
-        mock_builder._build_info = None
-        mock_builder.advanced = MagicMock()
-
-        captured_hook_builder = None
-
-        def capture_hook(hook_builder):
-            nonlocal captured_hook_builder
-            captured_hook_builder = hook_builder
-            return mock_builder.advanced
-
-        mock_builder.advanced.with_hook_builder.side_effect = capture_hook
-        mock_builder.advanced.done.return_value = mock_builder
-
-        configurer = VersionConfigurer(mock_builder)
-        configurer.with_package("pytest")
-        configurer.done()
-
-        # Create context with application that has no lg
-        context = MagicMock()
-        context.application = MagicMock(spec=[])  # No lg attribute
+        builder.build()
+        hooks = _startup_hooks(builder)
+        assert hooks
 
         # Should not raise - callback returns early
-        for callback, priority, is_async, condition in captured_hook_builder._hooks[
-            "startup"
-        ]:
-            callback(context)  # Should not raise
+        for callback in hooks:
+            callback(_make_context(MagicMock(spec=[])))  # No lg attribute

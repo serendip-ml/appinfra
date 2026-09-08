@@ -1,30 +1,43 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
 
+# ci-run: --help
+# ci-run: metrics
+
 """
 Example plugin implementations for the AppBuilder framework.
 
-This module demonstrates how to create custom plugins for database,
-authentication, logging, and metrics functionality.
+Each plugin contributes to the app from its ``configure(builder)`` hook:
+tools through ``builder.tools`` and lifecycle hooks through
+``builder.lifecycle``.
+
+Usage:
+    python example_plugins.py --help
+    python example_plugins.py metrics
 """
 
-import pathlib
-import sys
+from __future__ import annotations
 
-# Add the project root to the path
-project_root = str(pathlib.Path(__file__).resolve().parents[3])
-sys.path.insert(0, project_root)
+import sys
+from pathlib import Path
+from typing import Any
+
+# Allow running from a source checkout without installing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from appinfra.app.builder.app import AppBuilder
 from appinfra.app.builder.hook import HookBuilder
-from appinfra.app.builder.middleware import MiddlewareBuilder
 from appinfra.app.builder.plugin import Plugin
 from appinfra.app.builder.tool import ToolBuilder
 from appinfra.app.core.app import App
 
+# -----------------------------------------------------------------------------
+# Plugins
+# -----------------------------------------------------------------------------
+
 
 class DatabasePlugin(Plugin):
-    """Plugin for database functionality."""
+    """Plugin for database functionality: tools plus connect/disconnect hooks."""
 
     def __init__(self, connection_string: str | None = None):
         super().__init__("database")
@@ -33,23 +46,21 @@ class DatabasePlugin(Plugin):
 
     def configure(self, builder: AppBuilder) -> None:
         """Configure database tools and hooks."""
-        # Add database tools
         builder.tools.with_tool_builder(
             ToolBuilder("migrate")
             .with_help("Run database migrations")
             .with_run_function(self._migrate)
-        )
+        ).done()
 
         builder.tools.with_tool_builder(
             ToolBuilder("db-status")
             .with_help("Check database status")
             .with_run_function(self._check_status)
-        )
+        ).done()
 
-        # Add database hooks
-        builder.advanced.with_hook_builder(
+        builder.lifecycle.with_hook_builder(
             HookBuilder().on_startup(self._connect_db).on_shutdown(self._disconnect_db)
-        )
+        ).done()
 
     def initialize(self, application: App) -> None:
         """Initialize database connection."""
@@ -63,25 +74,23 @@ class DatabasePlugin(Plugin):
             # Close database connection
             pass
 
-    def _migrate(self, tool, **kwargs):
+    def _migrate(self, tool: Any, **kwargs: Any) -> int:
         """Run database migrations."""
         tool.lg.info("running database migrations...")
-        # Implementation would go here
         return 0
 
-    def _check_status(self, tool, **kwargs):
+    def _check_status(self, tool: Any, **kwargs: Any) -> int:
         """Check database status."""
         tool.lg.info("checking database status...")
-        # Implementation would go here
         return 0
 
-    def _connect_db(self, context):
+    def _connect_db(self, context: Any) -> None:
         """Connect to database on startup."""
         if self.connection_string:
             # Connect to database
             pass
 
-    def _disconnect_db(self, context):
+    def _disconnect_db(self, context: Any) -> None:
         """Disconnect from database on shutdown."""
         if self._connection:
             # Disconnect from database
@@ -89,54 +98,39 @@ class DatabasePlugin(Plugin):
 
 
 class AuthPlugin(Plugin):
-    """Plugin for authentication functionality."""
+    """Plugin for authentication: login and logout tools."""
 
     def __init__(self, auth_type: str = "jwt"):
         super().__init__("auth")
         self.auth_type = auth_type
 
     def configure(self, builder: AppBuilder) -> None:
-        """Configure authentication tools and middleware."""
-        # Add auth tools
+        """Configure the authentication tools."""
         builder.tools.with_tool_builder(
             ToolBuilder("login")
             .with_help("Authenticate user")
             .with_run_function(self._login)
-        )
+        ).done()
 
         builder.tools.with_tool_builder(
             ToolBuilder("logout")
             .with_help("Logout user")
             .with_run_function(self._logout)
-        )
+        ).done()
 
-        # Add auth middleware
-        builder.server.with_middleware_builder(
-            MiddlewareBuilder("auth")
-            .process_request(self._auth_middleware)
-            .when(lambda req: hasattr(req, "path") and req.path.startswith("/api"))
-        )
-
-    def _login(self, tool, **kwargs):
+    def _login(self, tool: Any, **kwargs: Any) -> int:
         """Handle user login."""
         tool.lg.info("handling user login...")
-        # Implementation would go here
         return 0
 
-    def _logout(self, tool, **kwargs):
+    def _logout(self, tool: Any, **kwargs: Any) -> int:
         """Handle user logout."""
         tool.lg.info("handling user logout...")
-        # Implementation would go here
         return 0
-
-    def _auth_middleware(self, request):
-        """Authentication middleware."""
-        # Implementation would go here
-        return request
 
 
 class LoggingPlugin(Plugin):
-    """Plugin for enhanced logging functionality."""
+    """Plugin for enhanced logging: a tool plus startup and error hooks."""
 
     def __init__(self, log_file: str | None = None):
         super().__init__("logging")
@@ -144,31 +138,28 @@ class LoggingPlugin(Plugin):
 
     def configure(self, builder: AppBuilder) -> None:
         """Configure logging tools and hooks."""
-        # Add logging tools
         builder.tools.with_tool_builder(
             ToolBuilder("log-level")
             .with_help("Set log level")
             .with_run_function(self._set_log_level)
-        )
+        ).done()
 
-        # Add logging hooks
-        builder.advanced.with_hook_builder(
+        builder.lifecycle.with_hook_builder(
             HookBuilder().on_startup(self._setup_logging).on_error(self._log_error)
-        )
+        ).done()
 
-    def _set_log_level(self, tool, **kwargs):
+    def _set_log_level(self, tool: Any, **kwargs: Any) -> int:
         """Set log level."""
         tool.lg.info("setting log level...")
-        # Implementation would go here
         return 0
 
-    def _setup_logging(self, context):
+    def _setup_logging(self, context: Any) -> None:
         """Setup enhanced logging on startup."""
         if self.log_file:
             # Setup file logging
             pass
 
-    def _log_error(self, context):
+    def _log_error(self, context: Any) -> None:
         """Log errors with enhanced formatting."""
         if context.error:
             # Enhanced error logging
@@ -176,40 +167,48 @@ class LoggingPlugin(Plugin):
 
 
 class MetricsPlugin(Plugin):
-    """Plugin for metrics and monitoring functionality."""
+    """Plugin for metrics: a tool that reports application state."""
 
-    def __init__(self, metrics_endpoint: str | None = None):
+    def __init__(self) -> None:
         super().__init__("metrics")
-        self.metrics_endpoint = metrics_endpoint
 
     def configure(self, builder: AppBuilder) -> None:
-        """Configure metrics tools and middleware."""
-        # Add metrics tools
+        """Configure the metrics tool."""
         builder.tools.with_tool_builder(
             ToolBuilder("metrics")
             .with_help("Show application metrics")
             .with_run_function(self._show_metrics)
-        )
+        ).done()
 
-        # Add metrics middleware
-        builder.server.with_middleware_builder(
-            MiddlewareBuilder("metrics")
-            .process_request(self._record_request)
-            .process_response(self._record_response)
-        )
-
-    def _show_metrics(self, tool, **kwargs):
+    def _show_metrics(self, tool: Any, **kwargs: Any) -> int:
         """Show application metrics."""
-        tool.lg.info("showing application metrics...")
-        # Implementation would go here
+        tool.lg.info("metrics placeholder - no collection source configured")
         return 0
 
-    def _record_request(self, request):
-        """Record request metrics."""
-        # Implementation would go here
-        return request
 
-    def _record_response(self, response):
-        """Record response metrics."""
-        # Implementation would go here
-        return response
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+
+
+def main() -> int:
+    """Build an app whose tools and hooks come from plugins."""
+    app = (
+        AppBuilder("plugins-demo")
+        .with_description("Tools and hooks contributed by plugins")
+        .cli(log_level=True)
+        .tools(
+            plugins=[
+                DatabasePlugin(connection_string="postgresql://localhost/demo"),
+                AuthPlugin(auth_type="jwt"),
+                LoggingPlugin(),
+                MetricsPlugin(),
+            ]
+        )
+        .build()
+    )
+    return app.main()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

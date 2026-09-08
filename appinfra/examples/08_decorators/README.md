@@ -179,9 +179,9 @@ then apply decorators:
 from appinfra.app import AppBuilder
 
 app = (
-    AppBuilder()
-    .with_name("myapp")
-    .with_config_file("myapp.yaml")  # deferred: resolved from --etc-dir at runtime
+    AppBuilder("myapp")
+    .config.with_spec("myorg", "myapp")  # etc/myapp.yaml, resolved at setup
+    .done()
     .logging.with_level("info")
     .done()
     .build()

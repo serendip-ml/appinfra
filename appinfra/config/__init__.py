@@ -12,21 +12,10 @@ This module provides:
 
 from typing import Any
 
-from .config import (
-    DEFAULT_CONFIG_FILE,
-    DEFAULT_CONFIG_FILENAME,
-    ETC_DIR,
-    PROJECT_ROOT,
-    Config,
-    get_config_file_path,
-    get_default_config,
-    get_etc_dir,
-    get_project_root,
-    resolve_etc_dir,
-)
+from .config import Config
 from .constants import MAX_CONFIG_SIZE_BYTES
+from .spec import AUTO, Auto, ConfigFile, ConfigSpec
 from .watcher import ConfigWatcher
-from .xdg import include_root_for, resolve_config_source, xdg_candidates
 
 try:
     from .schemas import (
@@ -49,23 +38,15 @@ except ImportError:
 
 
 __all__ = [
-    # Config class and utilities
+    # Config class
     "Config",
-    "get_project_root",
-    "get_etc_dir",
-    "resolve_etc_dir",
-    "get_config_file_path",
-    "get_default_config",
-    "PROJECT_ROOT",
-    "ETC_DIR",
-    "DEFAULT_CONFIG_FILE",
-    "DEFAULT_CONFIG_FILENAME",
     # Watcher
     "ConfigWatcher",
-    # XDG discovery + v1 config-protocol composition helpers
-    "xdg_candidates",
-    "include_root_for",
-    "resolve_config_source",
+    # Config-protocol identity and resolution
+    "ConfigSpec",
+    "ConfigFile",
+    "AUTO",
+    "Auto",
     # Constants
     "MAX_CONFIG_SIZE_BYTES",
     # Validation (optional)

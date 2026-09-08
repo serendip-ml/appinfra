@@ -214,7 +214,7 @@ logging:
   colors: true
 
 pgserver:
-  port: 7432
+  port: 25432
   user: postgres
 
 test:
@@ -230,7 +230,7 @@ INFRA_LOGGING_LEVEL=debug
 INFRA_LOGGING_MICROS=true
 INFRA_LOGGING_COLORS_ENABLED=false
 
-INFRA_PGSERVER_PORT=5432
+INFRA_PGSERVER_PORT=25432
 INFRA_PGSERVER_USER=myuser
 
 INFRA_TEST_TIMEOUT=60
@@ -355,7 +355,7 @@ overridden values can be used in variable references:
 ```yaml
 # YAML
 pgserver:
-  port: 7432
+  port: 25432
 dbs:
   main:
     url: "postgresql://user:pass@localhost:${pgserver.port}/infra_main"
@@ -385,29 +385,13 @@ These environment variables control framework behavior (not config value overrid
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `INFRA_DEFAULT_CONFIG_FILE` | `infra.yaml` | Default config filename used by `with_config_file()` and `get_config_file_path()` |
+| `INFRA_DEFAULT_CONFIG_FILE` | `infra.yaml` | Config filename the `pg.*` and `docs.*` Make targets fall back to when `INFRA_PG_CONFIG_FILE` / `INFRA_DOCS_CONFIG_FILE` are empty |
 | `INFRA_NO_CONFIRM` | unset | When set to `1`, bypasses the `areyousure` confirmation prompt used by destructive Make targets (e.g., `pg.server.down`, `pg.server.clean`, `cicd.erase`, `uninstall`). Intended for CI and other non-interactive contexts. |
-| `INFRA_CONTAINER_CMD` | `docker` | Container runtime used by `pg.*` and `cicd.*` Make targets (`ps`, `exec`, `volume`, ...). Set to `podman` to run the local-dev container layer under Podman. Exported to helper shell scripts (`pg-info.sh`, `cicd-test.sh`). |
+| `INFRA_CONTAINER_CMD` | `docker` | Container runtime used by `pg.*` and `cicd.*` Make targets (`ps`, `exec`, `volume`, ...). Set to `podman` to run the local-dev container layer under Podman. Exported to helper shell scripts (`pg.sh`, `cicd-test.sh`). |
 | `INFRA_COMPOSE_CMD` | `docker compose` | Compose orchestrator paired with `INFRA_CONTAINER_CMD`. Set to `podman compose` alongside the container-cmd override. |
 
-**Note:** Because this env var starts with `INFRA_`, it can interfere with config keys named
-`default`. If your config has a `default` key, the env var will be interpreted as
-`config.default.config.file`.
-Use a different key name in your config to avoid this collision.
-
-### Example: Custom Config Filename
-
-```bash
-# Use app.yaml instead of infra.yaml as default
-export INFRA_DEFAULT_CONFIG_FILE=app.yaml
-```
-
-```python
-from appinfra.app.builder import AppBuilder
-
-# Now loads etc/app.yaml instead of etc/infra.yaml
-app = AppBuilder("myapp").with_config_file().build()
-```
+These names are excluded from config overrides, so a config key such as `default` or
+`container` is never shadowed by them.
 
 ## Best Practices
 

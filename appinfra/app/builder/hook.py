@@ -8,9 +8,8 @@ This module provides a fluent API for managing application lifecycle hooks
 and event handling.
 """
 
-import logging
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any, Self
 
 
@@ -55,9 +54,13 @@ class HookManager:
         self._hooks[event] = [hook for hook, _ in paired]
         self._hook_metadata[event] = [metadata for _, metadata in paired]
 
-    def trigger_hook(self, event: str, *args: Any, **kwargs: Any) -> Any:
+    def trigger_hook(self, event: str, *args: Any, **kwargs: Any) -> list[Any]:
         """
         Trigger all hooks for an event.
+
+        Every hook runs even if an earlier one fails. A failing hook's slot
+        in the results holds the exception it raised; the caller, which has
+        the logger, reports it.
 
         Args:
             event: Event name
@@ -65,7 +68,8 @@ class HookManager:
             **kwargs: Keyword arguments to pass to hooks
 
         Returns:
-            List of results from all hooks
+            One entry per hook that ran: its return value, or the exception
+            it raised
         """
         results = []
         hooks_to_remove = []
@@ -73,12 +77,12 @@ class HookManager:
         for i, hook in enumerate(self._hooks[event]):
             metadata = self._hook_metadata[event][i]
 
-            # Check condition if provided
-            condition = metadata.get("condition")
-            if condition and not condition(*args, **kwargs):
-                continue
-
             try:
+                # Check condition if provided
+                condition = metadata.get("condition")
+                if condition and not condition(*args, **kwargs):
+                    continue
+
                 result = hook(*args, **kwargs)
                 results.append(result)
 
@@ -87,9 +91,7 @@ class HookManager:
                     hooks_to_remove.append(i)
 
             except Exception as e:
-                # Log error but continue with other hooks
-                logging.error(f"hook error in {event}", extra={"exception": e})
-                results.append(None)
+                results.append(e)
 
         # Remove hooks marked as once (both hook and metadata)
         for i in reversed(hooks_to_remove):
@@ -106,6 +108,20 @@ class HookManager:
         """Get all hooks for an event."""
         return self._hooks[event].copy()
 
+    def iter_hooks(self) -> Iterator[tuple[str, Callable, dict[str, Any]]]:
+        """Every hook with its event and metadata, in trigger order.
+
+        The metadata keys are ``register_hook``'s keyword arguments, so a
+        hook can be re-registered on another manager unchanged.
+        """
+        for event, callbacks in self._hooks.items():
+            yield from (
+                (event, callback, dict(meta))
+                for callback, meta in zip(
+                    callbacks, self._hook_metadata[event], strict=True
+                )
+            )
+
     def clear_hooks(self, event: str | None = None) -> None:
         """Clear hooks for an event or all events."""
         if event:
@@ -114,6 +130,23 @@ class HookManager:
         else:
             self._hooks.clear()
             self._hook_metadata.clear()
+
+
+# The events the framework fires; ``HookBuilder`` has one ``on_*`` per name.
+# Custom events are registered by name through ``HookManager.register_hook``.
+STANDARD_EVENTS = frozenset(
+    {
+        "startup",
+        "shutdown",
+        "tool_start",
+        "tool_end",
+        "error",
+        "before_parse",
+        "after_parse",
+        "before_setup",
+        "after_setup",
+    }
+)
 
 
 class HookBuilder:
@@ -280,17 +313,11 @@ class BuiltinHooks:
 
     @staticmethod
     def log_error(context: HookContext) -> None:
-        """Log errors."""
-        if context.error:
-            if context.application and hasattr(context.application, "lg"):
-                context.application.lg.error(
-                    "error occurred", extra={"exception": context.error}
-                )
-            else:
-                # Fallback to root logger if app logger not available
-                import logging
-
-                logging.error("error occurred", extra={"exception": context.error})
+        """Log the context's error through the application logger."""
+        if context.error and context.application and hasattr(context.application, "lg"):
+            context.application.lg.error(
+                "error occurred", extra={"exception": context.error}
+            )
 
     @staticmethod
     def validate_config(context: HookContext) -> None:

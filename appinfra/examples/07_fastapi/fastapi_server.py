@@ -3,13 +3,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
 
+# ci-run:
+# ci-run: --subprocess
+# ci-stop: 4
+# ci-requires: port:8000
+# ci-requires: port:8001
+
 """
 FastAPI Server Framework Examples.
 
-This example demonstrates three modes of the FastAPI server framework:
+This example demonstrates two modes of the FastAPI server framework:
 1. Direct mode - Simple server running in current process (blocking)
 2. Subprocess mode - Server in separate process with queue-based IPC
-3. AppBuilder integration - ServerPlugin for CLI applications
 
 Usage:
     # Direct mode (default)
@@ -17,27 +22,22 @@ Usage:
 
     # Subprocess mode with IPC demo
     python fastapi_server.py --subprocess
-
-    # AppBuilder integration
-    python fastapi_server.py --cli serve
 """
 
 from __future__ import annotations
 
 import argparse
 import multiprocessing as mp
-import pathlib
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-# Add the project root to the path
-project_root = str(pathlib.Path(__file__).resolve().parents[3])
-sys.path.append(project_root) if project_root not in sys.path else None
+# Allow running from a source checkout without installing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from appinfra.app.builder.app import AppBuilder
-from appinfra.app.fastapi import ServerBuilder, ServerPlugin
+from appinfra.app.fastapi import ServerBuilder
 from appinfra.app.fastapi.runtime.server import Server
 from appinfra.log import Logger
 
@@ -127,7 +127,8 @@ def create_subprocess_server(
         .with_port(port)
         .with_title("Worker API")
         .subprocess.with_ipc(request_q, response_q)
-        .with_auto_restart(enabled=True, max_restarts=3)
+        .with_auto_restart(True)
+        .with_max_restarts(3)
         .done()
         .routes.with_route("/health", health_handler)
         .done()
@@ -172,51 +173,8 @@ def run_subprocess_demo() -> int:
 
 
 # -----------------------------------------------------------------------------
-# AppBuilder Integration Example
-# -----------------------------------------------------------------------------
-
-
-def create_cli_app() -> Any:
-    """
-    Create a CLI application with integrated HTTP server.
-
-    ServerPlugin adds a "serve" command to the CLI that starts
-    the HTTP server.
-
-    Usage: python fastapi_server.py --cli serve
-    """
-    lg = Logger("cli-api")
-    server = (
-        ServerBuilder(lg, "cli-api")
-        .with_port(8002)
-        .with_title("CLI API")
-        .routes.with_route("/health", health_handler)
-        .done()
-        .build()
-    )
-
-    return (
-        AppBuilder("myapp")
-        .with_description("CLI app with HTTP server")
-        .logging.with_level("info")
-        .done()
-        .tools.with_plugin(ServerPlugin(server))
-        .done()
-        .build()
-    )
-
-
-# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
-
-
-def run_cli_mode(cli_args: list[str]) -> int:
-    """Run in AppBuilder CLI mode."""
-    app = create_cli_app()
-    sys.argv = ["myapp"] + cli_args
-    result = app.main()
-    return int(result) if result is not None else 0
 
 
 def run_direct_mode(port: int) -> int:
@@ -239,15 +197,10 @@ def main() -> int:
         "--subprocess", action="store_true", help="Run subprocess mode demo"
     )
     parser.add_argument(
-        "--cli", nargs="*", help="Run as CLI app (pass 'serve' to start server)"
-    )
-    parser.add_argument(
         "--port", type=int, default=8000, help="Port for direct mode (default: 8000)"
     )
     args = parser.parse_args()
 
-    if args.cli is not None:
-        return run_cli_mode(args.cli if args.cli else [])
     if args.subprocess:
         return run_subprocess_demo()
     return run_direct_mode(args.port)

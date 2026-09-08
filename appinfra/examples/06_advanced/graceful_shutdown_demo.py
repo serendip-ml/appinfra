@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
 
+# ci-stop: 4
+
 """
 Graceful Shutdown Demonstration
 
@@ -29,13 +31,12 @@ Expected behavior:
     - Ticker stops gracefully
 """
 
-import pathlib
 import sys
 import time
+from pathlib import Path
 
-# Add the project root to the path
-project_root = str(pathlib.Path(__file__).resolve().parents[3])
-sys.path.append(project_root) if project_root not in sys.path else None
+# Allow running from a source checkout without installing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import appinfra.time
 from appinfra.app import App, AppBuilder
@@ -81,9 +82,9 @@ class ShutdownDemoPlugin(Plugin):
     def configure(self, builder) -> None:
         """Configure the plugin."""
         # Add a startup hook to simulate resource allocation
-        builder.advanced.with_hook_builder(
+        builder.lifecycle.with_hook_builder(
             HookBuilder().on_startup(self._allocate_resources)
-        )
+        ).done()
 
     def initialize(self, application: App) -> None:
         """Initialize plugin resources."""
@@ -207,7 +208,7 @@ def create_application():
         .with_plugin(ShutdownDemoPlugin("MetricsPlugin"))
         .done()
         # Add shutdown hooks
-        .advanced.with_hook_builder(
+        .lifecycle.with_hook_builder(
             HookBuilder()
             .on_shutdown(create_shutdown_hook("PrimaryShutdown"), priority=10)
             .on_shutdown(create_shutdown_hook("SecondaryShutdown"), priority=5)

@@ -62,7 +62,7 @@ class ConcreteBuilderFixture(LoggingBuilderInterface):
         self._config["colors"] = enabled
         return self
 
-    def with_config(self, config: dict[str, Any]) -> "ConcreteBuilderFixture":
+    def with_options(self, config: dict[str, Any]) -> "ConcreteBuilderFixture":
         self._config.update(config)
         return self
 
@@ -278,7 +278,7 @@ class TestAbstractMethodCoverage:
             def with_colors(self, enabled=True):
                 return self
 
-            def with_config(self, config):
+            def with_options(self, config):
                 return self
 
             def with_separator(self):
@@ -331,7 +331,7 @@ class TestAbstractMethodCoverage:
             def with_colors(self, enabled=True):
                 return self
 
-            def with_config(self, config):
+            def with_options(self, config):
                 return self
 
             def with_separator(self):

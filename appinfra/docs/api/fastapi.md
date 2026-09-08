@@ -52,7 +52,7 @@ server = (
     .routes.with_route("/health", health)
     .done()
     .subprocess.with_ipc(request_q, response_q)
-    .with_auto_restart(enabled=True)
+    .with_auto_restart(True)
     .done()
     .build()
 )
@@ -69,19 +69,33 @@ while True:
 **Note:** The Logger is required for queue-based subprocess logging. The subprocess inherits the
 main process log level, so exception handlers using `self._lg` log at the correct level.
 
-### AppBuilder Integration
+### Serving from an AppBuilder app
+
+Build the server inside a tool's `run()`, where the tool's logger and the app's config exist:
 
 ```python
-from appinfra.app import AppBuilder
-from appinfra.app.fastapi import ServerBuilder, ServerPlugin
-from appinfra.log import Logger
+from appinfra.app.fastapi import ServerBuilder
+from appinfra.app.tools.base import Tool, ToolConfig
 
-lg = Logger("myapi")
-server = ServerBuilder(lg, "myapi").with_port(8000).build()
 
-app = AppBuilder("myapp").tools.with_plugin(ServerPlugin(server)).done().build()
+class ServeTool(Tool):
+    def __init__(self) -> None:
+        super().__init__(
+            config=ToolConfig(name="serve", help_text="Start the HTTP server")
+        )
 
-# CLI: myapp serve
+    def run(self, **kwargs) -> int:
+        server = (
+            ServerBuilder(self.lg, "myapi")
+            .with_port(self.app.config.server.port)
+            .build()
+        )
+        try:
+            server.start()
+        except KeyboardInterrupt:
+            server.stop()
+            return 130
+        return 0
 ```
 
 ## ServerBuilder
@@ -153,7 +167,9 @@ server = (
     # IPC queues (required for subprocess mode)
     .with_ipc(request_q, response_q)
     # Auto-restart on crash
-    .with_auto_restart(enabled=True, delay=2.0, max_restarts=10)
+    .with_auto_restart(True)
+    .with_restart_delay(2.0)
+    .with_max_restarts(10)
     # Log isolation
     .with_log_file("/var/log/api.log")
     # IPC tuning
@@ -667,7 +683,7 @@ server = (
     .with_port(8000)
     .subprocess.with_ipc(request_q, response_q)
     .with_response_timeout(60.0)
-    .with_auto_restart(enabled=True)
+    .with_auto_restart(True)
     .done()
     .routes.with_router(router)  # Router with /generate, /stream endpoints
     .done()
@@ -748,28 +764,6 @@ config = IPCConfig(
     max_pending=100,  # Max pending requests
     enable_health_reporting=True,  # IPC status in health endpoint
 )
-```
-
-## ServerPlugin
-
-Integrates server with AppBuilder for CLI apps:
-
-```python
-from appinfra.app import AppBuilder
-from appinfra.app.fastapi import ServerBuilder, ServerPlugin
-from appinfra.log import Logger
-
-lg = Logger("myapi")
-server = ServerBuilder(lg, "myapi").with_port(8000).build()
-
-app = AppBuilder("myapp").tools.with_plugin(ServerPlugin(server)).done().build()
-```
-
-This adds a `serve` command to your CLI:
-
-```bash
-myapp serve              # Start server
-myapp serve --port 9000  # Override port
 ```
 
 ## Architecture

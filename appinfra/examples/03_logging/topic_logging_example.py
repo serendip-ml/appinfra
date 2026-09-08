@@ -24,12 +24,11 @@ Priority: API (10) > CLI (5) > YAML (1)
 """
 
 import logging
-import pathlib
 import sys
+from pathlib import Path
 
-# Add the project root to the path
-project_root = str(pathlib.Path(__file__).resolve().parents[3])
-sys.path.insert(0, project_root)
+# Allow running from a source checkout without installing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from appinfra.app.builder import AppBuilder
 from appinfra.log import LogConfig, LoggerFactory
@@ -43,8 +42,8 @@ def _print_yaml_config_instructions():
     print("\nTo load topic configuration from YAML, create a config file like:")
     print("  topic_logging_config.yaml (see example file)")
     print("\nThen in your app:")
-    print("  from appinfra.app.core.config import create_config")
-    print("  config = create_config('topic_logging_config.yaml')")
+    print("  from appinfra import Config")
+    print("  config = Config('topic_logging_config.yaml')")
     print("  logger, registry = setup_logging_from_config(config)")
     print("\nSee topic_logging_config.yaml for YAML configuration examples.")
 

@@ -34,7 +34,7 @@ Example (Subprocess Mode with IPC):
         .routes.with_route("/health", health).done()
         .subprocess
             .with_ipc(request_q, response_q)
-            .with_auto_restart(enabled=True)
+            .with_auto_restart(True)
             .done()
         .build())
 
@@ -45,18 +45,6 @@ Example (Subprocess Mode with IPC):
         request = request_q.get()
         result = process(request)
         response_q.put(result)
-
-Example (AppBuilder Integration):
-    from .. import AppBuilder
-    from . import ServerBuilder, ServerPlugin
-
-    server = ServerBuilder("myapi").with_port(8000).build()
-
-    app = (AppBuilder("myapp")
-        .tools.with_plugin(ServerPlugin(server)).done()
-        .build())
-
-    # CLI: myapp serve
 """
 
 from __future__ import annotations
@@ -85,7 +73,6 @@ _HAS_FASTAPI = False
 try:
     from .builder.server import ServerBuilder
     from .handlers import ExceptionHandler, LoggerInjectable
-    from .plugin import ServerPlugin
     from .runtime.ipc import IPCChannel
     from .runtime.server import Server
 
@@ -98,7 +85,6 @@ except ImportError:
         from .builder.server import ServerBuilder as ServerBuilder
         from .handlers import ExceptionHandler as ExceptionHandler
         from .handlers import LoggerInjectable as LoggerInjectable
-        from .plugin import ServerPlugin as ServerPlugin
         from .runtime.ipc import IPCChannel as IPCChannel
         from .runtime.server import Server as Server
     else:
@@ -118,12 +104,6 @@ except ImportError:
 
         class IPCChannel:
             """Stub for IPCChannel when FastAPI is not installed."""
-
-            def __init__(self, *args: Any, **kwargs: Any) -> None:
-                raise ImportError(_INSTALL_MSG)
-
-        class ServerPlugin:
-            """Stub for ServerPlugin when FastAPI is not installed."""
 
             def __init__(self, *args: Any, **kwargs: Any) -> None:
                 raise ImportError(_INSTALL_MSG)
@@ -151,8 +131,6 @@ __all__ = [
     "ApiConfig",
     "UvicornConfig",
     "IPCConfig",
-    # Plugin
-    "ServerPlugin",
     # Exception handlers (subprocess support)
     "ExceptionHandler",
     "LoggerInjectable",

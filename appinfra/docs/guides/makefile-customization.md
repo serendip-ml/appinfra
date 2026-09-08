@@ -301,7 +301,9 @@ lint::
 ### Example: Custom Test Configuration
 
 Projects with special test requirements (e.g., GPU tests that OOM when run in parallel) can skip
-framework test targets and provide their own:
+framework test targets and provide their own. Two helper macros are available: `run_pytest`
+honors `INFRA_PYTEST_WORKERS`, while `run_pytest_serial` never passes `-n` and always runs
+pytest in-process. Both treat "no tests collected" (exit 5) as success.
 
 ```makefile
 # Skip the built-in test.e2e target
@@ -309,15 +311,15 @@ INFRA_DEV_SKIP_TARGETS := test.e2e
 
 include $(infra)/make/Makefile.pytest
 
-# Define custom e2e target with sequential execution (-n 0)
+# Define custom e2e target that always runs in-process
 test.e2e:: ## runs e2e tests (sequential for GPU)
 	@echo "* running e2e tests (sequential)..."
-	@$(call run_pytest,tests/ -m e2e -n 0 -qq --tb=short)
+	@$(call run_pytest_serial,tests/ -m e2e -qq --tb=short)
 	@echo "* e2e tests done"
 
 test.e2e.v:: ## runs e2e tests (verbose, sequential)
 	@echo "* running e2e tests (verbose, sequential)..."
-	@$(call run_pytest,tests/ -m e2e -n 0 -v)
+	@$(call run_pytest_serial,tests/ -m e2e -v)
 	@echo "* e2e tests done"
 ```
 
@@ -376,6 +378,9 @@ These targets can be extended by defining them again in your Makefile:
 - `fmt::` - Add formatting steps
 - `lint::` - Add linting steps
 - `type::` - Add type checking steps
+- `examples.check::` - Add example checks (runs every script under `examples/`; a
+  `# ci-requires: pg` or `# ci-requires: port:N` header skips the file with a warning when
+  Postgres is unreachable or the port is in use)
 - `check::` - Add quality checks
 - `check.quick::` - Add quick checks
 
@@ -435,6 +440,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 | `INFRA_DEV_PKG_NAME` | `appinfra` | Package name for install, type, coverage |
 | `INFRA_DEV_CQ_STRICT` | `false` | Code quality: `true`=30-line, `false`=50-line |
 | `INFRA_DEV_DOCSTRING_THRESHOLD` | `80` | Docstring coverage threshold for `make check` (0 to disable) |
+| `INFRA_DEV_CHECK_EXAMPLES` | `false` | Run `examples.check` as a test subcheck of `make check` |
 | `INFRA_DEV_PROJECT_ROOT` | `$(CURDIR)` | Project root for check.sh |
 | `INFRA_DEV_INSTALL_EXTRAS` | (empty) | Optional extras for install (e.g., `ui,fastapi`) |
 | `INFRA_DEV_MYPY_FLAGS` | (empty) | Extra mypy flags (e.g., `--follow-imports=skip` for large deps) |
@@ -448,6 +454,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 | `INFRA_PYTEST_COVERAGE_PKG` | `$(INFRA_DEV_PKG_NAME)` | Package to measure coverage |
 | `INFRA_PYTEST_COVERAGE_THRESHOLD` | `80` | Coverage threshold for `make check` (0 to disable) |
 | `INFRA_PYTEST_TESTS_DIR` | `tests` | Tests directory |
+| `INFRA_PYTEST_WORKERS` | (empty) | pytest-xdist worker count (`auto` or N) for `test.*` targets; empty runs pytest in-process. Never applied to `test.perf*`. `make check` ignores it: `check.sh` runs suites concurrently with its own per-suite worker heuristic |
 | `INFRA_PYTEST_ARGS` | (empty) | Additional pytest arguments |
 
 **Documentation (DOCS):**
@@ -477,7 +484,7 @@ All configuration variables follow the `INFRA_<MODULE>_<VAR>` naming convention.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `INFRA_CONTAINER_CMD` | `docker` | Runtime used by `pg.*` / `cicd.*` targets (`ps`, `exec`, `volume`, ...). Also exported to helper shell scripts (`pg-info.sh`, `cicd-test.sh`). |
+| `INFRA_CONTAINER_CMD` | `docker` | Runtime used by `pg.*` / `cicd.*` targets (`ps`, `exec`, `volume`, ...). Also exported to helper shell scripts (`pg.sh`, `cicd-test.sh`). |
 | `INFRA_COMPOSE_CMD` | `docker compose` | Compose orchestrator paired with `INFRA_CONTAINER_CMD`. |
 
 Set both together in `Makefile.local` to run the local-dev container layer under Podman:

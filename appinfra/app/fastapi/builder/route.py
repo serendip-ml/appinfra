@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar
 
 from ....subprocess import Lazy
 from ..runtime.adapter import (
@@ -20,8 +20,12 @@ from ..runtime.adapter import (
 if TYPE_CHECKING:
     from .server import ServerBuilder
 
+# The parent's concrete type, so done() on a subclass of ServerBuilder
+# (the AppBuilder server scope) returns that subclass.
+P = TypeVar("P", bound="ServerBuilder")
 
-class RouteConfigurer:
+
+class RouteConfigurer(Generic[P]):
     """
     Focused builder for route and middleware configuration.
 
@@ -42,14 +46,14 @@ class RouteConfigurer:
             .build())
     """
 
-    def __init__(self, parent: ServerBuilder) -> None:
+    def __init__(self, parent: P) -> None:
         """
         Initialize configurer.
 
         Args:
             parent: Parent ServerBuilder instance
         """
-        self._parent = parent
+        self._parent: P = parent
 
     def with_route(
         self,
@@ -59,7 +63,7 @@ class RouteConfigurer:
         response_model: type[Any] | None = None,
         tags: list[str] | None = None,
         **kwargs: Any,
-    ) -> RouteConfigurer:
+    ) -> Self:
         """
         Add a route.
 
@@ -95,7 +99,7 @@ class RouteConfigurer:
         router: Any | Lazy,  # APIRouter, or Lazy returning one
         prefix: str = "",
         tags: list[str] | None = None,
-    ) -> RouteConfigurer:
+    ) -> Self:
         """
         Include a FastAPI router.
 
@@ -120,7 +124,7 @@ class RouteConfigurer:
         self,
         exc_class: type[Exception],
         handler: Callable[..., Any] | Lazy,
-    ) -> RouteConfigurer:
+    ) -> Self:
         """
         Add an exception handler.
 
@@ -143,7 +147,7 @@ class RouteConfigurer:
         self,
         middleware_class: type[Any] | Lazy,
         **options: Any,
-    ) -> RouteConfigurer:
+    ) -> Self:
         """
         Add middleware.
 
@@ -168,7 +172,7 @@ class RouteConfigurer:
         allow_credentials: bool = False,
         allow_methods: list[str] | None = None,
         allow_headers: list[str] | None = None,
-    ) -> RouteConfigurer:
+    ) -> Self:
         """
         Configure CORS.
 
@@ -189,7 +193,7 @@ class RouteConfigurer:
         )
         return self
 
-    def done(self) -> ServerBuilder:
+    def done(self) -> P:
         """
         Finish route configuration and return to parent builder.
 

@@ -75,6 +75,27 @@ class TestCreateRoot:
         # Cleanup
         logger.handlers.clear()
 
+    def test_create_root_with_extra(self, log_config):
+        """create_root forwards pre-populated extra fields to the logger."""
+        logger = LoggerFactory.create_root(log_config, extra={"service": "api"})
+
+        assert logger._extra == {"service": "api"}
+
+        # Cleanup
+        logger.handlers.clear()
+
+    def test_create_root_again_applies_new_extra(self, log_config):
+        """A repeated root setup replaces the extra fields instead of dropping them."""
+        first = LoggerFactory.create_root(log_config, extra={"service": "api"})
+
+        second = LoggerFactory.create_root(log_config, extra={"service": "worker"})
+
+        assert second is first
+        assert second._extra == {"service": "worker"}
+
+        # Cleanup
+        first.handlers.clear()
+
 
 # =============================================================================
 # Test logger already exists branch - Lines 64-66
@@ -102,6 +123,21 @@ class TestLoggerExists:
         existing_logger.handlers.clear()
         if hasattr(logger, "handlers"):
             logger.handlers.clear()
+
+    def test_create_with_extra_over_stdlib_logger_does_not_crash(
+        self, log_config, unique_logger_name
+    ):
+        """A library's plain logger under the name has no extra to set."""
+        existing_logger = logging.getLogger(unique_logger_name)
+
+        logger = LoggerFactory.create(
+            unique_logger_name, log_config, extra={"service": "api"}
+        )
+
+        assert logger is existing_logger
+
+        # Cleanup
+        existing_logger.handlers.clear()
 
 
 # =============================================================================

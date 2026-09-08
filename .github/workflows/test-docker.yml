@@ -160,7 +160,9 @@ jobs:
         run: /tmp/smoke/bin/appinfra docs list
 
       - name: README quick-start against installed wheel
-        run: /tmp/smoke/bin/python examples/quickstart.py --help
+        run: |
+          /tmp/smoke/bin/python examples/quickstart.py --help
+          /tmp/smoke/bin/python examples/quickstart.py sync
 
       - name: Extras metadata install
         if: matrix.python-version == '3.12'
@@ -175,13 +177,17 @@ jobs:
   test-summary:
     name: Test
     runs-on: ubuntu-latest
-    needs: [test, podman, check-no-db, install, smoke-wheel, macos-latest]
+    needs: [test, podman, check-no-db, install, smoke-wheel, macos-latest, examples]
     if: always()
     steps:
       - name: Check test results
         run: |
           if [[ "${{ needs.test.result }}" != "success" ]]; then
             echo "Test matrix failed"
+            exit 1
+          fi
+          if [[ "${{ needs.examples.result }}" != "success" ]]; then
+            echo "Examples check failed"
             exit 1
           fi
           if [[ "${{ needs.podman.result }}" != "success" ]]; then
@@ -327,7 +333,7 @@ jobs:
         run: make pg.server.up
 
       - name: Create test database
-        run: psql -h 127.0.0.1 -p 7432 -U postgres -c "CREATE DATABASE infra_test;"
+        run: psql -h 127.0.0.1 -p 25432 -U postgres -c "CREATE DATABASE infra_test;"
 
       - name: Run integration tests
         run: make test.integration
@@ -484,13 +490,13 @@ jobs:
         run: |
           initdb -D "$RUNNER_TEMP/pgdata" -U postgres --auth=trust
 
-      - name: Start PostgreSQL on port 7432
+      - name: Start PostgreSQL on port 25432
         run: |
           pg_ctl -D "$RUNNER_TEMP/pgdata" -l "$RUNNER_TEMP/pg.log" \
-                 -o "-p 7432 -k /tmp" -w start
+                 -o "-p 25432 -k /tmp" -w start
 
       - name: Create test database
-        run: psql -h 127.0.0.1 -p 7432 -U postgres -c "CREATE DATABASE infra_test;"
+        run: psql -h 127.0.0.1 -p 25432 -U postgres -c "CREATE DATABASE infra_test;"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -507,9 +513,16 @@ jobs:
           python -m pip install --upgrade pip
           make setup
 
-      - name: Run make check (raw mode for hang diagnosis)
-        run: make check.raw
+      - name: Run make check (raw-parallel for readable logs)
+        run: PYTHON=$(which python) INFRA_DEV_PROJECT_ROOT=$(pwd) bash appinfra/scripts/check.sh --raw-parallel
 
       - name: Stop postgres
         if: always()
         run: pg_ctl -D "$RUNNER_TEMP/pgdata" stop || true
+
+  # Example scripts, run in the compose container against the compose Postgres.
+  # Job body lives in examples.yml; aggregated into `test-summary`.
+  examples:
+    name: Examples
+    needs: lint
+    uses: ./.github/workflows/examples.yml

@@ -78,7 +78,7 @@ class MyHandler(HTTPRequestHandler):
         instance.wfile.write(b"Hello, World!")
 
 
-logger = LoggingBuilder("server").with_level("info").console_handler().build()
+logger = LoggingBuilder("server").with_level("info").with_console_handler().build()
 server = TCPServer(logger, 8080, MyHandler())
 server.run()
 ```
@@ -223,9 +223,9 @@ exit_code = server.run()
 For FastAPI-style applications, use the FastAPI integration instead:
 
 ```python
-from appinfra.app.fastapi import FastAPIBuilder
+from appinfra.app.fastapi import ServerBuilder
 
-server = FastAPIBuilder("api").with_config(config).with_port(8000).build()
+server = ServerBuilder(lg, "api").with_port(8000).build()
 ```
 
 See [FastAPI Integration](fastapi.md) for subprocess-based FastAPI servers.

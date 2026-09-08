@@ -16,9 +16,9 @@ and flexible date/time manipulation. All timing functions use the monotonic cloc
 to ensure consistent measurements even when system time changes.
 
 Example Usage:
-    import logging
+    from appinfra.log import LoggingBuilder
 
-    lg = logging.getLogger(__name__)
+    lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
 
     # Basic timing
     start_time = start()
@@ -60,8 +60,6 @@ def start() -> float:
         float: Current monotonic time in seconds
 
     Example:
-        >>> import logging
-        >>> lg = logging.getLogger(__name__)
         >>> start_time = start()
         >>> # ... do work ...
         >>> elapsed = since(start_time)
@@ -81,8 +79,6 @@ def since(start_t: float) -> float:
         float: Elapsed time in seconds
 
     Example:
-        >>> import logging
-        >>> lg = logging.getLogger(__name__)
         >>> start_time = start()
         >>> time.sleep(0.1)  # Simulate work
         >>> elapsed = since(start_time)
@@ -113,8 +109,6 @@ def since_str(start_t: float, precise: bool = False) -> str:
         - Full precision with microseconds and zero-padding
 
     Example:
-        >>> import logging
-        >>> lg = logging.getLogger(__name__)
         >>> start_time = start()
         >>> time.sleep(0.001)  # 1ms
         >>> lg.debug(since_str(start_time))      # Output: "1ms"
@@ -230,8 +224,6 @@ def time_it(f: Callable[[float], Any]) -> Generator[None, None, None]:
         f: Function to call with elapsed time (in seconds)
 
     Example:
-        >>> import logging
-        >>> lg = logging.getLogger(__name__)
         >>> def log_time(elapsed):
         ...     lg.info(f"Operation took {elapsed:.2f} seconds")
         >>>
@@ -271,16 +263,13 @@ def time_it_lg(
         extra (dict): Additional data to include in log (elapsed time added to 'after')
 
     Example:
-        >>> import logging
-        >>> logger = logging.getLogger(__name__)
-        >>>
-        >>> with time_it_lg(logger.info, "database operation", {"table": "users"}):
+        >>> with time_it_lg(lg.info, "database operation", {"table": "users"}):
         ...     # Simulate database query
         ...     time.sleep(0.1)
         ... # Logs: database operation table[users] after[0.100s]
 
         >>> # With additional context
-        >>> with time_it_lg(logger.debug, "file processing",
+        >>> with time_it_lg(lg.debug, "file processing",
         ...                 {"file": "data.csv", "size": "1MB"}):
         ...     # Process file
         ...     time.sleep(0.05)

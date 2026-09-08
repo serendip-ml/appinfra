@@ -59,13 +59,12 @@ class LifecycleManager:
 
     def _setup_loggers(self, config: Any, args: Any = None) -> None:
         """Create and configure logger hierarchy."""
-        from typing import cast
-
         from .logging_utils import setup_logging_from_config
 
         # Use setup_logging_from_config to properly handle handlers config
-        logger, self._handler_registry = setup_logging_from_config(config, args=args)
-        self._logger = cast("Logger", logger)
+        self._logger, self._handler_registry = setup_logging_from_config(
+            config, args=args
+        )
 
         self._logger.debug(
             "*** start ***", extra={"prog_args": " ".join(sys.argv), "cwd": os.getcwd()}
@@ -140,7 +139,7 @@ class LifecycleManager:
             if self._lifecycle_logger:
                 self._lifecycle_logger.warning(
                     "hot-reload enabled but no config path available - "
-                    "use with_config_file() to set config path"
+                    "declare a config spec (config.with_spec) to set it"
                 )
             return
 
@@ -393,7 +392,8 @@ class LifecycleManager:
                 from ..builder.hook import HookContext
 
                 context = HookContext(application=self.application)
-                self._hook_manager.trigger_hook("startup", context)
+                results = self._hook_manager.trigger_hook("startup", context)
+                self._report_hook_failures("startup", results)
                 self._lifecycle_logger.debug("startup hooks completed")
             except Exception as e:
                 self._lifecycle_logger.error(
@@ -411,11 +411,21 @@ class LifecycleManager:
                 from ..builder.hook import HookContext
 
                 context = HookContext(application=self.application)
-                self._hook_manager.trigger_hook("shutdown", context)
+                results = self._hook_manager.trigger_hook("shutdown", context)
+                self._report_hook_failures("shutdown", results)
                 self._lifecycle_logger.debug("shutdown hooks completed")
             except Exception as e:
                 self._lifecycle_logger.error(
                     "shutdown hooks failed", extra={"exception": e}
+                )
+
+    def _report_hook_failures(self, event: str, results: list[Any]) -> None:
+        """Log each hook that raised; ``trigger_hook`` returns the exception in its slot."""
+        assert self._lifecycle_logger is not None  # Set during initialization
+        for result in results:
+            if isinstance(result, Exception):
+                self._lifecycle_logger.error(
+                    "hook failed", extra={"event": event, "exception": result}
                 )
 
     def _shutdown_plugins(self) -> None:

@@ -1,0 +1,205 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
+
+"""
+CLI-surface block for AppBuilder.
+
+Declares which standard flags the app exposes, per-flag argparse
+presentation, and custom arguments. App-only concerns; there is no
+standalone builder behind this block.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Self, TypedDict, Unpack
+
+from ...core.app import DEFAULT_STANDARD_ARGS
+from .block import check_fields, close_on_error
+
+if TYPE_CHECKING:
+    from ..app import AppBuilder
+
+
+class CliFlags(TypedDict, total=False):
+    """Keyword form of the cli block; keys are ``DEFAULT_STANDARD_ARGS`` plus ``log``."""
+
+    help: bool
+    config_file: bool
+    etc_dir: bool
+    log: bool
+    log_level: bool
+    log_location: bool
+    log_micros: bool
+    log_topic: bool
+    log_colors: bool
+    log_json: bool
+    quiet: bool
+    version: bool
+
+
+# ``log`` expands to every logging-related flag.
+_LOG_FLAGS = frozenset(
+    {
+        "log_level",
+        "log_location",
+        "log_micros",
+        "log_topic",
+        "log_colors",
+        "log_json",
+        "quiet",
+    }
+)
+_FLAG_NAMES = frozenset(DEFAULT_STANDARD_ARGS) | {"log"}
+
+
+class CliConfigurer:
+    """CLI-surface block: standard flags, per-flag presentation, custom arguments.
+
+    Two spellings write the same state. Chained::
+
+        AppBuilder("myapp").cli.with_flags(etc_dir=True, log=True).done()
+
+    Keyword, returning the AppBuilder directly::
+
+        AppBuilder("myapp").cli(etc_dir=True, log=True)
+
+    Flags merge onto the current set, which starts as ``DEFAULT_STANDARD_ARGS``
+    (only ``help`` on). ``without_flags()`` clears everything for a
+    locked-down CLI. ``version=True`` exposes ``-v/--version`` with the text
+    of the ``.version`` block at build time.
+    """
+
+    block_name = "cli"
+
+    def __init__(self, app_builder: AppBuilder):
+        """Bind the block to its parent builder."""
+        self._app_builder = app_builder
+
+    def with_flags(self, **flags: Unpack[CliFlags]) -> Self:
+        """Enable or disable standard flags by name.
+
+        ``log`` expands to every log flag; an explicit key wins over the
+        alias.
+
+        Raises:
+            TypeError: for an unknown name or a non-boolean value.
+            ValueError: for no flags at all.
+        """
+        if not flags:
+            raise ValueError(
+                "with_flags() needs at least one flag; log=True covers every log flag"
+            )
+        standard_args = self._app_builder._standard_args
+        resolved: dict[str, Any] = dict(flags)
+        if "log" in resolved:
+            log_value = resolved.pop("log")
+            _check_bool("log", log_value)
+            for name in _LOG_FLAGS:
+                resolved.setdefault(name, log_value)
+        for name, enabled in resolved.items():
+            _check_flag_name(name)
+            _check_bool(name, enabled)
+            standard_args[name] = enabled
+        return self
+
+    def with_all_flags(self) -> Self:
+        """Enable every standard flag, ``help`` included.
+
+        The counterpart of ``without_flags()``. An app that wants the
+        framework's full CLI surface calls this instead of naming every
+        flag in ``with_flags``.
+
+        The ``version`` flag is skipped when no version is configured
+        (no prior ``.version.with_semver(...)``). Configure the version
+        block before the cli block if you need ``-v/--version``.
+        """
+        for key in self._app_builder._standard_args:
+            if key == "version" and self._app_builder._version is None:
+                continue  # skip version flag when no version configured
+            self._app_builder._standard_args[key] = True
+        return self
+
+    def without_flags(self) -> Self:
+        """Disable every standard flag, ``help`` included."""
+        for key in self._app_builder._standard_args:
+            self._app_builder._standard_args[key] = False
+        return self
+
+    def without_flag(self, name: str) -> Self:
+        """Disable one standard flag.
+
+        The singular of ``without_flags``. Accepts ``help`` (as
+        ``without_flags`` does). Reject the ``log`` alias so bulk
+        disable stays a single spelling: ``with_flags(log=False)``.
+
+        Raises:
+            TypeError: for an unknown name.
+            ValueError: for the ``log`` alias.
+        """
+        _check_flag_name(name)
+        if name == "log":
+            raise ValueError(
+                "'log' is an alias; use with_flags(log=False) to bulk-disable"
+            )
+        self._app_builder._standard_args[name] = False
+        return self
+
+    def with_flag(self, name: str, **presentation: Any) -> Self:
+        """Enable one standard flag and override its argparse presentation.
+
+        The singular of ``with_flags``: the flag is turned on, and the
+        keywords given (``help``, ``metavar``, ``choices`` and the like)
+        replace the framework's values for it. ``default`` is rejected: a
+        default is a value, and values come from the subsystem block or the
+        config file. ``dest`` is rejected because the framework reads parsed
+        args by a fixed attribute name.
+
+        Raises:
+            TypeError: for an unknown name.
+            ValueError: for the ``log`` alias, ``help``, or a rejected key.
+        """
+        _check_flag_name(name)
+        if name == "log":
+            raise ValueError("'log' is an alias; name a specific log flag")
+        if name == "help":
+            raise ValueError("'help' has no presentation to override")
+        for key in ("default", "dest"):
+            if key in presentation:
+                raise ValueError(f"with_flag({name!r}) does not accept {key!r}")
+        self._app_builder._standard_args[name] = True
+        overrides = self._app_builder._standard_arg_overrides
+        overrides.setdefault(name, {}).update(presentation)
+        return self
+
+    def with_argument(self, *args: Any, **kwargs: Any) -> Self:
+        """Add a custom argument; arguments are those of ``parser.add_argument``."""
+        self._app_builder._custom_args.append((args, kwargs))
+        return self
+
+    def done(self) -> AppBuilder:
+        """Return to the AppBuilder."""
+        self._app_builder._close(self)
+        return self._app_builder
+
+    def __call__(self, **flags: Unpack[CliFlags]) -> AppBuilder:
+        """Keyword form of the block; same arguments as ``with_flags``."""
+        with close_on_error(self._app_builder, self):
+            check_fields("cli", flags, CliFlags.__annotations__)
+            self.with_flags(**flags)
+        return self.done()
+
+
+def _check_flag_name(name: str) -> None:
+    """Reject names outside the standard-flag set and the ``log`` alias."""
+    if name not in _FLAG_NAMES:
+        raise TypeError(
+            f"Unknown CLI flag: {name!r}. Valid flags: {', '.join(sorted(_FLAG_NAMES))}"
+        )
+
+
+def _check_bool(name: str, value: Any) -> None:
+    """Reject non-boolean flag values."""
+    if not isinstance(value, bool):
+        raise TypeError(
+            f"Value for {name!r} must be a boolean, got {type(value).__name__}"
+        )

@@ -20,7 +20,7 @@ This guide explains the order of precedence when configuration values come from 
 
 > **CLI flags are opt-in.** The `--log-level`, `--log-json`, `-q`, `--etc-dir`, etc. shown
 > throughout this guide require enabling standard args on the builder — e.g.
-> `AppBuilder("myapp").with_standard_args(log=True, etc_dir=True).build()`. See
+> `AppBuilder("myapp").cli(log=True, etc_dir=True).build()`. See
 > [Standard CLI Arguments](#standard-cli-arguments) below.
 
 ## General Configuration Values
@@ -82,7 +82,7 @@ logging:
 
 ```python
 # Code
-builder.logging.with_topic_level("/infra/db/**", "debug")  # priority=10
+builder.logging.with_topic_level("/infra/db/**", "debug").done()  # priority=10
 ```
 
 **Result:** `/infra/db/**` logs at `debug` level (API priority=10 wins)
@@ -139,8 +139,8 @@ this default handler as well:
 ## Standard CLI Arguments
 
 Standard CLI arguments are **opt-in** — only `-h/--help` is registered by default. Enable the ones
-needed via `AppBuilder.with_standard_args(...)` (all logging flags with `log=True`, or per-arg
-kwargs). See [AppBuilder — Standard Arguments](../api/app-builder.md#standard-arguments) for the
+needed via the `.cli` block (all logging flags with `log=True`, or per-flag keywords). See
+[AppBuilder — cli block](../api/app-builder.md#cli-block) for the
 full opt-in surface and per-arg override options.
 
 Once opted in, these arguments override YAML/env values per the precedence table above:
@@ -158,7 +158,7 @@ Once opted in, these arguments override YAML/env values per the precedence table
 
 ```python
 # Enable all logging flags plus --etc-dir
-AppBuilder("myapp").with_standard_args(log=True, etc_dir=True).build()
+AppBuilder("myapp").cli(log=True, etc_dir=True).build()
 ```
 
 Passing a standard flag without opting in causes argparse to reject it as an unknown argument
@@ -190,7 +190,8 @@ loading:
 ```python
 app = (
     AppBuilder("myapp")
-    .with_config_file("app.yaml")  # Load YAML
+    .config.with_spec("myorg", "myapp")  # Load YAML (etc/myapp.yaml)
+    .done()
     .logging.with_level("debug")  # Overrides YAML logging.level
     .with_topic_level("/db/*", "trace")  # Priority=10, highest
     .done()

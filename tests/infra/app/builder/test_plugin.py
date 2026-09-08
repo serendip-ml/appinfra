@@ -12,7 +12,7 @@ Tests key functionality including:
 - Dependency resolution
 """
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
@@ -535,7 +535,7 @@ class TestConfigureAll:
         manager.register_plugin(plugin_a)
         manager.register_plugin(plugin_b)
 
-        builder = Mock()
+        builder = Mock(_open_block=None)
         manager.configure_all(builder)
 
         # B should be configured before A
@@ -558,7 +558,7 @@ class TestConfigureAll:
         manager.register_plugin(plugin_enabled)
         manager.register_plugin(plugin_disabled)
 
-        builder = Mock()
+        builder = Mock(_open_block=None)
         manager.configure_all(builder)
 
         assert "EnabledPlugin" in configured
@@ -595,7 +595,7 @@ class TestPluginSystemIntegration:
         manager.register_plugin(plugin)
 
         # Configure
-        builder = Mock()
+        builder = Mock(_open_block=None)
         manager.configure_all(builder)
 
         # Initialize
@@ -642,7 +642,7 @@ class TestPluginSystemIntegration:
         manager.register_plugin(plugin_a)
         manager.register_plugin(plugin_c)
 
-        builder = Mock()
+        builder = Mock(_open_block=None)
         manager.configure_all(builder)
 
         # Verify dependencies are satisfied
@@ -680,7 +680,7 @@ class TestPluginSystemIntegration:
         manager.register_plugin(plugin_a)
         manager.register_plugin(plugin_b)
 
-        builder = Mock()
+        builder = Mock(_open_block=None)
 
         with pytest.raises(ValueError) as exc_info:
             manager.configure_all(builder)
@@ -700,7 +700,7 @@ class TestPluginSystemIntegration:
         manager.register_plugin(plugin_a)
         manager.register_plugin(plugin_b)
 
-        builder = Mock()
+        builder = Mock(_open_block=None)
         # Should not raise since PluginB is disabled
         manager.configure_all(builder)
 
@@ -728,7 +728,7 @@ class TestPluginManagerCleanup:
         manager.register_plugin(plugin_b)
 
         # Configure to mark as initialized
-        builder = Mock()
+        builder = Mock(_open_block=None)
         manager.configure_all(builder)
 
         # Cleanup
@@ -757,7 +757,7 @@ class TestPluginManagerCleanup:
         manager.register_plugin(plugin_c)
 
         # Configure in order A, B, C
-        builder = Mock()
+        builder = Mock(_open_block=None)
         manager.configure_all(builder)
 
         # Cleanup should be in reverse: C, B, A
@@ -779,19 +779,20 @@ class TestPluginManagerCleanup:
         manager.register_plugin(plugin_a)
         manager.register_plugin(plugin_b)
 
-        builder = Mock()
+        builder = Mock(_open_block=None)
         manager.configure_all(builder)
 
-        # Should not raise
-        with patch("logging.error") as mock_log:
-            manager.cleanup_all(app)
+        manager.cleanup_all(app)
 
-            # Both plugins should be attempted
-            plugin_a.cleanup.assert_called_once()
-            plugin_b.cleanup.assert_called_once()
+        # Both plugins should be attempted
+        plugin_a.cleanup.assert_called_once()
+        plugin_b.cleanup.assert_called_once()
 
-            # Error should be logged
-            mock_log.assert_called_once()
+        # The failure is reported through the application logger
+        app.lg.error.assert_called_once()
+        extra = app.lg.error.call_args[1]["extra"]
+        assert extra["plugin"] == "PluginA"
+        assert isinstance(extra["exception"], RuntimeError)
 
     def test_cleanup_all_only_cleans_initialized(self):
         """Test cleanup_all only cleans up initialized plugins."""
@@ -808,7 +809,7 @@ class TestPluginManagerCleanup:
         manager.register_plugin(plugin_b)
 
         # Only configure plugin_a
-        builder = Mock()
+        builder = Mock(_open_block=None)
         manager._plugin_order = ["PluginA"]
         manager._enabled_plugins = ["PluginA"]
         manager._initialized_plugins = ["PluginA"]

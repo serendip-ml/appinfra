@@ -107,16 +107,17 @@ class LoggingBuilderInterface(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def with_config(self, config: dict[str, Any]) -> Self:
+    def with_options(self, options: dict[str, Any]) -> Self:
         """
-        Set multiple configuration parameters at once.
+        Set several display options at once.
 
         Args:
-            config: Configuration dictionary with keys:
+            options: Mapping with any of the keys:
                 - level: Log level (string name, numeric value, or False to disable logging)
                 - location: Location display level (bool or int)
                 - micros: Whether to show microsecond precision
                 - colors: Whether to enable colored output
+                - location_color: ANSI color code for code locations
 
         Returns:
             Self for method chaining

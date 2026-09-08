@@ -37,11 +37,18 @@ while [[ $# -gt 0 ]]; do
             FAIL_FAST=true
             shift
             ;;
+        --raw-parallel)
+            RAW=true
+            PARALLEL=false
+            FAIL_FAST=true
+            # Keep PYTEST_PARALLEL at default for parallel pytest
+            shift
+            ;;
         --summary) SUMMARY=true; shift ;;
         --skip-tests) SKIP_TESTS=true; shift ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--sequential] [--coverage-target <percentage>] [--fail-fast] [--raw] [--summary] [--skip-tests]"
+            echo "Usage: $0 [--sequential] [--coverage-target <percentage>] [--fail-fast] [--raw] [--raw-parallel] [--summary] [--skip-tests]"
             exit 1
             ;;
     esac
@@ -68,6 +75,9 @@ EXIT_CODE_WARNING=42
 PYTHON="${PYTHON:-~/.venv/bin/python}"
 PKG_NAME="${INFRA_DEV_PKG_NAME:-appinfra}"
 CQ_STRICT="${INFRA_DEV_CQ_STRICT:-false}"
+CHECK_EXAMPLES="${INFRA_DEV_CHECK_EXAMPLES:-false}"
+# HOST:PORT for run_examples.py --pg; Makefile.dev derives it from Makefile.pg.
+EXAMPLES_PG="${_INFRA_DEV_EXAMPLES_PG:-}"
 COVERAGE_MARKERS="${INFRA_PYTEST_COVERAGE_MARKERS:-unit}"
 MYPY_FLAGS="${INFRA_DEV_MYPY_FLAGS:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -186,6 +196,15 @@ declare -a TEST_SUBCHECKS_RAW=(
 # Add coverage check only if threshold > 0 (awk is more portable than bc)
 if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then
     TEST_SUBCHECKS_RAW+=("Code coverage|test.coverage|INFRA_CHECK_PYTEST_SUITE=cov ${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term-missing -rEfs ${PYTEST_PARALLEL}|${COVERAGE_TARGET}")
+fi
+
+# Run the example scripts as the last test subcheck when opted in
+# (INFRA_DEV_CHECK_EXAMPLES=true) and an examples directory exists. Same
+# runner and flags as `make examples.check`; raw mode adds -v.
+if [ "$CHECK_EXAMPLES" = "true" ] && [ -n "$EXAMPLES_DIR" ]; then
+    EXAMPLES_CMD="${PYTHON} ${SCRIPT_DIR}/run_examples.py ${EXAMPLES_DIR}${EXAMPLES_PG:+ --pg ${EXAMPLES_PG}}"
+    TEST_SUBCHECKS+=("Examples|examples.check|${EXAMPLES_CMD}|")
+    TEST_SUBCHECKS_RAW+=("Examples|examples.check|${EXAMPLES_CMD} -v|")
 fi
 
 declare -A CHECK_LINES
@@ -354,30 +373,54 @@ record_skips() {
     done
 }
 
-display_skip_summary() {
-    [ -f "${STATUS_DIR}/skips" ] || return 0
+# Print one "N <noun> skipped" block from a tab-delimited "count<TAB>reason"
+# file, reasons aggregated and sorted by count. Silent when the file is
+# absent or empty.
+display_skips() {
+    local skipfile="$1" noun="$2"
+    [ -f "$skipfile" ] || return 0
 
-    # Aggregate skip counts by reason (using tab delimiter)
     declare -A skip_reasons
     local total_skipped=0
 
     while IFS=$'\t' read -r count reason; do
         skip_reasons["$reason"]=$((${skip_reasons["$reason"]:-0} + count))
         total_skipped=$((total_skipped + count))
-    done < "${STATUS_DIR}/skips"
+    done < "$skipfile"
 
     [ $total_skipped -eq 0 ] && return 0
 
     echo ""
-    echo -e "${YELLOW}⚠ Warning: ${total_skipped} tests skipped${RESET}"
+    echo -e "${YELLOW}⚠ Warning: ${total_skipped} ${noun} skipped${RESET}"
 
-    # Sort reasons by count (descending) and display
-    # Use tab delimiter to avoid issues with special characters in skip reasons
+    # Tab delimiter keeps reasons with spaces or colons intact
     for reason in "${!skip_reasons[@]}"; do
         printf '%s\t%s\n' "${skip_reasons[$reason]}" "$reason"
     done | sort -t$'\t' -k1 -rn | while IFS=$'\t' read -r count reason; do
         printf "  ${GRAY}- %s skipped: %s${RESET}\n" "$count" "$reason"
     done
+}
+
+display_skip_summary() {
+    display_skips "${STATUS_DIR}/skips" "tests"
+    display_skips "${STATUS_DIR}/example_skips" "examples"
+}
+
+# The examples runner's summary ends with "N unmet (reason[, reason])" when
+# files declared a service (`# ci-requires:`) that was unreachable. Show that
+# count on the Examples line with a warning mark and record it for the
+# examples block of the skip summary. Returns 1 when nothing was unmet.
+mark_examples_unmet() {
+    local line_num="$1" label="$2" logfile="$3"
+    local clause
+    clause=$(grep -oE '[0-9]+ unmet \([^)]*\)' "$logfile" 2>/dev/null | tail -1)
+    [ -n "$clause" ] || return 1
+    local count="${clause%% *}"
+    local reasons="${clause#*(}"
+    reasons="${reasons%)}"
+    update_line "$line_num" "${YELLOW}${CHECK_WARNING}${RESET}" "$label" " ${GRAY}(${count} skipped: ${reasons})${RESET}"
+    [ -d "$STATUS_DIR" ] && printf '%s\t%s\n' "$count" "$reasons" >> "${STATUS_DIR}/example_skips"
+    return 0
 }
 
 # Unified check runner - handles both main checks and subchecks
@@ -422,7 +465,9 @@ run_check() {
                 record_skips "$name" "$tmpfile"
             fi
 
-            if [ -n "$coverage_target" ]; then
+            if [[ "$name" == "Examples" ]] && mark_examples_unmet "$line_num" "${prefix}${name}" "$tmpfile"; then
+                :  # line carries the warning mark and skip count
+            elif [ -n "$coverage_target" ]; then
                 # Use appropriate parser based on check type
                 local actual
                 if [[ "$name" == *"Docstring"* ]]; then

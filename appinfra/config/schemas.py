@@ -79,8 +79,8 @@ try:
             default=None,
             description="PostgreSQL version. Required unless image is specified",
         )
-        name: str = Field(default="infra-pg", description="Server name")
-        port: int = Field(default=5432, ge=1, le=65535, description="Server port")
+        name: str = Field(default="llm-works-pg", description="Server name")
+        port: int = Field(default=25432, ge=1, le=65535, description="Server port")
         user: str = Field(default="postgres", description="Username")
         password: str = Field(default="", alias="pass", description="Password")
         image: str | None = Field(
@@ -230,10 +230,10 @@ try:
             ValidationError: If configuration is invalid
 
         Example:
-            import logging
+            from appinfra.log import LoggingBuilder
             from . import validate_config
 
-            lg = logging.getLogger(__name__)
+            lg = LoggingBuilder("myapp").with_level("info").with_console_handler().build()
             config_data = {...}
             try:
                 validated = validate_config(config_data)

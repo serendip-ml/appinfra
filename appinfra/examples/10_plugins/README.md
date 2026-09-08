@@ -1,68 +1,49 @@
-# Example Plugins for infra.app Framework
+# Example Plugins
 
-This directory contains example plugin implementations demonstrating how to extend the infra.app framework with custom functionality.
+`example_plugins.py` shows what a plugin can contribute to an app from its `configure(builder)`
+hook, and builds an app from four of them.
 
-## Available Example Plugins
-
-### DatabasePlugin
-Demonstrates database integration with:
-- Database migration tools
-- Connection management hooks
-- Status checking commands
-
-```python
-from examples.plugins import DatabasePlugin
-
-builder = AppBuilder("myapp")
-builder.with_plugin(DatabasePlugin(connection_string="postgresql://..."))
-app = builder.build()
+```bash
+python example_plugins.py --help     # tools contributed by the plugins
+python example_plugins.py metrics    # run one of them
 ```
 
-### AuthPlugin
-Shows authentication integration with:
-- Login/logout commands
-- Authentication middleware
-- JWT or custom auth strategies
+## What a plugin can contribute
+
+| Block               | Example                                                            |
+|---------------------|--------------------------------------------------------------------|
+| `builder.tools`     | `with_tool_builder(ToolBuilder("migrate")...)`                     |
+| `builder.lifecycle` | `with_hook_builder(HookBuilder().on_startup(...).on_shutdown(...))` |
+
+Inside `configure()` a block is closed with `done()` like anywhere else; a plugin that leaves one
+open fails at `build()` with the plugin name and the line that opened it.
+
+## The plugins
+
+- **DatabasePlugin** - `migrate` and `db-status` tools; connect/disconnect lifecycle hooks.
+- **AuthPlugin** - `login` and `logout` tools.
+- **LoggingPlugin** - `log-level` tool; startup and error hooks.
+- **MetricsPlugin** - `metrics` tool reporting the counts it collects.
+
+## Building the app
 
 ```python
-from examples.plugins import AuthPlugin
-
-builder = AppBuilder("myapp")
-builder.with_plugin(AuthPlugin(auth_type="jwt"))
-app = builder.build()
+app = (
+    AppBuilder("plugins-demo")
+    .cli(log_level=True)
+    .tools(
+        plugins=[
+            DatabasePlugin(),
+            AuthPlugin(auth_type="jwt"),
+            LoggingPlugin(),
+            MetricsPlugin(),
+        ]
+    )
+    .build()
+)
 ```
 
-### LoggingPlugin
-Demonstrates enhanced logging with:
-- Custom log level management
-- File-based logging setup
-- Error logging hooks
-
-```python
-from examples.plugins import LoggingPlugin
-
-builder = AppBuilder("myapp")
-builder.with_plugin(LoggingPlugin(log_file="/var/log/myapp.log"))
-app = builder.build()
-```
-
-### MetricsPlugin
-Shows metrics and monitoring with:
-- Request/response tracking
-- Performance metrics collection
-- Metrics endpoint exposure
-
-```python
-from examples.plugins import MetricsPlugin
-
-builder = AppBuilder("myapp")
-builder.with_plugin(MetricsPlugin(metrics_endpoint="/metrics"))
-app = builder.build()
-```
-
-## Creating Your Own Plugins
-
-To create a custom plugin, extend the `Plugin` base class:
+## Writing a plugin
 
 ```python
 from appinfra.app.builder.plugin import Plugin
@@ -74,28 +55,16 @@ class MyPlugin(Plugin):
         super().__init__("my-plugin")
 
     def configure(self, builder):
-        """Configure the plugin by adding tools, middleware, hooks, etc."""
-        builder.with_tool_builder(
+        builder.tools.with_tool_builder(
             ToolBuilder("my-command")
             .with_help("My custom command")
             .with_run_function(self._run)
-        )
+        ).done()
 
     def _run(self, tool, **kwargs):
         tool.lg.info("Running my custom command")
         return 0
 ```
 
-## Backward Compatibility
-
-Note: These plugins were previously located in `infra.app.builder.plugin` but have been moved here to separate example code from production code. The old import path still works for backward compatibility but will show deprecation warnings.
-
-**Old (deprecated):**
-```python
-from appinfra.app.builder.plugin import DatabasePlugin  # Works but deprecated
-```
-
-**New (recommended):**
-```python
-from examples.plugins import DatabasePlugin
-```
+`initialize(application)` runs after the `App` is built and `cleanup(application)` at shutdown;
+both are optional.

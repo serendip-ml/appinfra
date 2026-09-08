@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
 
+# ci-requires: pg
+
 """
 PGTestCaseHelper Custom Config Example
 
@@ -73,7 +75,7 @@ Configuration File Requirements:
     dbs:
       test:
         host: "127.0.0.1"
-        port: 7432
+        port: 25432
         user: "postgres"
         password: "postgres"
         database: "unittest"
@@ -93,9 +95,8 @@ import sys
 import unittest
 from pathlib import Path
 
-# Add the project root to the Python path
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
+# Allow running from a source checkout without installing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import sqlalchemy
 
@@ -114,12 +115,12 @@ class TestPGHelperCustomConfig(PGTestCaseHelper):
     @classmethod
     def setUpClass(cls):
         """Set up with custom config file."""
-        # Set custom config path (in this case, we'll use the default for demo)
+        # Set custom config path (in this case, appinfra's own config for demo)
         # In real usage, you would point to your custom config file
-        # Use the default config file constant
-        from appinfra import DEFAULT_CONFIG_FILE
+        from appinfra.config import ConfigSpec
 
-        cls.set_config_path(str(DEFAULT_CONFIG_FILE))  # Using default for demo
+        spec = ConfigSpec("llm-works", "appinfra", filename="infra.yaml")
+        cls.set_config_path(str(spec.resolve().path))
         super().setUpClass()
 
     def _create_config_test_table(self, session, table_name):

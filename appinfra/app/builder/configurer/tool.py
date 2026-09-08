@@ -9,12 +9,13 @@ This module provides focused builder for configuring tools, commands, and plugin
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Self
 
 from ...tools.base import Tool
 from ..plugin import Plugin
 from ..tool import ToolBuilder
+from .block import close_on_error
 
 if TYPE_CHECKING:
     from ..app import AppBuilder
@@ -27,6 +28,8 @@ class ToolConfigurer:
     This class extracts tool-related configuration from AppBuilder,
     following the Single Responsibility Principle.
     """
+
+    block_name = "tools"
 
     def __init__(self, app_builder: AppBuilder):
         """
@@ -130,6 +133,28 @@ class ToolConfigurer:
             self._app_builder._plugins.register_plugin(plugin)
         return self
 
+    def with_main(self, tool: str | Tool) -> Self:
+        """
+        Set the tool that runs when no subcommand is given.
+
+        A ``Tool`` instance is registered as well if it is not already; a
+        string names a tool registered elsewhere (a decorator-defined one,
+        for example).
+
+        Args:
+            tool: Tool instance or tool name
+
+        Returns:
+            Self for method chaining
+        """
+        if isinstance(tool, Tool):
+            if not any(t is tool for t in self._app_builder._tools):
+                self._app_builder._tools.append(tool)
+            self._app_builder._main_tool = tool.name
+        else:
+            self._app_builder._main_tool = tool
+        return self
+
     def done(self) -> AppBuilder:
         """
         Finish tool configuration and return to main builder.
@@ -137,4 +162,19 @@ class ToolConfigurer:
         Returns:
             Parent AppBuilder instance for continued chaining
         """
+        self._app_builder._close(self)
         return self._app_builder
+
+    def __call__(
+        self,
+        *tools: Tool,
+        plugins: Sequence[Plugin] = (),
+        main: str | Tool | None = None,
+    ) -> AppBuilder:
+        """Keyword form of the block: tools by position, plugins and main by keyword."""
+        with close_on_error(self._app_builder, self):
+            self.with_tools(*tools)
+            self.with_plugins(*plugins)
+            if main is not None:
+                self.with_main(main)
+        return self.done()

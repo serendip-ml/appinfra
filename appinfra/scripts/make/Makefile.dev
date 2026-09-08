@@ -12,6 +12,10 @@
 #   INFRA_DEV_CQ_SPDX       - Enforce SPDX license headers on tracked source files
 #                             (Python, shell, Makefile, Dockerfile) in `make check`
 #                             (default: false; opt-in for open-source Apache-2.0 repos)
+#   INFRA_DEV_CHECK_EXAMPLES - Run every example script as a `make check` test
+#                             subcheck, the same run as `make examples.check`
+#                             (default: false; opt-in because it executes the
+#                             scripts, and each needs its `# ci-*` header first)
 #   INFRA_DEV_CQ_EXCLUDE    - Patterns to exclude from cq checks (e.g., "examples/*")
 #                             Note: patterns cannot contain spaces (Make limitation)
 #   INFRA_DEV_PROJECT_ROOT  - Project root path (default: $(CURDIR))
@@ -42,6 +46,7 @@ PYTHON_ENVS ?= $(PYTHON)
 export INFRA_DEV_PKG_NAME
 export INFRA_DEV_CQ_STRICT
 export INFRA_DEV_CQ_SPDX
+export INFRA_DEV_CHECK_EXAMPLES
 export INFRA_DEV_CQ_EXCLUDE
 export INFRA_DEV_DOCSTRING_THRESHOLD
 export INFRA_DEV_PROJECT_ROOT
@@ -53,6 +58,15 @@ export INFRA_PYTEST_COVERAGE_THRESHOLD
 
 # Expand CQ_EXCLUDE patterns to --exclude flags (empty if no exclusions)
 _CQ_EXCLUDE_FLAGS := $(if $(INFRA_DEV_CQ_EXCLUDE),$(foreach pat,$(INFRA_DEV_CQ_EXCLUDE),--exclude "$(pat)"))
+
+# Endpoint run_examples.py probes for `# ci-requires: pg` files, as HOST:PORT.
+# Recursive (=) on purpose: PG_HOST / PG_PORT are defined by Makefile.pg,
+# which is included after this file, and they resolve when a recipe runs.
+# Empty when no pg config is loaded; the runner then falls back to
+# INFRA_PGSERVER_HOST / INFRA_PGSERVER_PORT and its default.
+_INFRA_DEV_EXAMPLES_PG = $(if $(and $(PG_HOST),$(PG_PORT)),$(PG_HOST):$(PG_PORT))
+_INFRA_DEV_EXAMPLES_PG_FLAG = $(if $(_INFRA_DEV_EXAMPLES_PG),--pg $(_INFRA_DEV_EXAMPLES_PG))
+export _INFRA_DEV_EXAMPLES_PG
 
 # Python test wrapper with warning suppression
 PYTHON_TEST = PYTHONWARNINGS="ignore::ResourceWarning,ignore::RuntimeWarning" ${PYTHON}
@@ -156,6 +170,12 @@ else
 endif
 endif # skip type
 .PHONY: type
+
+examples.check:: ## Run every example script; fail on errors or timeouts
+	@if [ -d "examples" ]; then ${PYTHON} $(_MAKEFILE_DEV_DIR)../run_examples.py examples $(_INFRA_DEV_EXAMPLES_PG_FLAG); \
+	elif [ -d "$(INFRA_DEV_PKG_NAME)/examples" ]; then ${PYTHON} $(_MAKEFILE_DEV_DIR)../run_examples.py $(INFRA_DEV_PKG_NAME)/examples $(_INFRA_DEV_EXAMPLES_PG_FLAG); \
+	else echo "No examples directory found"; fi
+.PHONY: examples.check
 
 ifeq ($(filter cq,$(INFRA_DEV_SKIP_TARGETS)),)
 cq:: ## Check function sizes (reports violations, does not fail)

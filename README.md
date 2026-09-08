@@ -75,8 +75,8 @@ appinfra docs show <topic>  # Read a specific guide
 ### App Framework
 
 **AppBuilder for CLI tools** - Build production CLI applications with lifecycle management, config,
-logging, and tools. Focused configurers provide clean separation of concerns. Config files are
-resolved from `--etc-dir` (default: `./etc`):
+logging, and tools. Focused configurers provide clean separation of concerns. The config file is
+resolved at setup under the config protocol (`--etc-dir`, project-local `etc/`, packaged base):
 
 ```python
 from appinfra.app import AppBuilder
@@ -84,15 +84,14 @@ from appinfra.app import AppBuilder
 app = (
     AppBuilder("myapp")
     .with_description("Data processing tool")
-    .with_config_file("config.yaml")  # Resolved from --etc-dir
-    .logging.with_level("info")
-    .with_location(1)
+    .config.with_spec("myorg", "myapp")  # etc/myapp.yaml beside the module or script
     .done()
+    .cli(etc_dir=True, config_file=True)
+    .logging(level="info", location=1)
     .tools.with_tool(ProcessorTool())
     .with_main(MainTool())
     .done()
-    .advanced.with_hook("startup", init_database)
-    .done()
+    .lifecycle(startup=init_database)
     .build()
 )
 
@@ -108,9 +107,9 @@ from appinfra.log import LoggingBuilder
 logger = (
     LoggingBuilder("my_app")
     .with_level("info")
-    .with_format("%(asctime)s [%(levelname)s] %(message)s")
-    .console_handler(colors=True)
-    .file_handler("logs/app.log", rotate_mb=10)
+    .with_location(1)
+    .with_console_handler()
+    .with_rotating_file_handler("logs/app.log", max_bytes=10_000_000, backup_count=5)
     .build()
 )
 ```
@@ -448,15 +447,14 @@ with pg.session() as session:
 stays responsive while workers handle requests, with automatic restart on failure:
 
 ```python
-from appinfra.app.fastapi import FastAPIBuilder
+from appinfra.app.fastapi import ServerBuilder
 
 server = (
-    FastAPIBuilder("api")
-    .with_config(config)
+    ServerBuilder(lg, "api")
     .with_port(8000)
-    .with_subprocess_mode(
-        request_queue=request_q, response_queue=response_q, auto_restart=True
-    )
+    .subprocess.with_ipc(request_q, response_q)
+    .with_auto_restart(enabled=True)
+    .done()
     .build()
 )
 

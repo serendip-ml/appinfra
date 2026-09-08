@@ -14,6 +14,9 @@ INFRA_DEV_CQ_STRICT := true
 # Enforce SPDX license headers on tracked .py files (Apache-2.0 attribution)
 INFRA_DEV_CQ_SPDX := true
 
+# Run every example script as a test subcheck of `make check`
+INFRA_DEV_CHECK_EXAMPLES := true
+
 # Include all tests in coverage (not just unit tests)
 INFRA_PYTEST_COVERAGE_MARKERS := unit or e2e
 

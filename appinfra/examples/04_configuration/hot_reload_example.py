@@ -3,6 +3,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
 
+# ci-run: --help
+# ci-run: status
+# ci-run: reload
+# ci-run: serve
+# ci-stop: 4
+
 """
 Hot-Reload Configuration Example
 
@@ -18,21 +24,20 @@ Features shown:
 Usage:
     python hot_reload_example.py serve
 
-Then edit examples/04_configuration/etc/hot_reload.yaml while running
+Then edit etc/hot-reload.yaml (beside this script) while running
 to see changes applied automatically.
 
 Requirements:
     pip install appinfra[hotreload]
 """
 
-import pathlib
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
-# Add the project root to the path
-project_root = str(pathlib.Path(__file__).resolve().parents[3])
-sys.path.insert(0, project_root)
+# Allow running from a source checkout without installing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from appinfra.app.builder import AppBuilder
 from appinfra.app.tools import Tool, ToolConfig
@@ -49,6 +54,7 @@ class ServeCommand(Tool):
 
     def setup(self, **kwargs: Any) -> None:
         """Register section callbacks on startup."""
+        super().setup(**kwargs)  # creates the logger; must come first
         self.request_count = 0
         self.timeout = 30
         self.max_connections = 100
@@ -84,7 +90,7 @@ class ServeCommand(Tool):
             "server started",
             extra={"timeout": self.timeout, "max_connections": self.max_connections},
         )
-        self.lg.info("edit etc/hot_reload.yaml to see hot-reload in action")
+        self.lg.info(f"edit {self.app.config_path} to see hot-reload in action")
         self.lg.info("press Ctrl+C to stop")
 
         try:
@@ -154,12 +160,12 @@ def create_app():
     """Create app with hot-reload enabled."""
     return (
         AppBuilder("hot-reload-demo")
-        # Load config from relative path (not from --etc-dir)
-        .with_config_file(
-            "examples/04_configuration/etc/hot_reload.yaml", from_etc_dir=False
-        )
+        # The config named "hot-reload" has no module of that name, so its
+        # base is located beside this script: ./etc/hot-reload.yaml.
+        .config.with_spec("example-org", "hot-reload")
+        .with_hot_reload(debounce_ms=500)
+        .done()
         .logging.with_level("debug")
-        .with_hot_reload(enabled=True, debounce_ms=500)
         .done()
         .tools.with_tools(ServeCommand(), ReloadCommand(), StatusCommand())
         .done()

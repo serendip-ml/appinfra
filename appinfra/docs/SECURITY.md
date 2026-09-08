@@ -355,12 +355,12 @@ def process_request(user_id: str):
 #### 4. Use Structured Logging for Sensitive Data
 
 ```python
-from appinfra import LoggingBuilder
+from appinfra.log.builder import JSONLoggingBuilder
 
 logger = (
-    LoggingBuilder("app")
+    JSONLoggingBuilder("app")
     .with_level("info")
-    .json_handler()  # Structured logging prevents injection
+    .with_json_console()  # Structured logging prevents injection
     .build()
 )
 

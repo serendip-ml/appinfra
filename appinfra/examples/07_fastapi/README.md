@@ -5,12 +5,11 @@ HTTP server framework using FastAPI with subprocess isolation and service orches
 ## Examples
 
 ### fastapi_server.py
-Demonstrates three modes of the FastAPI server framework.
+Demonstrates two modes of the FastAPI server framework.
 
 **What you'll learn:**
 - Direct mode server (blocking, simple deployments)
 - Subprocess mode with IPC (non-blocking, auto-restart)
-- AppBuilder integration with ServerPlugin
 - Queue-based communication patterns
 
 **Run:**
@@ -20,14 +19,10 @@ Demonstrates three modes of the FastAPI server framework.
 
 # Subprocess mode with IPC demo
 ~/.venv/bin/python examples/07_fastapi/fastapi_server.py --subprocess
-
-# AppBuilder integration
-~/.venv/bin/python examples/07_fastapi/fastapi_server.py --cli serve
 ```
 
 **Key concepts:**
 - `ServerBuilder` - Fluent API for server configuration
-- `ServerPlugin` - CLI integration for AppBuilder
 - `Server.start()` - Direct mode (blocking)
 - `Server.start_subprocess()` - Subprocess mode (non-blocking)
 
@@ -67,7 +62,8 @@ server = (
     ServerBuilder(lg, "worker-api")
     .with_port(8001)
     .subprocess.with_ipc(request_q, response_q)
-    .with_auto_restart(enabled=True, max_restarts=3)
+    .with_auto_restart(True)
+    .with_max_restarts(3)
     .done()
     .routes.with_route("/health", health_handler)
     .done()
@@ -77,33 +73,12 @@ server = (
 proc = server.start_subprocess()  # Non-blocking
 ```
 
-### CLI Integration
-Add HTTP server capability to CLI applications.
-
-```python
-from appinfra.app.builder import AppBuilder
-from appinfra.app.fastapi import ServerBuilder, ServerPlugin
-
-server = (
-    ServerBuilder(lg, "cli-api")
-    .with_port(8002)
-    .routes.with_route("/health", health_handler)
-    .done()
-    .build()
-)
-
-app = AppBuilder("myapp").tools.with_plugin(ServerPlugin(server)).done().build()
-
-# Now: myapp serve
-```
-
 ## Features
 
 - **Fluent Builder API** - Chainable configuration
 - **Subprocess Isolation** - Server crashes don't affect main process
 - **Auto-Restart** - Configurable automatic recovery
 - **IPC Queues** - Type-safe request/response communication
-- **CLI Integration** - ServerPlugin for AppBuilder
 
 ## Best Practices
 

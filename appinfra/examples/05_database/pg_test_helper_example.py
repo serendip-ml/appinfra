@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
 
+# ci-requires: pg
+
 """
 PGTestCaseHelper Comprehensive Example
 
@@ -122,13 +124,13 @@ Expected Output:
 Debugging Failed Tests:
     After running the example, check the database for leftover tables:
 
-    psql -h 127.0.0.1 -p 7432 -U postgres -d unittest -c "
+    psql -h 127.0.0.1 -p 25432 -U postgres -d unittest -c "
     SELECT tablename FROM pg_tables
     WHERE schemaname = 'public' AND tablename LIKE 'example_%';"
 
     Inspect the data:
 
-    psql -h 127.0.0.1 -p 7432 -U postgres -d unittest -c "
+    psql -h 127.0.0.1 -p 25432 -U postgres -d unittest -c "
     SELECT * FROM example_failure_XXXXX;"
 
 Key Features Demonstrated:
@@ -227,9 +229,8 @@ import sys
 import unittest
 from pathlib import Path
 
-# Add the project root to the Python path
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
+# Allow running from a source checkout without installing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import sqlalchemy
 

@@ -3,6 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright 2026 The appinfra Authors
 
+# ci-run: --help
+# ci-run: status
+# ci-run: serve
+
 """
 Accessing YAML Config from Tools Example
 
@@ -29,16 +33,15 @@ Key Concepts:
 # Add the project root to the path
 from __future__ import annotations
 
-import pathlib
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from appinfra.dot_dict import DotDict
 
-project_root = str(pathlib.Path(__file__).resolve().parents[3])
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# Allow running from a source checkout without installing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from appinfra.app.builder import AppBuilder
 from appinfra.app.tools.base import Tool, ToolConfig
@@ -166,7 +169,8 @@ def main() -> int:
     app = (
         AppBuilder("config-demo")
         .with_description("Demonstrates accessing YAML config from Tools")
-        .with_config(_create_sample_config())
+        .config.with_overrides(_create_sample_config())
+        .done()
         .tools.with_tool(ServeTool())
         .with_tool(StatusTool())
         .done()

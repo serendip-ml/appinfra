@@ -45,15 +45,21 @@ shape. See [YAML Includes](../api/config.md#yaml-includes).
 
 ### 2. Base config ships in the wheel
 
-Every package with default config ships `etc/<package-name>.yaml` inside its wheel. Pure-library
-packages with no config-owned surface are exempt.
+Every package with default config ships `etc/<name>.yaml` inside its wheel, where the name is
+the package name. Pure-library packages with no config-owned surface are exempt.
+
+The layout is encoded by the API, not reconstructed by callers. `ConfigSpec(namespace, name)`
+locates the packaged base from the name alone; each keyword on it (`origin`, `etc_dir`,
+`filename`, `path`) declares one deviation from this rule. A script that is not a package
+follows the same layout beside its own file and gets the same treatment. See
+[Config Spec](../api/config.md#config-spec).
 
 ### 3. User overrides go under XDG directories
 
 Users place override configs at one of:
 
-- `$XDG_CONFIG_HOME/llm-works/<package-name>.yaml` — per-package file, or
-- `$XDG_CONFIG_HOME/llm-works/config.yaml` — unified file, top-level key per package
+- `$XDG_CONFIG_HOME/llm-works/<name>.yaml` — per-config file, or
+- `$XDG_CONFIG_HOME/llm-works/config.yaml` — unified file, top-level key per config
 
 `XDG_CONFIG_HOME` defaults to `~/.config` per spec. System-wide defaults may also live under
 `$XDG_CONFIG_DIRS` (default `/etc/xdg`) — packagers, sysadmins, and container images use these to
@@ -74,12 +80,12 @@ database:
 To find the base config path for an installed package:
 
 ```bash
-python -c "import myapp, pathlib; print(pathlib.Path(myapp.__file__).parent / 'etc' / 'myapp.yaml')"
+python -c "from appinfra.config import ConfigSpec; print(ConfigSpec('myorg', 'myapp').base_config)"
 ```
 
 Loading an overlay that pulls in a base config outside the overlay's own
 directory requires the caller to widen the include-authorization boundary.
-See the discovery-helper example below and [Config](../api/config.md#config)
+See [Declaring the source](#declaring-the-source) below and [Config](../api/config.md#config)
 for the `project_root` and `allowed_paths` arguments.
 
 ### 4. `INFRA_*` is the only config-override env prefix
@@ -100,113 +106,177 @@ CLI flags and file values.
 
 ### 5. Library vs CLI split
 
-- **Library callers** pass an explicit config path to `Config`. No home-sniffing; a library must
-  not read from the ambient environment on behalf of its host application.
-- **CLI entry points** discover their user override file via
-  [`xdg_candidates`](../api/config.md#xdg-config-discovery), iterate the returned list, and load
-  the first existing entry.
+- **Embedded libraries** take a config path, a `ConfigFile`, or a `Config` from their host. They
+  do not discover on the host's behalf: no XDG lookup, no cwd walk-up, no `sys.argv`.
+- **Entry points that own the process** (CLIs, scripts, notebooks, a host's own bootstrap
+  helper) discover: [`ConfigSpec.resolve()`](../api/config.md#config-spec) runs the rule-6
+  chain, XDG lookup included. A library that exposes a helper which discovers on the host's
+  behalf says so in its own API contract.
 
-### 6. `--etc-dir` is user-authoritative
+### 6. `--config` and `--etc-dir` are user-authoritative
 
-CLI entry points that expose `--etc-dir` MUST honor it as authoritative over XDG discovery.
-Registration is the consumer's choice: a locked-down CLI may deliberately skip `--etc-dir` (XDG +
-bundled base only); a general-purpose CLI registers it so end users can point at any tree they
-own.
+CLI entry points that expose `--etc-dir` or `--config` MUST honor them as authoritative over XDG
+discovery. Registration is the consumer's choice: a locked-down CLI may deliberately skip both
+(XDG + bundled base only); a general-purpose CLI registers them so end users can point at any tree
+or file they own.
 
-Precedence chain when the flag is registered, evaluated left-to-right, first hit wins:
+Precedence chain when the flags are registered, evaluated top-down, first hit wins:
 
-1. `--etc-dir /foo` present → load `/foo/<package>.yaml`, `project_root=/foo`. The user's directory
-   IS the include-authorization root; sibling `!include`s inside it resolve by default, anything
-   outside is the user's `allowed_paths` problem.
-2. Else first existing XDG candidate → load overlay,
-   `project_root=include_root_for(base_config)` (the packaged base's `etc/` directory). Defensive.
-3. Else the packaged base itself.
+1. `--config /abs.yaml`, `./rel.yaml`, `../rel.yaml`, or `~/path.yaml` (direct path) → load
+   directly, `project_root` = the file's own parent directory. `--etc-dir` is ignored; matches
+   non-spec-mode's `_load_direct_config` semantics.
+2. `--config bare.yaml` (bare filename) → `<etc-dir>/bare.yaml` if `--etc-dir` passed, else
+   `cwd/bare.yaml`. `project_root` = the file's parent.
+3. `--etc-dir /foo` alone → load `/foo/<base filename>`, `project_root=/foo`. The user's
+   directory IS the include-authorization root; sibling `!include`s inside it resolve by default,
+   anything outside is the user's `allowed_paths` problem.
+4. **Project-local**: walk up from cwd looking for `<etc_dir>/<base filename>` (`etc/` unless
+   the spec declares otherwise). First hit → load it, `project_root` = that directory. A
+   developer inside a checkout gets that checkout's config. Keyed on the filename the package
+   actually ships, so a base that deviates from `<name>.yaml` matches without a special case.
+   Stops before `$HOME` and before filesystem root, so home-dir dotfiles and system `/etc`
+   are never picked up.
+5. Else first existing XDG candidate → load overlay,
+   `project_root` = the packaged base's directory.
+   Defensive.
+6. Else the packaged base itself.
 
-When the flag is not registered, the chain starts at step 2.
+When neither flag is registered, the chain starts at step 4.
+
+`--config` always bypasses everything below it (project-local walk-up, XDG, packaged base). No
+name-comparison special case — `--config <package>.yaml` behaves the same as any other filename,
+matching non-spec-mode convention.
+
+#### Resolution table
+
+| `--etc-dir` | `--config`      | Loads from                             | `project_root`      |
+|-------------|-----------------|----------------------------------------|---------------------|
+| —           | —               | see fallback chain below               | (varies by tier)    |
+| —           | direct path     | `<config>` (as given)                  | `<config>.parent`   |
+| —           | bare filename   | `cwd/<config>`                         | `cwd`               |
+| `/foo`      | —               | `/foo/<base filename>`                 | `/foo`              |
+| `/foo`      | direct path     | `<config>` (`/foo` IGNORED)            | `<config>.parent`   |
+| `/foo`      | bare filename   | `/foo/<config>`                        | `/foo`              |
+
+*"Direct path"*: absolute (`/x`), `./rel`, `../rel`, `~/x`, or `~`.
+*"Bare filename"*: anything else (e.g. `infra.yaml`, `sub/x.yaml`).
+
+Fallback chain (only when neither flag is set):
+
+```text
+1. cwd (walk up) → <etc_dir>/<base filename>   first hit, stopping before $HOME
+2. first existing XDG candidate:               $XDG_CONFIG_HOME/<ns>/<name>.yaml
+                                               $XDG_CONFIG_HOME/<ns>/config.yaml
+                                               then each $XDG_CONFIG_DIRS entry, same pair
+3. packaged base                               the file the ConfigSpec names
+```
+
+Ordering rationale: a developer inside a project checkout gets that checkout's config —
+XDG cannot shadow it. An operator running from a wheel install gets the packaged base as
+default, with XDG available as a machine-level overlay above that default.
+
+#### Decision tree
+
+```text
+                    ┌────────────────────────┐
+                    │  --config passed?      │
+                    └───┬────────────────┬───┘
+                    yes │                │ no
+                        ▼                ▼
+              ┌─────────────────┐   ┌────────────────────────┐
+              │ direct path?    │   │  --etc-dir passed?     │
+              └─┬─────────────┬─┘   └───┬────────────────┬───┘
+             yes│           no│      yes│                │ no
+                ▼             ▼         ▼                ▼
+         load <config>   ┌─────────┐  <etc>/<base>       [FALLBACK CHAIN]
+         (--etc-dir      │--etc-dir│  root = <etc>       (project-local →
+          ignored)       │passed?  │                      XDG → packaged base)
+                         └─┬─────┬─┘
+                        yes│    no│
+                           ▼      ▼
+                    <etc>/<cfg>  cwd/<cfg>
+                    root=<etc>   root=cwd
+```
 
 Rationale: appinfra's include-authorization guard has a job on the DEFAULT path — the user hasn't
 specified anything, so defensive boundaries apply. It cannot dictate where a caller pointing
-`--etc-dir` is allowed to go — that choice is authoritative. Same principle as `sudo` vs
-unprivileged shell.
+`--etc-dir` or `--config` is allowed to go — that choice is authoritative. Same principle as `sudo`
+vs unprivileged shell.
 
 `--etc-dir` and an XDG overlay cannot compose in one invocation — the overlay's `!include` target
 is a static string in a YAML file that no runtime flag can rewrite. A user who wants a custom base
 with their own overrides puts a self-contained tree under `<etc-dir>` (base + edits) and skips the
 overlay indirection.
 
-## Discovery helper
+## Declaring the source
 
-Consumers pick the CLI shape that fits:
+Consumers declare identity, not paths. One `ConfigSpec` serves both entry points.
 
-### Hand-wired (any appinfra release ≥ 0.10.4)
+### Library mode (appinfra ≥ 0.11.0)
 
 ```python
-from pathlib import Path
+from appinfra.config import Config
 
-from appinfra.config import Config, resolve_config_source
-
-NAMESPACE = "myorg"
-PACKAGE = "myapp"
-BASE_CONFIG = Path(__file__).parent / "etc" / f"{PACKAGE}.yaml"
-
-
-def load_user_config(custom_etc_dir: str | None = None) -> Config:
-    config_file, project_root = resolve_config_source(
-        NAMESPACE, PACKAGE, BASE_CONFIG, custom_etc_dir=custom_etc_dir
-    )
-    return Config(str(config_file), project_root=project_root)
+config = Config.from_spec(
+    "myorg", "myapp"
+)  # no operator input: the chain with defaults
 ```
 
-`resolve_config_source` runs the full rule-6 precedence chain and returns both the file to load and
-the `project_root` to pass. On the default path, `project_root` is `include_root_for(BASE_CONFIG)`
-— the base's `etc/` directory, the tightest boundary that authorizes both the overlay's absolute
-`!include <BASE_CONFIG>` and the base's own relative sibling `!include './...'` directives. Under
-`--etc-dir`, `project_root` follows the user's directory.
-
-Pick the tightest ancestor that contains all `!include`-reachable files. Usually that's the
-base's `etc/` directory (`include_root_for(BASE_CONFIG)`); pass the wider package directory
-(`BASE_CONFIG.parent.parent`) explicitly only when the base's includes reach files outside
-`etc/`.
-
-Use `allowed_paths` (rather than `project_root`) when the overlay references one specific file
-outside the package root — e.g. a shared config elsewhere on disk. The two arguments compose.
-
-### Framework-wired (appinfra ≥ 0.10.5)
-
-`AppBuilder.with_config_spec` runs the rule-6 chain on every parse and wires `ConfigWatcher` with
-the same `project_root` so hot-reload matches the initial load. Flag exposure is orthogonal —
-compose with `.with_standard_args(etc_dir=True)` to expose the escape hatch to end users, skip
-that call for a locked-down CLI:
+A library that surfaces `--etc-dir` / `--config` on its own API resolves explicitly:
 
 ```python
-from pathlib import Path
+from appinfra.config import Config, ConfigSpec
 
+SPEC = ConfigSpec("myorg", "myapp")
+
+
+def load_user_config(
+    etc_dir: str | None = None, config_file: str | None = None
+) -> Config:
+    return Config(SPEC.resolve(etc_dir=etc_dir, config_file=config_file))
+```
+
+`resolve()` runs the full rule-6 chain and returns the file to load together with the
+`project_root` that goes with it: the base's directory on the XDG and packaged-base tiers, the
+user's directory under `--etc-dir`, the file's own parent under `--config`. `Config` reads that
+root off the `ConfigFile`, the tightest boundary that authorizes both an overlay's absolute
+`!include <base>` and the base's own relative sibling `!include './...'` directives.
+
+Use `allowed_paths` on `Config` when an overlay references one specific file outside that root,
+such as a shared config elsewhere on disk. The two compose.
+
+### Framework mode (appinfra ≥ 0.11.0)
+
+`AppBuilder.config.with_spec` declares the same spec. The App resolves it on every parse and
+wires `ConfigWatcher` with the same `project_root` so hot reload matches the initial load. Flag
+exposure is orthogonal: compose with `.cli(etc_dir=True, config_file=True)` to
+expose the escape hatches to end users, skip either flag for a locked-down CLI:
+
+```python
 from appinfra.app import AppBuilder
 
-BASE_CONFIG = Path(__file__).parent / "etc" / "myapp.yaml"
+# XDG + bundled base only, no escape-hatch flags exposed:
+app = AppBuilder("myapp").config.with_spec("myorg", "myapp").done().build()
 
-# XDG + bundled base only, no --etc-dir flag exposed:
-app = AppBuilder("myapp").with_config_spec("myorg", "myapp", BASE_CONFIG).build()
-
-# With the --etc-dir escape hatch for end users:
+# With --etc-dir and --config escape hatches for end users:
 app = (
     AppBuilder("myapp")
-    .with_config_spec("myorg", "myapp", BASE_CONFIG)
-    .with_standard_args(etc_dir=True)
+    .config.with_spec("myorg", "myapp")
+    .done()
+    .cli(etc_dir=True, config_file=True)
     .build()
 )
 ```
 
-`with_config_spec` and `with_config_file` are mutually exclusive — pick one config-loading mode
-per builder. Pre-v1 callers relying on `with_config_file()` need no migration; their code path is
-unchanged.
+An app built without a spec loads no file; its config is the programmatic layer plus CLI
+arguments.
 
-Full API contract in [Config](../api/config.md#config) and
-[XDG Config Discovery](../api/config.md#xdg-config-discovery).
+Full API contract in [Config Spec](../api/config.md#config-spec) and
+[AppBuilder.config](../api/config.md#appbuilderconfig).
 
 ## See also
 
-- [Config API](../api/config.md) — Config class, includes, `xdg_candidates`
+- [Config API](../api/config.md) — Config class, includes, `ConfigSpec`
 - [Environment Variables](environment-variables.md) — `INFRA_*` format details
 - [Configuration Precedence](configuration-precedence.md) — CLI vs env vs file
 - [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/)

@@ -15,21 +15,12 @@ Tests the Config class functionality including:
 """
 
 import os
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
-from appinfra.config import (
-    MAX_CONFIG_SIZE_BYTES,
-    Config,
-    get_config_file_path,
-    get_default_config,
-    get_etc_dir,
-    get_project_root,
-    resolve_etc_dir,
-)
+from appinfra.config import MAX_CONFIG_SIZE_BYTES, Config, ConfigFile, ConfigSpec
 from appinfra.config.config import (
     _check_file_size,
     _preserve_config_attributes,
@@ -930,62 +921,6 @@ class TestHelperFunctions:
 
 
 # =============================================================================
-# Test Utility Functions
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestUtilityFunctions:
-    """Test utility functions for project paths."""
-
-    def test_get_project_root_finds_root(self):
-        """Test get_project_root finds root directory."""
-        # This test only works if we're in the infra project
-        try:
-            root = get_project_root()
-            assert root.is_dir()
-            assert (root / "etc" / "infra.yaml").exists()
-        except FileNotFoundError:
-            pytest.skip("Not running in infra project directory")
-
-    def test_get_etc_dir_returns_etc_path(self):
-        """Test get_etc_dir returns etc directory."""
-        try:
-            etc_dir = get_etc_dir()
-            assert etc_dir.is_dir()
-            assert etc_dir.name == "etc"
-        except FileNotFoundError:
-            pytest.skip("Not running in infra project directory")
-
-    def test_get_config_file_path_with_default(self):
-        """Test get_config_file_path with default filename."""
-        try:
-            config_path = get_config_file_path()
-            assert config_path.name == "infra.yaml"
-            assert config_path.parent.name == "etc"
-        except FileNotFoundError:
-            pytest.skip("Not running in infra project directory")
-
-    def test_get_config_file_path_with_custom_file(self):
-        """Test get_config_file_path with custom filename."""
-        try:
-            config_path = get_config_file_path("custom.yaml")
-            assert config_path.name == "custom.yaml"
-            assert config_path.parent.name == "etc"
-        except FileNotFoundError:
-            pytest.skip("Not running in infra project directory")
-
-    def test_get_default_config_returns_config(self):
-        """Test get_default_config returns Config instance."""
-        try:
-            config = get_default_config()
-            if config is not None:
-                assert isinstance(config, Config)
-        except FileNotFoundError:
-            pytest.skip("Not running in infra project directory")
-
-
-# =============================================================================
 # Test Validation
 # =============================================================================
 
@@ -1581,7 +1516,7 @@ class TestEnvOverrideSubstitution:
         config_file.write_text(
             "pgserver:\n"
             "  host: 127.0.0.1\n"
-            "  port: 7432\n"
+            "  port: 25432\n"
             "  user: postgres\n"
             "  pass: ''\n"
             "dbs:\n"
@@ -1604,7 +1539,7 @@ class TestEnvOverrideSubstitution:
         included.write_text(
             "pgserver:\n"
             "  host: 127.0.0.1\n"
-            "  port: 7432\n"
+            "  port: 25432\n"
             "dbs:\n"
             "  unittest:\n"
             '    url: "postgresql://${pgserver.host}:${pgserver.port}/db"\n'
@@ -1624,13 +1559,13 @@ class TestEnvOverrideSubstitution:
         config_file.write_text(
             "pgserver:\n"
             "  host: 127.0.0.1\n"
-            "  port: 7432\n"
+            "  port: 25432\n"
             "dbs:\n"
             "  unittest:\n"
             '    url: "postgresql://${pgserver.host}:${pgserver.port}/db"\n'
         )
         config = Config(str(config_file))
-        assert config.dbs.unittest.url == "postgresql://127.0.0.1:7432/db"
+        assert config.dbs.unittest.url == "postgresql://127.0.0.1:25432/db"
 
     def test_env_override_multi_underscore_resolves_via_canonical_alias(
         self, tmp_path, clean_env
@@ -1685,183 +1620,6 @@ class TestEnvOverrideSubstitution:
         config = Config(str(main), enable_env_overrides=False)
         assert config.pgserver.host == "127.0.0.1"
         assert config.dbs.unittest.url == "postgres://127.0.0.1/db"
-
-
-# =============================================================================
-# Test resolve_etc_dir function
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestResolveEtcDir:
-    """Test resolve_etc_dir function with four-tier fallback."""
-
-    def test_custom_path_valid_directory(self):
-        """Test Priority 1: Custom path provided and exists."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            custom_etc = Path(tmpdir) / "custom_etc"
-            custom_etc.mkdir()
-
-            result = resolve_etc_dir(str(custom_etc))
-
-            assert result == custom_etc.resolve()
-
-    def test_custom_path_nonexistent_raises(self):
-        """Test Priority 1: Custom path that doesn't exist raises error."""
-        with pytest.raises(
-            FileNotFoundError, match="Specified etc directory does not exist"
-        ):
-            resolve_etc_dir("/nonexistent/custom/etc")
-
-    def test_custom_path_not_directory_raises(self):
-        """Test Priority 1: Custom path that's a file raises error."""
-        with tempfile.NamedTemporaryFile(delete=False) as f:
-            temp_file = f.name
-
-        try:
-            with pytest.raises(
-                FileNotFoundError, match="Specified etc path is not a directory"
-            ):
-                resolve_etc_dir(temp_file)
-        finally:
-            os.unlink(temp_file)
-
-    def test_current_directory_etc_found(self):
-        """Test Priority 2: ./etc/ in current working directory."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            etc_dir = Path(tmpdir) / "etc"
-            etc_dir.mkdir()
-
-            original_cwd = os.getcwd()
-            try:
-                os.chdir(tmpdir)
-                result = resolve_etc_dir()
-
-                # Use resolve() for comparison (macOS /var is symlink to /private/var)
-                assert result.resolve() == etc_dir.resolve()
-            finally:
-                os.chdir(original_cwd)
-
-    def test_project_root_etc_via_get_etc_dir(self):
-        """Test Priority 3: Project root etc/ via get_etc_dir()."""
-        # This tests that resolve_etc_dir() calls get_etc_dir() when CWD etc/ doesn't exist
-        with patch("appinfra.config.config.get_etc_dir") as mock_get_etc_dir:
-            mock_project_etc = Path("/mock/project/etc")
-            mock_get_etc_dir.return_value = mock_project_etc
-
-            with tempfile.TemporaryDirectory() as tmpdir:
-                original_cwd = os.getcwd()
-                try:
-                    # Change to directory without etc/ subdirectory
-                    os.chdir(tmpdir)
-
-                    result = resolve_etc_dir()
-
-                    assert result == mock_project_etc
-                    mock_get_etc_dir.assert_called_once()
-                finally:
-                    os.chdir(original_cwd)
-
-    def test_infra_package_etc_fallback(self):
-        """Test Priority 4: Infra package etc/ directory."""
-        # When running in the actual infra project, Priority 4 will find the project etc/
-        # This test verifies the fallback path exists and is used when other priorities fail
-        with tempfile.TemporaryDirectory() as tmpdir:
-            original_cwd = os.getcwd()
-            try:
-                # Change to directory without etc/
-                os.chdir(tmpdir)
-
-                # Mock get_etc_dir to raise FileNotFoundError (no project root)
-                with patch("appinfra.config.config.get_etc_dir") as mock_get_etc_dir:
-                    mock_get_etc_dir.side_effect = FileNotFoundError("No project root")
-
-                    # The function should fall back to package etc/
-                    # In the real infra project, this will find the project etc/
-                    result = resolve_etc_dir()
-
-                    # Should return a path that exists
-                    assert result.exists()
-                    assert result.is_dir()
-                    assert result.name == "etc"
-            except FileNotFoundError:
-                # If no package etc/ exists (e.g., in a minimal test environment), that's ok
-                # The important thing is that we tried all fallback paths
-                pytest.skip("No package etc/ directory available for fallback test")
-            finally:
-                os.chdir(original_cwd)
-
-    def test_all_fallbacks_fail_raises(self):
-        """Test that FileNotFoundError is raised when all fallbacks fail."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            original_cwd = os.getcwd()
-            try:
-                # Change to directory without etc/
-                os.chdir(tmpdir)
-
-                # Mock get_etc_dir to raise FileNotFoundError
-                with patch("appinfra.config.config.get_etc_dir") as mock_get_etc_dir:
-                    mock_get_etc_dir.side_effect = FileNotFoundError("No project root")
-
-                    # Mock the package etc/ to not exist
-                    with patch("appinfra.config.config.Path") as mock_path_cls:
-                        # Make the package etc path not exist
-                        mock_package_etc = MagicMock()
-                        mock_package_etc.exists.return_value = False
-
-                        # Mock Path(__file__).parent.parent / "etc" navigation
-                        # (the function now lives in appinfra/config/config.py,
-                        # so one fewer .parent than in the prior location)
-                        mock_config_file = MagicMock()
-                        mock_config_file.parent.parent = MagicMock()
-                        mock_config_file.parent.parent.__truediv__.return_value = (
-                            mock_package_etc
-                        )
-
-                        mock_path_cls.return_value = mock_config_file
-                        mock_path_cls.cwd.return_value = Path(tmpdir)
-
-                        # Also need to handle Path(tmpdir) / "etc"
-                        def path_side_effect(arg):
-                            if arg == tmpdir:
-                                p = MagicMock()
-                                p.__truediv__.return_value.exists.return_value = False
-                                p.__truediv__.return_value.is_dir.return_value = False
-                                return p
-                            return mock_config_file
-
-                        mock_path_cls.side_effect = path_side_effect
-
-                        with pytest.raises(
-                            FileNotFoundError, match="Could not find etc directory"
-                        ):
-                            resolve_etc_dir()
-            finally:
-                os.chdir(original_cwd)
-
-    def test_custom_path_takes_precedence_over_cwd(self):
-        """Test that custom path overrides CWD etc/ when both exist."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create custom etc/
-            custom_etc = Path(tmpdir) / "custom_etc"
-            custom_etc.mkdir()
-
-            # Create CWD with etc/
-            cwd_dir = Path(tmpdir) / "cwd"
-            cwd_dir.mkdir()
-            cwd_etc = cwd_dir / "etc"
-            cwd_etc.mkdir()
-
-            original_cwd = os.getcwd()
-            try:
-                os.chdir(cwd_dir)
-
-                result = resolve_etc_dir(str(custom_etc))
-
-                # Should use custom path, not CWD etc/
-                assert result == custom_etc.resolve()
-            finally:
-                os.chdir(original_cwd)
 
 
 class TestConfigAllowedPaths:
@@ -2080,3 +1838,193 @@ class TestConfigProjectRootOverride:
         (pkg_root / "etc" / "models.yaml").write_text("model: gpt-5\n")
         cfg.reload()
         assert cfg.models.model == "gpt-5"
+
+
+@pytest.fixture
+def clean_xdg_env(monkeypatch):
+    """Ensure no XDG_* or INFRA_* env vars leak in from the host."""
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_DIRS", raising=False)
+    # CI sets INFRA_* vars that would fail against minimal test configs
+    for key in list(os.environ):
+        if key.startswith("INFRA_"):
+            monkeypatch.delenv(key, raising=False)
+
+
+def _bundled(
+    tmp_path: Path, package: str = "mypkg", body: str = "app: bundled\n"
+) -> Path:
+    """Write a packaged base config at tmp_path/<package>/etc/<package>.yaml."""
+    etc = tmp_path / package / "etc"
+    etc.mkdir(parents=True)
+    base = etc / f"{package}.yaml"
+    base.write_text(body)
+    return base
+
+
+@pytest.mark.unit
+class TestConfigFromConfigFile:
+    """``Config`` accepts a ``ConfigFile`` as its source.
+
+    The located file carries its own include-authorization root, so the
+    two-step ``ConfigSpec.resolve()`` then ``Config(...)`` needs no other
+    argument to agree with the resolver.
+    """
+
+    def test_loads_from_config_file(self, tmp_path, clean_xdg_env):
+        base = _bundled(tmp_path)
+        cfg = Config(ConfigFile(base, base.parent, 6))
+        assert cfg.app == "bundled"
+
+    def test_config_file_supplies_project_root(self, tmp_path, clean_xdg_env):
+        """An overlay outside the base's directory loads under the base's root."""
+        base = _bundled(tmp_path)
+        overlay = tmp_path / "xdg" / "myorg" / "mypkg.yaml"
+        overlay.parent.mkdir(parents=True)
+        overlay.write_text(f"!include {base}\nextra: 1\n")
+        cfg = Config(ConfigFile(overlay, base.parent, 5))
+        assert cfg.app == "bundled"
+        assert cfg.extra == 1
+
+    def test_rejects_project_root_alongside_config_file(self, tmp_path):
+        base = _bundled(tmp_path)
+        with pytest.raises(ValueError, match="do not pass both"):
+            Config(ConfigFile(base, base.parent, 6), project_root=tmp_path)
+
+    def test_accepts_path_object(self, tmp_path, clean_xdg_env):
+        base = _bundled(tmp_path)
+        assert Config(base).app == "bundled"
+
+    def test_end_to_end_bundled_base(self, tmp_path, clean_xdg_env, monkeypatch):
+        """No overrides, no XDG overlay, no project-local: the bundled base loads."""
+        base = _bundled(tmp_path)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty_xdg"))
+        neutral = tmp_path / "neutral"
+        neutral.mkdir()
+        monkeypatch.chdir(neutral)
+        cfg = Config(ConfigSpec("myorg", "mypkg", path=base).resolve())
+        assert cfg.app == "bundled"
+
+    def test_end_to_end_xdg_overlay_wins(self, tmp_path, clean_xdg_env, monkeypatch):
+        base = _bundled(tmp_path)
+        xdg_home = tmp_path / "xdg"
+        (xdg_home / "myorg").mkdir(parents=True)
+        (xdg_home / "myorg" / "mypkg.yaml").write_text("app: overlay\n")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_home))
+        neutral = tmp_path / "neutral"
+        neutral.mkdir()
+        monkeypatch.chdir(neutral)
+        cfg = Config(ConfigSpec("myorg", "mypkg", path=base).resolve())
+        assert cfg.app == "overlay"
+
+    def test_end_to_end_etc_dir_override(self, tmp_path, clean_xdg_env, monkeypatch):
+        base = _bundled(tmp_path)
+        user_etc = tmp_path / "user_etc"
+        user_etc.mkdir()
+        (user_etc / "mypkg.yaml").write_text("app: user\n")
+        monkeypatch.chdir(tmp_path)
+        spec = ConfigSpec("myorg", "mypkg", path=base)
+        assert Config(spec.resolve(etc_dir=str(user_etc))).app == "user"
+
+    def test_missing_base_raises_at_load(self, tmp_path, clean_xdg_env, monkeypatch):
+        """Resolution never probes the packaged base; the load raises instead."""
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty_xdg"))
+        neutral = tmp_path / "neutral"
+        neutral.mkdir()
+        monkeypatch.chdir(neutral)
+        spec = ConfigSpec("myorg", "missing", path=tmp_path / "etc" / "missing.yaml")
+        with pytest.raises(FileNotFoundError):
+            Config(spec.resolve())
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("clean_env")
+class TestConfigFactories:
+    """`Config.from_path` loads one file; `Config.from_spec` resolves under the protocol."""
+
+    @pytest.fixture(autouse=True)
+    def isolate(self, tmp_path, monkeypatch):
+        """No XDG overlay and no project-local hit unless a test creates one."""
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no-xdg"))
+        monkeypatch.setenv("XDG_CONFIG_DIRS", str(tmp_path / "no-xdg-sys"))
+        monkeypatch.chdir(tmp_path)
+
+    def _base(self, tmp_path: Path) -> Path:
+        base = tmp_path / "pkg" / "etc" / "myapp.yaml"
+        base.parent.mkdir(parents=True)
+        base.write_text("app:\n  name: base\nlogging:\n  level: info\n")
+        return base
+
+    def test_from_path_loads_the_file(self, tmp_path):
+        f = tmp_path / "x.yaml"
+        f.write_text("app:\n  name: direct\n")
+
+        config = Config.from_path(f)
+
+        assert config.app.name == "direct"
+        assert f.resolve() in config.get_source_files()
+
+    def test_from_path_forwards_options(self, tmp_path, monkeypatch):
+        f = tmp_path / "x.yaml"
+        f.write_text("logging:\n  level: info\n")
+        monkeypatch.setenv("MYAPP_LOGGING_LEVEL", "debug")
+        monkeypatch.setenv("INFRA_LOGGING_LEVEL", "warning")
+
+        assert Config.from_path(f, env_prefix="MYAPP_").logging.level == "debug"
+        assert Config.from_path(f, enable_env_overrides=False).logging.level == "info"
+
+    def test_from_spec_loads_the_resolved_base(self, tmp_path):
+        base = self._base(tmp_path)
+
+        config = Config.from_spec("myorg", "myapp", path=base)
+
+        assert config.app.name == "base"
+        assert base.resolve() in config.get_source_files()
+        # include root comes from the resolved ConfigFile, the base's directory
+        assert config._project_root_override == base.parent.resolve()
+
+    def test_from_spec_applies_xdg_overlay(self, tmp_path, monkeypatch):
+        base = self._base(tmp_path)
+        xdg = tmp_path / "xdg"
+        (xdg / "myorg").mkdir(parents=True)
+        (xdg / "myorg" / "myapp.yaml").write_text("app:\n  name: overlay\n")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+
+        assert Config.from_spec("myorg", "myapp", path=base).app.name == "overlay"
+
+    def test_from_spec_forwards_layout_and_options(self, tmp_path, monkeypatch):
+        base = tmp_path / "conf" / "legacy.yaml"
+        base.parent.mkdir()
+        base.write_text("logging:\n  level: info\n")
+        monkeypatch.setenv("MYAPP_LOGGING_LEVEL", "debug")
+
+        config = Config.from_spec(
+            "myorg",
+            "myapp",
+            origin=tmp_path,
+            etc_dir="conf",
+            filename="legacy.yaml",
+            env_prefix="MYAPP_",
+        )
+
+        assert config.logging.level == "debug"
+
+    def test_from_spec_takes_no_operator_flags(self, tmp_path):
+        """--etc-dir / --config belong to ConfigSpec.resolve(), not the factory."""
+        with pytest.raises(TypeError):
+            Config.from_spec("myorg", "myapp", config_file="x.yaml")  # type: ignore[call-arg]
+
+    def test_from_spec_rejects_module_object(self):
+        """The second positional is the config name, not a module."""
+        import types
+
+        with pytest.raises(TypeError, match="module object"):
+            Config.from_spec("myorg", types.ModuleType("myapp"))  # type: ignore[arg-type]
+
+    def test_from_spec_matches_explicit_resolve(self, tmp_path):
+        base = self._base(tmp_path)
+
+        via_factory = Config.from_spec("myorg", "myapp", path=base)
+        explicit = Config(ConfigSpec("myorg", "myapp", path=base).resolve())
+
+        assert dict(via_factory) == dict(explicit)

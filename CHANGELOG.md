@@ -10,6 +10,128 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-07
+
+### Added
+- `ConfigSpec(namespace, name, ...)` and `ConfigFile`: declare where a config's packaged
+  base lives and resolve the file to load under the protocol chain, `--config` and a
+  project-local walk-up included; `Config` accepts the resolved file. See
+  [Config Spec](appinfra/docs/api/config.md#config-spec).
+- `AppBuilder.config` block: `with_spec`, `with_overrides`, `with_value`,
+  `with_hot_reload`, and a keyword form `.config(namespace=..., name=..., hot_reload=True)`.
+  See [AppBuilder.config](appinfra/docs/api/config.md#appbuilderconfig).
+- `Config.from_path(path)` and `Config.from_spec(namespace, name, **layout)`: load one file
+  by path, or resolve under the protocol with `ConfigSpec`'s identity and layout keywords and
+  load. Neither takes `--etc-dir` / `--config`; build the spec and `resolve()` for that.
+- `INFRA_PYTEST_WORKERS` Makefile variable (default empty): pytest-xdist worker count for
+  `make test.*` targets. `run_pytest_serial` macro for custom targets that must stay in-process.
+- `make examples.check`: runs eligible scripts under `examples/` and fails on errors or
+  timeouts. CI runs it in the container lane.
+- `INFRA_DEV_CHECK_EXAMPLES` Makefile variable (default `false`): include examples in
+  `make check`. Files requiring Postgres or a free port are skipped when unavailable.
+- Faceted `AppBuilder`: `.cli` (standard flags, presentation, custom arguments), `.lifecycle`
+  (hooks), `.tools.with_main`, and a keyword form on every block; `.logging` is the standalone
+  `LoggingBuilder` bound to the app, so its whole API is available there. One block is open at
+  a time; a block left open fails `build()` with the block name and the line that opened it.
+  See [AppBuilder](appinfra/docs/api/app-builder.md).
+- `LoggingBuilder.with_topic_level` / `with_topic_levels`, `LoggerFactory.create_root(extra=)`,
+  and a keyword form on `ServerBuilder.uvicorn`.
+- `Logger.set_extra(fields)` replaces a logger's pre-populated extra fields; a repeated
+  `LoggerFactory.create_root(extra=)` applies them to the existing root.
+- `HookManager.iter_hooks()` yields every hook with its event and registration metadata.
+- `AppBuilder.cli.with_all_flags()` enables every standard flag (`help` included), the
+  counterpart of `without_flags()`. The `version` flag is skipped when no version is
+  configured. `without_flag(name)` disables one flag, singular of `without_flags()`.
+
+### Changed
+- `-v/--version` is the `.cli` block's `version` flag and prints the `.version` block's text;
+  `.version.with_semver` no longer adds the argument on its own.
+- `LoggingBuilder.with_config(dict)` is `with_options(dict)`, and a `None` value is rejected
+  with `TypeError`; leave the key out to keep the config file's value.
+- `AppBuilder.build()` runs once; a second call on the same builder raises `ValueError`.
+- `.cli.with_flag(name, **presentation)` enables the flag it presents; the removed
+  `with_standard_arg` only overrode presentation and was ignored for a disabled flag.
+- `ConsoleHandlerConfig.to_dict()` raises `NotImplementedError` for a stream other than
+  `sys.stdout` / `sys.stderr`; `LoggingBuilder.to_dict()` skips such a handler for the
+  subprocess instead of recording it as stdout.
+- `ServerBuilder.subprocess.with_auto_restart(enabled)` sets only the switch; the delay and
+  the attempt limit are `with_restart_delay(seconds)` and `with_max_restarts(count)`.
+- `with_hook_builder` keeps each hook's priority, `once` and condition.
+- `AppBuilder.with_config_spec(namespace, package, base_config)` is
+  `.config.with_spec(namespace, name)`; the packaged base is derived from the name and
+  each layout deviation is a keyword (`origin`, `etc_dir`, `filename`, `path`).
+- `AppBuilder.with_config(obj)` is `.config.with_overrides(mapping)`;
+  `.logging.with_hot_reload` is `.config.with_hot_reload`, and works with a declared spec.
+- `--etc-dir` resolves `<etc-dir>/<base filename>` instead of `<package>.yaml`; identical
+  for packages whose base follows rule 2.
+- Apps without a config spec load no file: `--config` selects a file only under a declared
+  spec, and `App.etc_dir` is the explicit `--etc-dir` (validated) or `None`. With a spec,
+  `App.etc_dir` is the resolved file's directory.
+- `appinfra etc-path --local` prints the directory of the config file the run resolved to.
+- `INFRA_DEFAULT_CONFIG_FILE` only affects the `pg.*` and `docs.*` Make targets; the Python
+  loader does not read it.
+- `pgserver` defaults: `name` `infra-pg` → `llm-works-pg`, `port` `7432` →
+  `25432`, `replica.port` `7433` → `25433`. Shared `pgserver.name` lets
+  multiple consumers attach to one running container instead of colliding on
+  the port bind. `INFRA_PGSERVER_*` overrides unchanged.
+- `pg-info.sh` replaced by `pg.sh info` — first step of a single dispatcher for
+  pg lifecycle operations. `make pg.info` / `pg.info.short` output unchanged;
+  the shim reads a `_INFRA_PG_*` env contract exported from Makefile.pg
+  (internal wire, not part of the public `INFRA_PG_*` / `INFRA_PGSERVER_*`
+  surface).
+- `appinfra pg erase` (and `make pg.*` equivalents) is scoped to the target
+  instance — containers, volumes, networks; images are left in place with
+  a post-erase note on manual reclaim.
+- `appinfra pg erase` shows a preview and prompts for typed confirmation;
+  `--yes` skips (required in non-interactive contexts).
+
+### Removed
+- `AppBuilder.with_name`, `with_version`, `with_standard_args`, `with_standard_arg`,
+  `without_standard_args`, `with_main_tool` and `.advanced`: the name is the constructor
+  argument, the rest moved to the `.cli`, `.version`, `.tools` and `.lifecycle` blocks.
+- `ServerPlugin` and `ServeTool` from `appinfra.app.fastapi`: build the server inside a
+  tool's `run()` instead; see [FastAPI Server](appinfra/docs/api/fastapi.md).
+- `.logging.with_format` (nothing read the value), the app-side `ServerConfig` / `LoggingConfig`
+  and `.server.with_middleware*` / `with_cors_origins` / `with_ssl` (never reached the app), and
+  `ValidationBuilder` / `ValidationRule` (never applied).
+- `AppBuilder.with_config_file` and the etc-dir fallback chain behind it (`resolve_etc_dir`,
+  `get_etc_dir`, `get_project_root`, `get_config_file_path`, `get_default_config`,
+  `PROJECT_ROOT`, `ETC_DIR`, `DEFAULT_CONFIG_FILE`, `DEFAULT_CONFIG_FILENAME`): declare the
+  source with `.config.with_spec(namespace, name)`; the file loads under the protocol chain.
+- `App.setup_config`, `App.loaded_config_paths` and `appinfra.app.create_config`: read
+  `app.config` after setup, and `app.config_path` for the file it came from.
+- `ConfigBuilder`, `ServerConfigBuilder`, `LoggingConfigBuilder` and their `create_*_builder`
+  factories from `appinfra.app.builder`: unreferenced duplicates of the `AppBuilder` blocks.
+- `appinfra.config.resolve_config_source`, `xdg_candidates`, `include_root_for` and
+  `find_project_local`: folded into `ConfigSpec` as `resolve()`, `xdg_candidates()`,
+  `include_root` and `project_local()`.
+
+### Fixed
+- `appinfra scaffold` writes the base config to `<name>/etc/infra.yaml` inside the package and
+  lists it as package data, so the generated app resolves it under the config protocol and starts.
+- `appinfra pg` and `make pg.*` targets exit with install guidance when
+  no container runtime is on `PATH`.
+- `make pg.server.up` readiness wait probes over TCP. On a fresh volume the
+  socket probe reported ready against the image's temporary init server.
+- `ThreadRunner.wait_healthy()` reliably raises `RunError` for a service that
+  exits during startup on Python 3.13+, instead of sometimes reporting RUNNING.
+- `ConfigWatcher.stop()` returns within 2s on macOS when called right after
+  `start()`; watchdog's FSEvents emitter could otherwise block it forever
+  (https://github.com/gorakhargosh/watchdog/issues/64).
+- `AppBuilder.build()` configures plugins before anything is realized from the builder, so
+  what a plugin sets on any block in `configure()`, tools, hooks, routes, config, flags or
+  tracked packages, reaches the app.
+- Console handler `format_*` options in YAML (`format_pretty_print` and the like) reach the
+  handler; they were dropped when the handler was created from config.
+- Database log handler: batched inserts with rows that differ in optional
+  columns (`extra_data`, `exception_info`) no longer fail on a missing bind
+  parameter.
+- Examples updated to current API and verified via `make examples.check`.
+- `App.main()` on an app with no registered tools calls `run_no_tool()` instead
+  of raising `AttributeError` on the missing `tool` argument.
+- Database log handler: batches always insert through a single `executemany`.
+  The bulk-insert attempt that preceded it could never succeed and was removed.
+
 ## [0.10.5] - 2026-09-03
 
 ### Added
@@ -820,7 +942,8 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/llm-works/appinfra/compare/v0.10.5...HEAD
+[Unreleased]: https://github.com/llm-works/appinfra/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/llm-works/appinfra/compare/v0.10.5...v0.11.0
 [0.10.5]: https://github.com/llm-works/appinfra/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/llm-works/appinfra/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/llm-works/appinfra/compare/v0.10.2...v0.10.3

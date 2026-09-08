@@ -4,572 +4,311 @@
 """
 Tests for app/builder/configurer/logging.py.
 
-Tests key functionality including:
-- LoggingConfigurer initialization
-- Method chaining for logging configuration
-- Config creation when None
-- Integration with AppBuilder
+LoggingScope is the standalone LoggingBuilder bound to an AppBuilder.
+done() folds explicit options, handlers and extra fields into the
+builder's programmatic config layer under ``logging``.
 """
 
-from unittest.mock import Mock
+import io
+import logging
+from dataclasses import fields
+from unittest.mock import patch
 
 import pytest
 
-from appinfra.app.builder.configurer.logging import LoggingConfigurer
+from appinfra.app.builder.app import AppBuilder
+from appinfra.app.builder.configurer.logging import LoggingFields, LoggingScope
+from appinfra.log.builder.builder import LoggingBuilder
+from appinfra.log.config import LogConfig
 
-# =============================================================================
-# Test LoggingConfigurer Initialization
-# =============================================================================
+LEVEL_MANAGER = "appinfra.log.level_manager.LogLevelManager.get_instance"
 
 
-@pytest.mark.unit
-class TestLoggingConfigurerInit:
-    """Test LoggingConfigurer initialization (lines 21-28)."""
-
-    def test_basic_initialization(self):
-        """Test basic initialization stores app_builder reference."""
-        app_builder = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        assert configurer._app_builder is app_builder
-
-    def test_initialization_with_existing_config(self):
-        """Test initialization when app_builder already has config."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        assert configurer._app_builder is app_builder
-        assert configurer._app_builder._logging_config is not None
+def _logging_section(builder: AppBuilder) -> dict:
+    assert builder._config is not None
+    return builder._config.to_dict()["logging"]
 
 
 # =============================================================================
-# Test with_config
+# The scope is the standalone builder
 # =============================================================================
 
 
 @pytest.mark.unit
-class TestWithConfig:
-    """Test with_config method (lines 30-41)."""
+class TestLoggingScopeIsABuilder:
+    """LoggingScope inherits LoggingBuilder and is memoized per AppBuilder."""
 
-    def test_sets_config(self):
-        """Test with_config sets the logging config (lines 40-41)."""
-        app_builder = Mock()
-        app_builder._logging_config = None
-        config = Mock()
-        configurer = LoggingConfigurer(app_builder)
+    def test_is_logging_builder(self):
+        """Every LoggingBuilder method is available through inheritance."""
+        assert isinstance(AppBuilder("test").logging, LoggingBuilder)
+        assert isinstance(AppBuilder("test").logging, LoggingScope)
 
-        result = configurer.with_config(config)
+    def test_same_instance_per_builder(self):
+        """State lives on the scope, so the builder hands out one instance."""
+        builder = AppBuilder("test")
+        block = builder.logging
+        block.done()
 
-        assert app_builder._logging_config is config
+        assert builder.logging is block
 
-    def test_returns_self_for_chaining(self):
-        """Test with_config returns self for method chaining (line 41)."""
-        app_builder = Mock()
-        config = Mock()
-        configurer = LoggingConfigurer(app_builder)
+    def test_build_raises_pointing_at_done(self):
+        """The app's lifecycle builds the logger, not the scope."""
+        with pytest.raises(TypeError, match=r"done\(\)"):
+            AppBuilder("test").logging.build()
 
-        result = configurer.with_config(config)
+    def test_done_returns_builder(self):
+        """done() closes the block."""
+        builder = AppBuilder("test")
 
-        assert result is configurer
+        assert builder.logging.done() is builder
 
-    def test_overwrites_existing_config(self):
-        """Test with_config overwrites existing config."""
-        app_builder = Mock()
-        old_config = Mock(name="old")
-        new_config = Mock(name="new")
-        app_builder._logging_config = old_config
-        configurer = LoggingConfigurer(app_builder)
+    def test_inherited_setters_return_scope(self):
+        """Chaining stays inside the block until done()."""
+        scope = AppBuilder("test").logging
 
-        configurer.with_config(new_config)
-
-        assert app_builder._logging_config is new_config
+        assert scope.with_level("debug").with_micros() is scope
 
 
 # =============================================================================
-# Test with_level
+# done() folds into the programmatic layer
 # =============================================================================
 
 
 @pytest.mark.unit
-class TestWithLevel:
-    """Test with_level method (lines 43-58)."""
-
-    def test_sets_level_on_existing_config(self):
-        """Test with_level sets level when config exists (line 57)."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_level("debug")
-
-        assert app_builder._logging_config.level == "debug"
-
-    def test_creates_config_if_none(self):
-        """Test with_level creates config when None (lines 55-56)."""
-        from appinfra.app.builder.app import LoggingConfig
-
-        app_builder = Mock()
-        app_builder._logging_config = None
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_level("warning")
-
-        assert app_builder._logging_config is not None
-        assert isinstance(app_builder._logging_config, LoggingConfig)
-        assert app_builder._logging_config.level == "warning"
-
-    def test_returns_self_for_chaining(self):
-        """Test with_level returns self (line 58)."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        result = configurer.with_level("info")
-
-        assert result is configurer
-
-    def test_various_log_levels(self):
-        """Test with_level with various log levels."""
-
-        levels = ["debug", "info", "warning", "error", "critical"]
-
-        for level in levels:
-            app_builder = Mock()
-            app_builder._logging_config = None
-            configurer = LoggingConfigurer(app_builder)
-
-            configurer.with_level(level)
-
-            assert app_builder._logging_config.level == level
-
-
-# =============================================================================
-# Test with_location
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestWithLocation:
-    """Test with_location method (lines 60-75)."""
-
-    def test_sets_location_on_existing_config(self):
-        """Test with_location sets depth when config exists (line 74)."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_location(3)
-
-        assert app_builder._logging_config.location == 3
-
-    def test_creates_config_if_none(self):
-        """Test with_location creates config when None (lines 72-73)."""
-        from appinfra.app.builder.app import LoggingConfig
-
-        app_builder = Mock()
-        app_builder._logging_config = None
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_location(2)
-
-        assert app_builder._logging_config is not None
-        assert isinstance(app_builder._logging_config, LoggingConfig)
-        assert app_builder._logging_config.location == 2
-
-    def test_returns_self_for_chaining(self):
-        """Test with_location returns self (line 75)."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        result = configurer.with_location(1)
-
-        assert result is configurer
-
-    def test_zero_depth(self):
-        """Test with_location with zero depth."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_location(0)
-
-        assert app_builder._logging_config.location == 0
-
-
-# =============================================================================
-# Test with_micros
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestWithMicros:
-    """Test with_micros method (lines 77-92)."""
-
-    def test_enables_micros_on_existing_config(self):
-        """Test with_micros enables microseconds (line 91)."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_micros(True)
-
-        assert app_builder._logging_config.micros is True
-
-    def test_disables_micros(self):
-        """Test with_micros can disable microseconds."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_micros(False)
-
-        assert app_builder._logging_config.micros is False
-
-    def test_default_enables_micros(self):
-        """Test with_micros defaults to enabled (line 77)."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_micros()
-
-        assert app_builder._logging_config.micros is True
-
-    def test_creates_config_if_none(self):
-        """Test with_micros creates config when None (lines 89-90)."""
-        from appinfra.app.builder.app import LoggingConfig
-
-        app_builder = Mock()
-        app_builder._logging_config = None
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_micros(True)
-
-        assert app_builder._logging_config is not None
-        assert isinstance(app_builder._logging_config, LoggingConfig)
-        assert app_builder._logging_config.micros is True
-
-    def test_returns_self_for_chaining(self):
-        """Test with_micros returns self (line 92)."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        result = configurer.with_micros()
-
-        assert result is configurer
-
-
-# =============================================================================
-# Test with_format
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestWithFormat:
-    """Test with_format method (lines 94-109)."""
-
-    def test_sets_format_on_existing_config(self):
-        """Test with_format sets format string (line 108)."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_format("%(levelname)s - %(message)s")
-
-        assert (
-            app_builder._logging_config.format_string == "%(levelname)s - %(message)s"
-        )
-
-    def test_creates_config_if_none(self):
-        """Test with_format creates config when None (lines 106-107)."""
-        from appinfra.app.builder.app import LoggingConfig
-
-        app_builder = Mock()
-        app_builder._logging_config = None
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_format("%(name)s: %(message)s")
-
-        assert app_builder._logging_config is not None
-        assert isinstance(app_builder._logging_config, LoggingConfig)
-        assert app_builder._logging_config.format_string == "%(name)s: %(message)s"
-
-    def test_returns_self_for_chaining(self):
-        """Test with_format returns self (line 109)."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        result = configurer.with_format("%(message)s")
-
-        assert result is configurer
-
-    def test_complex_format_string(self):
-        """Test with_format handles complex format strings."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        format_str = "%(asctime)s | %(levelname)-8s | %(name)s | %(filename)s:%(lineno)d | %(message)s"
-        configurer.with_format(format_str)
-
-        assert app_builder._logging_config.format_string == format_str
-
-
-# =============================================================================
-# Test done
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestDone:
-    """Test done method (lines 111-118)."""
-
-    def test_returns_app_builder(self):
-        """Test done returns parent AppBuilder (line 118)."""
-        app_builder = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        result = configurer.done()
-
-        assert result is app_builder
-
-    def test_done_after_configuration(self):
-        """Test done after setting configuration."""
-        app_builder = Mock()
-        app_builder._logging_config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_level("debug")
-        result = configurer.done()
-
-        assert result is app_builder
-        assert app_builder._logging_config.level == "debug"
-
-
-# =============================================================================
-# Test Method Chaining
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestMethodChaining:
-    """Test method chaining patterns."""
-
-    def test_full_chain_with_config(self):
-        """Test complete chain with with_config."""
-        app_builder = Mock()
-        config = Mock()
-        configurer = LoggingConfigurer(app_builder)
-
-        result = configurer.with_config(config).done()
-
-        assert result is app_builder
-        assert app_builder._logging_config is config
-
-    def test_full_chain_building_config(self):
-        """Test complete chain building config piece by piece."""
-
-        app_builder = Mock()
-        app_builder._logging_config = None
-        configurer = LoggingConfigurer(app_builder)
-
-        result = (
-            configurer.with_level("debug")
-            .with_location(2)
-            .with_micros(True)
-            .with_format("%(message)s")
+class TestDoneFoldsIntoConfig:
+    """Explicit options, handlers and extra reach builder._config.logging."""
+
+    def test_explicit_options_reach_programmatic_layer(self):
+        """Set options are written under logging."""
+        builder = AppBuilder("test").logging.with_level("debug").with_location(2).done()
+
+        assert _logging_section(builder) == {"level": "debug", "location": 2}
+
+    def test_untouched_options_are_not_written(self):
+        """A builder default never overrides the config file."""
+        builder = AppBuilder("test").logging.with_level("debug").done()
+
+        assert "micros" not in _logging_section(builder)
+        assert "colors" not in _logging_section(builder)
+
+    def test_nothing_set_writes_nothing(self):
+        """An empty block leaves the programmatic layer absent."""
+        builder = AppBuilder("test").logging.done()
+
+        assert builder._config is None
+
+    def test_merges_with_existing_programmatic_config(self):
+        """The fold deep-merges with overrides declared on the config block."""
+        builder = (
+            AppBuilder("test")
+            .config.with_overrides({"logging": {"micros": True}, "db": {"host": "x"}})
+            .done()
+            .logging.with_level("warning")
             .done()
         )
 
-        assert result is app_builder
-        assert app_builder._logging_config.level == "debug"
-        assert app_builder._logging_config.location == 2
-        assert app_builder._logging_config.micros is True
-        assert app_builder._logging_config.format_string == "%(message)s"
+        config = builder._config.to_dict()
+        assert config["logging"] == {"micros": True, "level": "warning"}
+        assert config["db"] == {"host": "x"}
 
-    def test_partial_chain(self):
-        """Test partial configuration chain."""
+    def test_done_is_idempotent(self):
+        """Closing the block twice writes the same values once."""
+        builder = AppBuilder("test")
+        builder.logging.with_level("debug").done()
 
-        app_builder = Mock()
-        app_builder._logging_config = None
-        configurer = LoggingConfigurer(app_builder)
+        builder.logging.done()
 
-        result = configurer.with_level("warning").done()
+        assert _logging_section(builder) == {"level": "debug"}
 
-        assert result is app_builder
-        # Check defaults are preserved (None means "not set, use config file value")
-        config = app_builder._logging_config
-        assert config.level == "warning"
-        assert config.location is None  # default - will use config file value
-        assert config.micros is None  # default - will use config file value
+    def test_handlers_serialize_to_handlers_section(self, tmp_path):
+        """Handlers become logging.handlers entries in config form."""
+        log_file = tmp_path / "app.log"
+        builder = (
+            AppBuilder("test")
+            .logging.with_console_handler()
+            .with_file_handler(log_file)
+            .done()
+        )
 
-    def test_chain_order_independence(self):
-        """Test that chain order doesn't matter."""
+        handlers = _logging_section(builder)["handlers"]
+        assert handlers["builder_0"]["type"] == "console"
+        assert handlers["builder_1"] == {
+            "type": "file",
+            "filename": str(log_file),
+            "mode": "a",
+            "delay": False,
+        }
 
-        app_builder = Mock()
-        app_builder._logging_config = None
-        configurer = LoggingConfigurer(app_builder)
+    def test_extra_reaches_extra_section(self):
+        """with_extra fields go to logging.extra."""
+        builder = AppBuilder("test").logging.with_extra(service="api").done()
 
-        # Order 1: format, level, location
-        configurer.with_format("fmt").with_level("error").with_location(5)
+        assert _logging_section(builder)["extra"] == {"service": "api"}
 
-        assert app_builder._logging_config.format_string == "fmt"
-        assert app_builder._logging_config.level == "error"
-        assert app_builder._logging_config.location == 5
+    def test_handler_without_config_form_raises_at_done(self):
+        """A handler that cannot be expressed as config fails instead of vanishing."""
+        block = AppBuilder("test").logging.with_console_handler(stream=io.StringIO())
+
+        with pytest.raises(ValueError, match="cannot be expressed as config"):
+            block.done()
+
+    def test_build_raises_when_block_not_closed(self):
+        """An open block fails at build(), naming the block and where it was opened."""
+        builder = AppBuilder("test")
+        builder.logging.with_level("error")
+
+        with pytest.raises(
+            ValueError,
+            match=r"logging block opened at .*test_logging.py:\d+ is still open",
+        ):
+            builder.build()
+
+    def test_build_raises_when_held_scope_changes_after_done(self):
+        """Changes on a held scope after done() need another done()."""
+        builder = AppBuilder("test")
+        scope = builder.logging
+        scope.with_level("error").done()
+        scope.with_micros(True)
+
+        with pytest.raises(ValueError, match="changes made after done"):
+            builder.build()
+
+    def test_build_accepts_held_scope_without_changes(self):
+        """Re-setting the same value on a held scope after done() is not a change."""
+        builder = AppBuilder("test")
+        scope = builder.logging
+        scope.with_level("error").done()
+        scope.with_level("error")
+
+        app = builder.build()
+
+        assert app.config.logging.level == "error"
+
+    def test_config_write_after_done_wins(self):
+        """done() is the only fold, so a later .config write to the key wins."""
+        builder = (
+            AppBuilder("test")
+            .logging.with_level("debug")
+            .done()
+            .config.with_value("logging.level", "info")
+            .done()
+        )
+
+        app = builder.build()
+
+        assert app.config.logging.level == "info"
+
+
+@pytest.mark.integration
+class TestHandlersReachRootLogger:
+    """Serialized handlers feed the app's handler registry unchanged."""
+
+    def test_file_handler_from_scope_writes_log_file(self, tmp_path):
+        """A handler declared on the scope is the root logger's handler."""
+        from appinfra.app.core.logging_utils import setup_logging_from_config
+
+        log_file = tmp_path / "app.log"
+        builder = (
+            AppBuilder("test")
+            .logging.with_level("info")
+            .with_file_handler(log_file)
+            .done()
+        )
+        logging.root.manager.loggerDict.pop("/", None)
+
+        logger, registry = setup_logging_from_config(
+            builder._config, {"log_level": "info"}
+        )
+        logger.info("written through the scope's handler")
+
+        assert [h._handler_name for h in registry.iter_enabled_handlers()] == [
+            "builder_0"
+        ]
+        assert "written through the scope's handler" in log_file.read_text()
+        logger.handlers.clear()
 
 
 # =============================================================================
-# Integration Tests
-# =============================================================================
-
-
-# =============================================================================
-# Test with_hot_reload
+# Scope-only and inherited topic methods
 # =============================================================================
 
 
 @pytest.mark.unit
-class TestWithHotReload:
-    """Test with_hot_reload method (lines 216-284)."""
+class TestTopicAndRuntimeMethods:
+    """with_runtime_updates is scope-only; topic levels are inherited."""
 
-    def test_enables_hot_reload_writes_to_config(self):
-        """Test with_hot_reload writes hot_reload config to _config.logging.hot_reload."""
-        from appinfra.app.builder.app import ConfigFileSpec
+    def test_with_runtime_updates_enables(self):
+        """Default argument enables runtime updates."""
+        with patch(LEVEL_MANAGER) as get:
+            scope = AppBuilder("test").logging
+            assert scope.with_runtime_updates() is scope
 
-        app_builder = Mock()
-        app_builder._config = None  # Will be created by with_hot_reload
-        app_builder._config_files = [
-            ConfigFileSpec(path="/etc/app.yaml", from_etc_dir=False)
-        ]
-        configurer = LoggingConfigurer(app_builder)
+        get.return_value.enable_runtime_updates.assert_called_once()
 
-        configurer.with_hot_reload(True)
+    def test_with_runtime_updates_disables(self):
+        """False disables runtime updates."""
+        with patch(LEVEL_MANAGER) as get:
+            AppBuilder("test").logging.with_runtime_updates(False)
 
-        # Verify config was created and hot_reload section exists
-        assert app_builder._config is not None
-        assert hasattr(app_builder._config, "logging")
-        assert hasattr(app_builder._config.logging, "hot_reload")
-        assert app_builder._config.logging.hot_reload.enabled is True
-        assert app_builder._config.logging.hot_reload.debounce_ms == 500
+        get.return_value.disable_runtime_updates.assert_called_once()
 
-    def test_disables_hot_reload(self):
-        """Test with_hot_reload(False) writes enabled=False to config."""
-        from appinfra.app.builder.app import ConfigFileSpec
-        from appinfra.dot_dict import DotDict
+    def test_topic_level_is_inherited(self):
+        """The standalone builder's topic rule registration works on the scope."""
+        with patch(LEVEL_MANAGER) as get:
+            AppBuilder("test").logging.with_topic_level("/db/*", "debug")
 
-        app_builder = Mock()
-        app_builder._config = DotDict(logging=DotDict(hot_reload=DotDict(enabled=True)))
-        app_builder._config_files = [
-            ConfigFileSpec(path="/etc/app.yaml", from_etc_dir=False)
-        ]
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_hot_reload(False)
-
-        # Verify hot_reload.enabled is False
-        assert app_builder._config.logging.hot_reload.enabled is False
-
-    def test_raises_when_no_config_files_available(self):
-        """Test with_hot_reload raises when no config files available."""
-        app_builder = Mock()
-        app_builder._config = None
-        app_builder._config_files = []  # Empty list
-        configurer = LoggingConfigurer(app_builder)
-
-        with pytest.raises(ValueError, match="with_config_file.*must be called"):
-            configurer.with_hot_reload(True)
-
-    def test_custom_debounce(self):
-        """Test with_hot_reload with custom debounce."""
-        from appinfra.app.builder.app import ConfigFileSpec
-
-        app_builder = Mock()
-        app_builder._config = None
-        app_builder._config_files = [
-            ConfigFileSpec(path="/etc/app.yaml", from_etc_dir=False)
-        ]
-        configurer = LoggingConfigurer(app_builder)
-
-        configurer.with_hot_reload(True, debounce_ms=1000)
-
-        assert app_builder._config.logging.hot_reload.debounce_ms == 1000
-
-    def test_returns_self_for_chaining(self):
-        """Test with_hot_reload returns self."""
-        from appinfra.app.builder.app import ConfigFileSpec
-
-        app_builder = Mock()
-        app_builder._config = None
-        app_builder._config_files = [
-            ConfigFileSpec(path="/etc/app.yaml", from_etc_dir=False)
-        ]
-        configurer = LoggingConfigurer(app_builder)
-
-        result = configurer.with_hot_reload(True)
-
-        assert result is configurer
+        get.return_value.add_rule.assert_called_once_with(
+            "/db/*", "debug", source="api", priority=10
+        )
 
 
-@pytest.mark.integration
-class TestLoggingConfigurerIntegration:
-    """Test LoggingConfigurer integration with real AppBuilder."""
+# =============================================================================
+# Keyword form
+# =============================================================================
 
-    def test_with_real_logging_config(self):
-        """Test integration with real LoggingConfig."""
-        from appinfra.app.builder.app import LoggingConfig
 
-        app_builder = Mock()
-        app_builder._logging_config = LoggingConfig()
+@pytest.mark.unit
+class TestKeywordForm:
+    """Calling the block sets fields, folds them, and returns the AppBuilder."""
 
-        configurer = LoggingConfigurer(app_builder)
-        configurer.with_level("debug")
-        configurer.with_location(3)
-        configurer.with_micros(True)
-        configurer.with_format("custom %(message)s")
+    def test_call_unknown_keyword_raises(self):
+        """A misspelled key fails instead of being ignored."""
+        with pytest.raises(TypeError, match="unknown logging field\\(s\\): levl"):
+            AppBuilder("test").logging(levl="debug")
 
-        assert app_builder._logging_config.level == "debug"
-        assert app_builder._logging_config.location == 3
-        assert app_builder._logging_config.micros is True
-        assert app_builder._logging_config.format_string == "custom %(message)s"
+    def test_call_rejects_none(self):
+        """None is not a value; an unset argument must be left out."""
+        with pytest.raises(TypeError, match="level cannot be None"):
+            AppBuilder("test").logging(level=None)
 
-    def test_creates_config_with_proper_defaults(self):
-        """Test that created config has proper defaults."""
+    def test_call_rejects_non_boolean_runtime_updates(self):
+        """A truthy string must not switch the level manager into runtime mode."""
+        with pytest.raises(TypeError, match="runtime_updates must be a boolean"):
+            AppBuilder("test").logging(runtime_updates="false")
 
-        app_builder = Mock()
-        app_builder._logging_config = None
+    def test_call_sets_options_and_returns_builder(self):
+        """Display options land in the programmatic layer."""
+        builder = AppBuilder("test")
 
-        configurer = LoggingConfigurer(app_builder)
-        configurer.with_level("info")
+        result = builder.logging(level="debug", micros=True)
 
-        config = app_builder._logging_config
-        assert config.level == "info"
-        assert config.location is None  # default - will use config file value
-        assert config.micros is None  # default - will use config file value
-        assert config.format_string is None
-        assert config.location_color is None
+        assert result is builder
+        assert _logging_section(builder) == {"level": "debug", "micros": True}
 
-    def test_full_workflow(self):
-        """Test complete workflow from configurer to done."""
-        from appinfra.app.builder.app import LoggingConfig
+    def test_call_routes_topic_levels_and_runtime_updates(self):
+        """The scope-only keys go to the level manager."""
+        with patch(LEVEL_MANAGER) as get:
+            AppBuilder("test").logging(
+                topic_levels={"/a": "debug"}, runtime_updates=True
+            )
 
-        # Simulate AppBuilder
-        class FakeAppBuilder:
-            def __init__(self):
-                self._logging_config = None
+        get.return_value.add_rules_from_dict.assert_called_once_with(
+            {"/a": "debug"}, source="api", priority=10
+        )
+        get.return_value.enable_runtime_updates.assert_called_once()
 
-        app_builder = FakeAppBuilder()
-        configurer = LoggingConfigurer(app_builder)
-
-        # Configure logging
-        result = configurer.with_level("warning").with_location(2).with_micros().done()
-
-        # Verify
-        assert result is app_builder
-        assert isinstance(app_builder._logging_config, LoggingConfig)
-        assert app_builder._logging_config.level == "warning"
-        assert app_builder._logging_config.location == 2
-        assert app_builder._logging_config.micros is True
+    def test_fields_match_log_config(self):
+        """LoggingFields keys equal LogConfig's fields plus the scope-only keys."""
+        assert set(LoggingFields.__annotations__) == {
+            f.name for f in fields(LogConfig)
+        } | {"topic_levels", "runtime_updates"}

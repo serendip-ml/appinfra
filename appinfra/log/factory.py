@@ -24,13 +24,18 @@ class LoggerFactory:
     """Factory for creating and configuring loggers."""
 
     @staticmethod
-    def create_root(config: LogConfig, logger_class: type[Logger] = Logger) -> Logger:
+    def create_root(
+        config: LogConfig,
+        logger_class: type[Logger] = Logger,
+        extra: dict[str, Any] | collections.OrderedDict | None = None,
+    ) -> Logger:
         """
         Create a root logger with the specified configuration.
 
         Args:
             config: Logger configuration
             logger_class: Logger class to use
+            extra: Pre-populated extra fields to include in all log records
 
         Returns:
             Configured root logger
@@ -43,7 +48,7 @@ class LoggerFactory:
             >>> logger.info("Application started")
             [12:34:56,789] [I] Application started [1234] [/]
         """
-        return LoggerFactory.create("/", config, logger_class)
+        return LoggerFactory.create("/", config, logger_class, extra)
 
     @staticmethod
     def _get_effective_config(name: str, config: LogConfig) -> LogConfig:
@@ -129,9 +134,14 @@ class LoggerFactory:
         """
         logging.setLoggerClass(logger_class)
 
-        # Check if logger already exists
+        # An existing logger keeps its config and handlers; extra is per-record
+        # data and follows the latest request, so a repeated setup is not
+        # silently missing fields. The name may hold a plain stdlib logger
+        # created by a library, which has no extra to set.
         existing = LoggerFactory._check_existing_logger(name)
         if existing:
+            if extra is not None and isinstance(existing, Logger):
+                existing.set_extra(extra)
             return existing
 
         # Create new logger

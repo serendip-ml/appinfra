@@ -36,9 +36,12 @@ from appinfra.app.builder import AppBuilder
 
 app = (
     AppBuilder("my-service")
-    .with_config_file("config.yaml")
+    .config.with_spec(
+        "myorg", "my-service"
+    )  # etc/my-service.yaml beside the module or script
+    .with_hot_reload(True)  # Watch the resolved config file
+    .done()
     .logging.with_level("info")
-    .with_hot_reload(True)  # Enable hot-reload using config path
     .done()
     .build()
 )
@@ -47,7 +50,7 @@ app = (
 ### Via Configuration File
 
 ```yaml
-# etc/config.yaml
+# etc/my-service.yaml
 logging:
   level: info
   location: 1
@@ -89,8 +92,8 @@ logging:
 ```python
 app = (
     AppBuilder("my-service")
-    .with_config_file("config.yaml")  # Must set config path first
-    .logging.with_hot_reload(True, debounce_ms=1000)
+    .config.with_spec("myorg", "my-service")  # A config source must be declared first
+    .with_hot_reload(True, debounce_ms=1000)
     .done()
     .build()
 )
@@ -334,7 +337,7 @@ the previous handlers on exit.
 ## Example: Dynamic Log Level Adjustment
 
 ```yaml
-# etc/config.yaml - Initial state
+# etc/my-service.yaml - Initial state
 logging:
   level: info
   hot_reload:
@@ -347,8 +350,8 @@ from appinfra.app.builder import AppBuilder
 
 app = (
     AppBuilder("my-service")
-    .with_config_file("config.yaml")
-    .logging.with_hot_reload(True)
+    .config.with_spec("myorg", "my-service")
+    .with_hot_reload(True)
     .done()
     .build()
 )

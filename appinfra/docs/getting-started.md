@@ -79,7 +79,7 @@ The logging system provides structured output with custom levels and multiple ha
 ```python
 from appinfra.log import LoggingBuilder
 
-logger = LoggingBuilder("my_app").with_level("info").console_handler().build()
+logger = LoggingBuilder("my_app").with_level("info").with_console_handler().build()
 
 logger.info("Application started")
 logger.debug("Debug message", extra={"user_id": "123"})
@@ -93,8 +93,10 @@ from appinfra.log import LoggingBuilder
 logger = (
     LoggingBuilder("my_app")
     .with_level("info")
-    .console_handler()
-    .file_handler("logs/app.log", max_bytes=10 * 1024 * 1024, backup_count=5)
+    .with_console_handler()
+    .with_rotating_file_handler(
+        "logs/app.log", max_bytes=10 * 1024 * 1024, backup_count=5
+    )
     .build()
 )
 ```
@@ -104,7 +106,7 @@ logger = (
 ```python
 from appinfra.log.builder import JSONLoggingBuilder
 
-logger = JSONLoggingBuilder("my_app").with_level("info").console_handler().build()
+logger = JSONLoggingBuilder("my_app").with_level("info").with_console_handler().build()
 
 logger.info("User action", extra={"user_id": "123", "action": "login"})
 ```
@@ -118,10 +120,9 @@ Load configuration from YAML files with environment variable overrides.
 **Load configuration:**
 
 ```python
-from appinfra.config import Config, get_config_file_path
+from appinfra.config import Config
 
-# Recommended: Use get_config_file_path() for automatic etc/ resolution
-config = Config(get_config_file_path())  # Finds etc/infra.yaml automatically
+config = Config.from_path("etc/myapp.yaml")
 
 # Access with dot notation
 print(config.logging.level)
@@ -140,11 +141,13 @@ export INFRA_DATABASE_PORT=5433
 ```
 
 ```python
-config = Config(get_config_file_path())
+config = Config.from_path("etc/myapp.yaml")
 print(config.logging.level)  # Returns "debug" from environment
 ```
 
 See the [Environment Variables Guide](guides/environment-variables.md) for more details.
+Apps that ship their config use `Config.from_spec("myorg", "myapp")`, which locates the file
+under the [config protocol](api/config.md#config-spec) instead of a literal path.
 
 **Accessing config from Tools:**
 
@@ -194,7 +197,7 @@ class MyTool(Tool):
 app = (
     AppBuilder("myapp")
     .with_description("My awesome application")
-    .with_version("1.0.0")
+    .version(semver="1.0.0")
     .tools.with_tool(MyTool())
     .done()
     .logging.with_level("info")
@@ -227,8 +230,8 @@ if __name__ == "__main__":
 
 > **Standard CLI flags are opt-in.** Only `-h/--help` is registered by default.
 > For `--log-level`, `-q/--quiet`, `--etc-dir`, `--log-json`, etc., add
-> `.with_standard_args(log=True, etc_dir=True)` to the builder chain. See
-> [AppBuilder — Standard Arguments](api/app-builder.md#standard-arguments).
+> `.cli(log=True, etc_dir=True)` to the builder chain. See
+> [AppBuilder — cli block](api/app-builder.md#cli-block).
 
 See the [Application Framework API](api/app.md) for more details.
 
@@ -524,7 +527,7 @@ Check your configuration in `etc/infra.yaml`.
 Ensure you've built the logger:
 
 ```python
-logger = LoggingBuilder("app").console_handler().build()
+logger = LoggingBuilder("app").with_console_handler().build()
 ```
 
 Don't forget the `.build()` call!
