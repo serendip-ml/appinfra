@@ -9,9 +9,17 @@
 # codebase produces. The Python side (appinfra.ui.status) mirrors these
 # same names and glyphs.
 
-# Color palette. ANSI escape sequences, disabled when NO_COLOR is set or
-# stdout is not a TTY. See https://no-color.org/
-if [[ -z "${NO_COLOR:-}" ]] && [[ -t 1 ]]; then
+# Check TTY status for each stream at source time. NO_COLOR disables both.
+# See https://no-color.org/
+_UI_STDOUT_COLOR=false
+_UI_STDERR_COLOR=false
+if [[ -z "${NO_COLOR:-}" ]]; then
+    [[ -t 1 ]] && _UI_STDOUT_COLOR=true
+    [[ -t 2 ]] && _UI_STDERR_COLOR=true
+fi
+
+# Color palette (for stdout). Empty when stdout is not a TTY.
+if $_UI_STDOUT_COLOR; then
     UI_BOLD=$'\033[1m'
     UI_RED=$'\033[0;31m'
     UI_GREEN=$'\033[0;32m'
@@ -33,17 +41,20 @@ else
     UI_CLEAR=''
 fi
 
-# Status marks — the canonical five. Every progress/status line in appinfra
-# uses one of these; anything outside the set is a design decision.
+# Status marks — the canonical five. Colored for stdout.
 UI_MARK_PENDING="${UI_GRAY}[ ]${UI_RESET}"
 UI_MARK_RUNNING="${UI_YELLOW}[…]${UI_RESET}"
 UI_MARK_OK="${UI_GREEN}[✓]${UI_RESET}"
 UI_MARK_WARN="${UI_YELLOW}[⚠]${UI_RESET}"
 UI_MARK_FAIL="${UI_RED}[✗]${UI_RESET}"
 
-# Convenience printers. ui_fail goes to stderr; the others to stdout.
+# Convenience printers. ui_fail goes to stderr and checks its own TTY.
 ui_ok()      { printf '%s %s\n' "${UI_MARK_OK}"      "$*"; }
 ui_warn()    { printf '%s %s\n' "${UI_MARK_WARN}"    "$*"; }
 ui_running() { printf '%s %s\n' "${UI_MARK_RUNNING}" "$*"; }
 ui_pending() { printf '%s %s\n' "${UI_MARK_PENDING}" "$*"; }
-ui_fail()    { printf '%s %s\n' "${UI_MARK_FAIL}"    "$*" >&2; }
+ui_fail() {
+    local mark="[✗]"
+    $_UI_STDERR_COLOR && mark=$'\033[0;31m[✗]\033[0m'
+    printf '%s %s\n' "$mark" "$*" >&2
+}
