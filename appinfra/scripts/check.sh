@@ -288,8 +288,11 @@ _standalone_suite unit        "Unit tests"        test.unit        unit
 _standalone_suite integration "Integration tests" test.integration integ
 _standalone_suite e2e         "E2E tests"         test.e2e         e2e
 _standalone_suite security    "Security tests"    test.security    sec
-TEST_SUBCHECKS+=("Performance tests|test.perf|$(_pytest_cmd_for perf performance "--tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}")|")
-TEST_SUBCHECKS_RAW+=("Performance tests|test.perf.v|$(_pytest_cmd_for perf performance "-v --tb=short -rEfs ${PYTEST_PARALLEL}")|")
+# Performance tests skip --dist=worksteal — the work-stealing overhead and
+# contention skews throughput measurements. Plain -n keeps parallelism for
+# multi-test discovery but distributes tests up front, not mid-run.
+TEST_SUBCHECKS+=("Performance tests|test.perf|$(_pytest_cmd_for perf performance "--tb=short --no-header -q -rEfs -n ${PYTEST_JOBS}")|")
+TEST_SUBCHECKS_RAW+=("Performance tests|test.perf.v|$(_pytest_cmd_for perf performance "-v --tb=short -rEfs -n ${PYTEST_JOBS}")|")
 
 # Run the example scripts as the last test subcheck when opted in
 # (INFRA_DEV_CHECK_EXAMPLES=true) and an examples directory exists. Same
@@ -513,7 +516,7 @@ mark_examples_unmet() {
     local count="${clause%% *}"
     local reasons="${clause#*(}"
     reasons="${reasons%)}"
-    update_line "$line_num" "${UI_MARK_WARN} " "$label" " ${UI_GRAY}(${count} skipped: ${reasons})${UI_RESET}${timing_suffix}"
+    update_line "$line_num" "${UI_MARK_WARN}" "$label" " ${UI_GRAY}(${count} skipped: ${reasons})${UI_RESET}${timing_suffix}"
     [ -d "$STATUS_DIR" ] && printf '%s\t%s\n' "$count" "$reasons" >> "${STATUS_DIR}/example_skips"
     return 0
 }
@@ -535,10 +538,10 @@ run_check() {
     # This prevents hangs from pytest-xdist or unittest on non-existent directories
     if [ "$is_subcheck" = true ]; then
         if [[ "$cmd" == *"tests/e2e"* ]] && [ ! -d "tests/e2e" ]; then
-            update_line "$line_num" "${UI_MARK_PENDING} " "${prefix}${name}" " ${UI_GRAY}(no tests)${UI_RESET}"
+            update_line "$line_num" "${UI_MARK_PENDING}" "${prefix}${name}" " ${UI_GRAY}(no tests)${UI_RESET}"
             return 0
         elif [[ "$cmd" == *"tests/"* ]] && [ ! -d "tests" ]; then
-            update_line "$line_num" "${UI_MARK_PENDING} " "${prefix}${name}" " ${UI_GRAY}(no tests)${UI_RESET}"
+            update_line "$line_num" "${UI_MARK_PENDING}" "${prefix}${name}" " ${UI_GRAY}(no tests)${UI_RESET}"
             return 0
         fi
     fi
@@ -583,14 +586,14 @@ run_check() {
                 # Format target to 1 decimal for consistent display
                 local target_display=$(awk "BEGIN {printf \"%.1f\", int($coverage_target * 10) / 10}")
                 if check_coverage_threshold "$actual" "$coverage_target"; then
-                    update_line "$line_num" "${UI_MARK_OK} " "${prefix}${name}" " ${UI_GRAY}(${actual}% ≥ ${target_display}%)${UI_RESET}${timing_suffix}"
+                    update_line "$line_num" "${UI_MARK_OK}" "${prefix}${name}" " ${UI_GRAY}(${actual}% ≥ ${target_display}%)${UI_RESET}${timing_suffix}"
                 else
-                    update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" " ${UI_GRAY}(${actual}% < ${target_display}%)${UI_RESET}${timing_suffix}"
+                    update_line "$line_num" "${UI_MARK_FAIL}" "${prefix}${name}" " ${UI_GRAY}(${actual}% < ${target_display}%)${UI_RESET}${timing_suffix}"
                     record_failure "$name" "$make_target" "" "$tmpfile" "Coverage: ${actual}% (target: ${target_display}%)"
                     return 1
                 fi
             else
-                update_line "$line_num" "${UI_MARK_OK} " "${prefix}${name}" "${timing_suffix}"
+                update_line "$line_num" "${UI_MARK_OK}" "${prefix}${name}" "${timing_suffix}"
             fi
             rm -f "$tmpfile"
             ;;
@@ -599,34 +602,34 @@ run_check() {
                 local actual=$(parse_docstring_coverage "$tmpfile")
                 # Format target to 1 decimal for consistent display
                 local target_display=$(awk "BEGIN {printf \"%.1f\", int($coverage_target * 10) / 10}")
-                update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" " ${UI_GRAY}(${actual}% < ${target_display}%)${UI_RESET}${timing_suffix}"
+                update_line "$line_num" "${UI_MARK_FAIL}" "${prefix}${name}" " ${UI_GRAY}(${actual}% < ${target_display}%)${UI_RESET}${timing_suffix}"
                 record_failure "$name" "$make_target" "" "$tmpfile" "Coverage: ${actual}% (target: ${target_display}%)"
                 return 1
             fi
             # Fall through to default failure handling for non-docstring checks
-            update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" "${timing_suffix}"
+            update_line "$line_num" "${UI_MARK_FAIL}" "${prefix}${name}" "${timing_suffix}"
             record_failure "$name" "$make_target" "$fix_target" "$tmpfile"
             return 1
             ;;
         5)  # No tests collected
-            update_line "$line_num" "${UI_MARK_PENDING} " "${prefix}${name}" " ${UI_GRAY}(no tests)${UI_RESET}${timing_suffix}"
+            update_line "$line_num" "${UI_MARK_PENDING}" "${prefix}${name}" " ${UI_GRAY}(no tests)${UI_RESET}${timing_suffix}"
             rm -f "$tmpfile"
             ;;
         42)  # Warning: violations found but non-strict mode (EXIT_CODE_WARNING)
             # Extract violation count from output if available
             local warning_count=$(grep -oP '(?<=Violations found: )\d+|(?<=Violations: )\d+' "$tmpfile" 2>/dev/null | head -1)
             if [ -n "$warning_count" ]; then
-                update_line "$line_num" "${UI_MARK_WARN} " "${prefix}${name}" " ${UI_GRAY}(${warning_count} violations, run make cq)${UI_RESET}${timing_suffix}"
+                update_line "$line_num" "${UI_MARK_WARN}" "${prefix}${name}" " ${UI_GRAY}(${warning_count} violations, run make cq)${UI_RESET}${timing_suffix}"
                 record_warning "$name" "$warning_count"
             else
-                update_line "$line_num" "${UI_MARK_WARN} " "${prefix}${name}" " ${UI_GRAY}(run make cq)${UI_RESET}${timing_suffix}"
+                update_line "$line_num" "${UI_MARK_WARN}" "${prefix}${name}" " ${UI_GRAY}(run make cq)${UI_RESET}${timing_suffix}"
                 record_warning "$name"
             fi
             rm -f "$tmpfile"
             # Return 0 - warnings don't fail the build in non-strict mode
             ;;
         *)  # Failure
-            update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" "${timing_suffix}"
+            update_line "$line_num" "${UI_MARK_FAIL}" "${prefix}${name}" "${timing_suffix}"
             record_failure "$name" "$make_target" "$fix_target" "$tmpfile"
             return $exit_code
             ;;
@@ -690,16 +693,16 @@ run_test_suite() {
             IFS='|' read -r subname submake subcmd coverage_target <<< "$subcheck_def"
             local subline=${SUBCHECK_LINES["$subname"]}
             if ! run_check "$subname" "$subcmd" "$subline" true "$coverage_target" "" "$submake"; then
-                [ "$FAIL_FAST" = true ] && { update_line "$line_num" "${UI_MARK_FAIL} " "Test suite" ""; return 1; }
+                [ "$FAIL_FAST" = true ] && { update_line "$line_num" "${UI_MARK_FAIL}" "Test suite" ""; return 1; }
             fi
         done
     fi
 
     if [ -f "${STATUS_DIR}/failures" ]; then
-        update_line "$line_num" "${UI_MARK_FAIL} " "Test suite" ""
+        update_line "$line_num" "${UI_MARK_FAIL}" "Test suite" ""
         return 1
     else
-        update_line "$line_num" "${UI_MARK_OK} " "Test suite" ""
+        update_line "$line_num" "${UI_MARK_OK}" "Test suite" ""
         return 0
     fi
 }
@@ -750,7 +753,7 @@ run_checks() {
         # Run performance tests last (needs isolated CPU) - only if tests enabled
         if [ -n "$test_suite_line" ] && [ -n "$perf_subcheck" ]; then
             [ "$FAIL_FAST" = true ] && [ "$any_failed" = true ] && {
-                update_line "$test_suite_line" "${UI_MARK_FAIL} " "Test suite" ""
+                update_line "$test_suite_line" "${UI_MARK_FAIL}" "Test suite" ""
                 return 1
             }
             IFS='|' read -r subname submake subcmd coverage_target <<< "$perf_subcheck"
@@ -761,9 +764,9 @@ run_checks() {
         # Update test suite status - only if tests enabled
         if [ -n "$test_suite_line" ]; then
             if [ -f "${STATUS_DIR}/failures" ]; then
-                update_line "$test_suite_line" "${UI_MARK_FAIL} " "Test suite" ""
+                update_line "$test_suite_line" "${UI_MARK_FAIL}" "Test suite" ""
             else
-                update_line "$test_suite_line" "${UI_MARK_OK} " "Test suite" ""
+                update_line "$test_suite_line" "${UI_MARK_OK}" "Test suite" ""
             fi
         fi
     else
@@ -899,7 +902,7 @@ main() {
         if [[ "$name" == "Test suite" ]]; then
             for subcheck_def in "${TEST_SUBCHECKS[@]}"; do
                 IFS='|' read -r subname _ _ _ <<< "$subcheck_def"
-                printf "  %b %s\n" "$UI_MARK_PENDING" "$subname"
+                printf "%b   %s\n" "$UI_MARK_PENDING" "$subname"
             done
         fi
     done

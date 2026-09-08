@@ -72,6 +72,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
 
+# Allow running from a source checkout without installing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from appinfra.ui import status
 
 _MARKER_RE = re.compile(r"^#\s*ci-(run|skip|stop|timeout|requires):\s*(.*?)\s*$")
