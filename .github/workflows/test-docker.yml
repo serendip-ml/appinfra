@@ -336,6 +336,8 @@ jobs:
         run: psql -h 127.0.0.1 -p 25432 -U postgres -c "CREATE DATABASE infra_test;"
 
       - name: Run integration tests
+        env:
+          INFRA_PYTEST_WORKERS: auto
         run: make test.integration
 
       - name: Stop postgres

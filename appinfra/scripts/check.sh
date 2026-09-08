@@ -18,7 +18,9 @@ shopt -s nullglob
 PARALLEL=true
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
 PYTEST_JOBS=$(( NPROC / 4 > 2 ? NPROC / 4 : 2 ))
-PYTEST_PARALLEL="-n ${PYTEST_JOBS}"
+# --dist=worksteal (xdist ≥ 3.2): idle workers pull tests from busy peers,
+# smoothing the tail when one shard's tests are slower than others'.
+PYTEST_PARALLEL="-n ${PYTEST_JOBS} --dist=worksteal"
 COVERAGE_TARGET=""
 FAIL_FAST=false
 RAW=false
@@ -56,18 +58,8 @@ done
 
 # === CONFIGURATION ===
 
-GREEN=$'\033[32m'
-RED=$'\033[31m'
-YELLOW=$'\033[33m'
-GRAY=$'\033[90m'
-RESET=$'\033[0m'
-CLEAR=$'\033[K'
-
-CHECK_PENDING="[ ] "
-CHECK_RUNNING="[...]"
-CHECK_SUCCESS="[✓] "
-CHECK_WARNING="[⚠] "
-CHECK_FAILURE="[✗] "
+# shellcheck source=./_ui.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_ui.sh"
 
 # Exit code for "warnings but ok" from cq tool (violations in non-strict mode)
 EXIT_CODE_WARNING=42
@@ -92,6 +84,16 @@ mkdir -p "$STATUS_DIR"
 # Set to 0 to disable coverage checking entirely
 DEFAULT_COVERAGE_TARGET="${INFRA_PYTEST_COVERAGE_THRESHOLD:-80}"
 COVERAGE_TARGET="${COVERAGE_TARGET:-$DEFAULT_COVERAGE_TARGET}"
+
+# Coverage tracer: on Python 3.12+, use sys.monitoring (PEP 669) via
+# COVERAGE_CORE=sysmon — roughly 2x faster than the default C-tracer on
+# Python-heavy suites. coverage.py refuses sysmon on 3.11 (raises
+# CoverageException), so the env var is set only when the interpreter is
+# 3.12 or newer; 3.11 keeps the C-tracer.
+COVERAGE_CORE_ENV=""
+if ${PYTHON} -c "import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)" 2>/dev/null; then
+    COVERAGE_CORE_ENV="COVERAGE_CORE=sysmon "
+fi
 
 # Docstring coverage threshold (0 to disable)
 DOCSTRING_THRESHOLD="${INFRA_DEV_DOCSTRING_THRESHOLD:-80}"
@@ -182,7 +184,7 @@ declare -a TEST_SUBCHECKS=(
 )
 # Add coverage check only if threshold > 0 (awk is more portable than bc)
 if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then
-    TEST_SUBCHECKS+=("Code coverage|test.coverage|INFRA_CHECK_PYTEST_SUITE=cov ${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term -q -rEfs ${PYTEST_PARALLEL}|${COVERAGE_TARGET}")
+    TEST_SUBCHECKS+=("Code coverage|test.coverage|${COVERAGE_CORE_ENV}INFRA_CHECK_PYTEST_SUITE=cov ${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term -q -rEfs ${PYTEST_PARALLEL}|${COVERAGE_TARGET}")
 fi
 
 # Verbose versions for raw mode
@@ -195,7 +197,7 @@ declare -a TEST_SUBCHECKS_RAW=(
 )
 # Add coverage check only if threshold > 0 (awk is more portable than bc)
 if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then
-    TEST_SUBCHECKS_RAW+=("Code coverage|test.coverage|INFRA_CHECK_PYTEST_SUITE=cov ${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term-missing -rEfs ${PYTEST_PARALLEL}|${COVERAGE_TARGET}")
+    TEST_SUBCHECKS_RAW+=("Code coverage|test.coverage|${COVERAGE_CORE_ENV}INFRA_CHECK_PYTEST_SUITE=cov ${PYTHON} -m pytest tests/ ${COVERAGE_MARKER_ARG} --cov=${PKG_NAME} --cov-report=term-missing -rEfs ${PYTEST_PARALLEL}|${COVERAGE_TARGET}")
 fi
 
 # Run the example scripts as the last test subcheck when opted in
@@ -236,7 +238,7 @@ check_interrupted() {
         cleanup
         tput cnorm 2>/dev/null || printf "\033[?25h"
         echo ""
-        echo -e "${RED}✗ Interrupted by user${RESET}"
+        echo -e "${UI_MARK_FAIL} Interrupted by user"
         exit 130
     fi
 }
@@ -252,7 +254,7 @@ update_line() {
         command -v flock &>/dev/null && flock -x 200
         local lines_up=$((TOTAL_LINES - line_num))
         [ $lines_up -gt 0 ] && printf "\033[${lines_up}A"
-        printf "\r%b%s %s%b\n" "$CLEAR" "$status" "$name" "$extra"
+        printf "\r%b%s %s%b\n" "$UI_CLEAR" "$status" "$name" "$extra"
         [ $lines_up -gt 1 ] && printf "\033[$((lines_up - 1))B"
         printf "\r"
     } 200>"$DISPLAY_LOCK"
@@ -268,19 +270,19 @@ format_log_output() {
     local failed_lines
     failed_lines=$(grep -E "^(FAILED|ERROR) " "$logfile" 2>/dev/null || true)
     if [ -n "$failed_lines" ]; then
-        echo -e "${GRAY}Failed tests:${RESET}"
+        echo -e "${UI_GRAY}Failed tests:${UI_RESET}"
         echo "$failed_lines"
         echo ""
         local error_lines
         error_lines=$(grep -E "^E\s+" "$logfile" 2>/dev/null | head -10 || true)
-        [ -n "$error_lines" ] && echo -e "${GRAY}Errors:${RESET}" && echo "$error_lines"
+        [ -n "$error_lines" ] && echo -e "${UI_GRAY}Errors:${UI_RESET}" && echo "$error_lines"
     else
-        echo -e "${GRAY}Output:${RESET}"
+        echo -e "${UI_GRAY}Output:${UI_RESET}"
         if [ "$total_lines" -le "$max_lines" ]; then
             cat "$logfile"
         else
             local hidden=$((total_lines - max_lines))
-            echo -e "${GRAY}... ($hidden lines hidden)${RESET}"
+            echo -e "${UI_GRAY}... ($hidden lines hidden)${UI_RESET}"
             tail -n "$max_lines" "$logfile"
         fi
     fi
@@ -290,10 +292,10 @@ display_failures() {
     [ -f "${STATUS_DIR}/failures" ] || return 0
 
     while IFS='|' read -r name make_target fix_target logfile extra; do
-        echo -e "${RED}ERROR: ${name} failed${RESET}"
+        echo -e "${UI_RED}ERROR: ${name} failed${UI_RESET}"
         [ -n "$extra" ] && echo -e "→ ${extra}"
-        [ -n "$make_target" ] && echo -e "→ To investigate: ${YELLOW}make ${make_target}${RESET}"
-        [ -n "$fix_target" ] && echo -e "→ To fix: ${YELLOW}make ${fix_target}${RESET}"
+        [ -n "$make_target" ] && echo -e "→ To investigate: ${UI_YELLOW}make ${make_target}${UI_RESET}"
+        [ -n "$fix_target" ] && echo -e "→ To fix: ${UI_YELLOW}make ${fix_target}${UI_RESET}"
         [ "$FAIL_FAST" = true ] && [ -n "$logfile" ] && [ -f "$logfile" ] && format_log_output "$logfile" "$MAX_INLINE_LINES"
         echo ""
     done < "${STATUS_DIR}/failures"
@@ -390,14 +392,16 @@ display_skips() {
 
     [ $total_skipped -eq 0 ] && return 0
 
+    local word="${noun}"
+    [ $total_skipped -eq 1 ] && word="${noun%s}"
     echo ""
-    echo -e "${YELLOW}⚠ Warning: ${total_skipped} ${noun} skipped${RESET}"
+    echo -e "${UI_MARK_WARN} Warning: ${total_skipped} ${word} skipped"
 
     # Tab delimiter keeps reasons with spaces or colons intact
     for reason in "${!skip_reasons[@]}"; do
         printf '%s\t%s\n' "${skip_reasons[$reason]}" "$reason"
     done | sort -t$'\t' -k1 -rn | while IFS=$'\t' read -r count reason; do
-        printf "  ${GRAY}- %s skipped: %s${RESET}\n" "$count" "$reason"
+        printf "  ${UI_GRAY}- %s skipped: %s${UI_RESET}\n" "$count" "$reason"
     done
 }
 
@@ -418,7 +422,7 @@ mark_examples_unmet() {
     local count="${clause%% *}"
     local reasons="${clause#*(}"
     reasons="${reasons%)}"
-    update_line "$line_num" "${YELLOW}${CHECK_WARNING}${RESET}" "$label" " ${GRAY}(${count} skipped: ${reasons})${RESET}"
+    update_line "$line_num" "${UI_MARK_WARN} " "$label" " ${UI_GRAY}(${count} skipped: ${reasons})${UI_RESET}"
     [ -d "$STATUS_DIR" ] && printf '%s\t%s\n' "$count" "$reasons" >> "${STATUS_DIR}/example_skips"
     return 0
 }
@@ -434,16 +438,16 @@ run_check() {
     [ "$is_subcheck" = true ] && prefix="  "
 
     # Update to running state
-    update_line "$line_num" "${YELLOW}${CHECK_RUNNING}${RESET}" "${prefix}${name}" ""
+    update_line "$line_num" "${UI_MARK_RUNNING}" "${prefix}${name}" ""
 
     # For test subchecks, check if required directory exists first
     # This prevents hangs from pytest-xdist or unittest on non-existent directories
     if [ "$is_subcheck" = true ]; then
         if [[ "$cmd" == *"tests/e2e"* ]] && [ ! -d "tests/e2e" ]; then
-            update_line "$line_num" "${GRAY}${CHECK_PENDING}${RESET}" "${prefix}${name}" " ${GRAY}(no tests)${RESET}"
+            update_line "$line_num" "${UI_MARK_PENDING} " "${prefix}${name}" " ${UI_GRAY}(no tests)${UI_RESET}"
             return 0
         elif [[ "$cmd" == *"tests/"* ]] && [ ! -d "tests" ]; then
-            update_line "$line_num" "${GRAY}${CHECK_PENDING}${RESET}" "${prefix}${name}" " ${GRAY}(no tests)${RESET}"
+            update_line "$line_num" "${UI_MARK_PENDING} " "${prefix}${name}" " ${UI_GRAY}(no tests)${UI_RESET}"
             return 0
         fi
     fi
@@ -478,14 +482,14 @@ run_check() {
                 # Format target to 1 decimal for consistent display
                 local target_display=$(awk "BEGIN {printf \"%.1f\", int($coverage_target * 10) / 10}")
                 if check_coverage_threshold "$actual" "$coverage_target"; then
-                    update_line "$line_num" "${GREEN}${CHECK_SUCCESS}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% ≥ ${target_display}%)${RESET}"
+                    update_line "$line_num" "${UI_MARK_OK} " "${prefix}${name}" " ${UI_GRAY}(${actual}% ≥ ${target_display}%)${UI_RESET}"
                 else
-                    update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% < ${target_display}%)${RESET}"
+                    update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" " ${UI_GRAY}(${actual}% < ${target_display}%)${UI_RESET}"
                     record_failure "$name" "$make_target" "" "$tmpfile" "Coverage: ${actual}% (target: ${target_display}%)"
                     return 1
                 fi
             else
-                update_line "$line_num" "${GREEN}${CHECK_SUCCESS}${RESET}" "${prefix}${name}" ""
+                update_line "$line_num" "${UI_MARK_OK} " "${prefix}${name}" ""
             fi
             rm -f "$tmpfile"
             ;;
@@ -494,34 +498,34 @@ run_check() {
                 local actual=$(parse_docstring_coverage "$tmpfile")
                 # Format target to 1 decimal for consistent display
                 local target_display=$(awk "BEGIN {printf \"%.1f\", int($coverage_target * 10) / 10}")
-                update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" " ${GRAY}(${actual}% < ${target_display}%)${RESET}"
+                update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" " ${UI_GRAY}(${actual}% < ${target_display}%)${UI_RESET}"
                 record_failure "$name" "$make_target" "" "$tmpfile" "Coverage: ${actual}% (target: ${target_display}%)"
                 return 1
             fi
             # Fall through to default failure handling for non-docstring checks
-            update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" ""
+            update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" ""
             record_failure "$name" "$make_target" "$fix_target" "$tmpfile"
             return 1
             ;;
         5)  # No tests collected
-            update_line "$line_num" "${GRAY}${CHECK_PENDING}${RESET}" "${prefix}${name}" " ${GRAY}(no tests)${RESET}"
+            update_line "$line_num" "${UI_MARK_PENDING} " "${prefix}${name}" " ${UI_GRAY}(no tests)${UI_RESET}"
             rm -f "$tmpfile"
             ;;
         42)  # Warning: violations found but non-strict mode (EXIT_CODE_WARNING)
             # Extract violation count from output if available
             local warning_count=$(grep -oP '(?<=Violations found: )\d+|(?<=Violations: )\d+' "$tmpfile" 2>/dev/null | head -1)
             if [ -n "$warning_count" ]; then
-                update_line "$line_num" "${YELLOW}${CHECK_WARNING}${RESET}" "${prefix}${name}" " ${GRAY}(${warning_count} violations, run make cq)${RESET}"
+                update_line "$line_num" "${UI_MARK_WARN} " "${prefix}${name}" " ${UI_GRAY}(${warning_count} violations, run make cq)${UI_RESET}"
                 record_warning "$name" "$warning_count"
             else
-                update_line "$line_num" "${YELLOW}${CHECK_WARNING}${RESET}" "${prefix}${name}" " ${GRAY}(run make cq)${RESET}"
+                update_line "$line_num" "${UI_MARK_WARN} " "${prefix}${name}" " ${UI_GRAY}(run make cq)${UI_RESET}"
                 record_warning "$name"
             fi
             rm -f "$tmpfile"
             # Return 0 - warnings don't fail the build in non-strict mode
             ;;
         *)  # Failure
-            update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "${prefix}${name}" ""
+            update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" ""
             record_failure "$name" "$make_target" "$fix_target" "$tmpfile"
             return $exit_code
             ;;
@@ -555,7 +559,7 @@ monitor_jobs() {
 
 run_test_suite() {
     local line_num="$1"
-    update_line "$line_num" "${YELLOW}${CHECK_RUNNING}${RESET}" "Test suite" ""
+    update_line "$line_num" "${UI_MARK_RUNNING}" "Test suite" ""
 
     if [ "$PARALLEL" = true ]; then
         # Run test subchecks in parallel (except performance tests - need isolated CPU)
@@ -585,16 +589,16 @@ run_test_suite() {
             IFS='|' read -r subname submake subcmd coverage_target <<< "$subcheck_def"
             local subline=${SUBCHECK_LINES["$subname"]}
             if ! run_check "$subname" "$subcmd" "$subline" true "$coverage_target" "" "$submake"; then
-                [ "$FAIL_FAST" = true ] && { update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "Test suite" ""; return 1; }
+                [ "$FAIL_FAST" = true ] && { update_line "$line_num" "${UI_MARK_FAIL} " "Test suite" ""; return 1; }
             fi
         done
     fi
 
     if [ -f "${STATUS_DIR}/failures" ]; then
-        update_line "$line_num" "${RED}${CHECK_FAILURE}${RESET}" "Test suite" ""
+        update_line "$line_num" "${UI_MARK_FAIL} " "Test suite" ""
         return 1
     else
-        update_line "$line_num" "${GREEN}${CHECK_SUCCESS}${RESET}" "Test suite" ""
+        update_line "$line_num" "${UI_MARK_OK} " "Test suite" ""
         return 0
     fi
 }
@@ -615,7 +619,7 @@ run_checks() {
 
             if [[ "$name" == "Test suite" ]]; then
                 test_suite_line="$line_num"
-                update_line "$line_num" "${YELLOW}${CHECK_RUNNING}${RESET}" "Test suite" ""
+                update_line "$line_num" "${UI_MARK_RUNNING}" "Test suite" ""
             else
                 local parsed=$(parse_fix_target "$fix_target")
                 local coverage_target="${parsed%%|*}"
@@ -645,7 +649,7 @@ run_checks() {
         # Run performance tests last (needs isolated CPU) - only if tests enabled
         if [ -n "$test_suite_line" ] && [ -n "$perf_subcheck" ]; then
             [ "$FAIL_FAST" = true ] && [ "$any_failed" = true ] && {
-                update_line "$test_suite_line" "${RED}${CHECK_FAILURE}${RESET}" "Test suite" ""
+                update_line "$test_suite_line" "${UI_MARK_FAIL} " "Test suite" ""
                 return 1
             }
             IFS='|' read -r subname submake subcmd coverage_target <<< "$perf_subcheck"
@@ -656,9 +660,9 @@ run_checks() {
         # Update test suite status - only if tests enabled
         if [ -n "$test_suite_line" ]; then
             if [ -f "${STATUS_DIR}/failures" ]; then
-                update_line "$test_suite_line" "${RED}${CHECK_FAILURE}${RESET}" "Test suite" ""
+                update_line "$test_suite_line" "${UI_MARK_FAIL} " "Test suite" ""
             else
-                update_line "$test_suite_line" "${GREEN}${CHECK_SUCCESS}${RESET}" "Test suite" ""
+                update_line "$test_suite_line" "${UI_MARK_OK} " "Test suite" ""
             fi
         fi
     else
@@ -713,11 +717,11 @@ run_raw() {
                 # pytest exit 5 = no tests collected; treat as gray-skip to match
                 # run_check's classification (see case 5 in run_check above).
                 if [ $sub_exit_code -eq 0 ]; then
-                    echo "  ${GREEN}✓${RESET} $subname passed"
+                    echo "  ${UI_MARK_OK} $subname passed"
                 elif [ $sub_exit_code -eq 5 ]; then
-                    echo "  ${GRAY}[ ]${RESET} $subname ${GRAY}(no tests)${RESET}"
+                    echo "  ${UI_GRAY}[ ]${UI_RESET} $subname ${UI_GRAY}(no tests)${UI_RESET}"
                 else
-                    echo "  ${RED}✗${RESET} $subname failed"
+                    echo "  ${UI_MARK_FAIL} $subname failed"
                     failed=true
                     [ "$FAIL_FAST" = true ] && break 2
                 fi
@@ -732,13 +736,13 @@ run_raw() {
             eval "$cmd" || cmd_exit_code=$?
 
             if [ $cmd_exit_code -eq 0 ]; then
-                echo "${GREEN}✓${RESET} $name passed"
+                echo "${UI_MARK_OK} $name passed"
             elif [ $cmd_exit_code -eq 42 ]; then  # EXIT_CODE_WARNING
-                echo "${YELLOW}⚠${RESET} $name (warnings, run make cq)"
+                echo "${UI_MARK_WARN} $name (warnings, run make cq)"
                 has_warnings=true
                 # Don't fail on warnings in non-strict mode
             else
-                echo "${RED}✗${RESET} $name failed"
+                echo "${UI_MARK_FAIL} $name failed"
                 [ -n "$actual_fix_target" ] && echo "  To fix: make $actual_fix_target"
                 failed=true
                 [ "$FAIL_FAST" = true ] && break
@@ -750,12 +754,12 @@ run_raw() {
     local elapsed=$(printf "%.1f" $(echo "$(date +%s.%N) - $start_time" | bc))
     echo ""
     if [ "$failed" = true ]; then
-        echo "${RED}✗ Some checks failed${RESET} ${GRAY}in ${elapsed}s${RESET}"
+        echo "${UI_MARK_FAIL} Some checks failed ${UI_GRAY}in ${elapsed}s${UI_RESET}"
         exit 1
     elif [ "$has_warnings" = true ]; then
-        echo "${YELLOW}⚠ All checks passed with warnings${RESET} ${GRAY}in ${elapsed}s${RESET}"
+        echo "${UI_MARK_WARN} All checks passed with warnings ${UI_GRAY}in ${elapsed}s${UI_RESET}"
     else
-        echo "${GREEN}✓ All checks passed${RESET} ${GRAY}in ${elapsed}s${RESET}"
+        echo "${UI_MARK_OK} All checks passed ${UI_GRAY}in ${elapsed}s${UI_RESET}"
     fi
 }
 
@@ -789,12 +793,12 @@ main() {
     # Print initial checkboxes
     for check_def in "${CHECKS[@]}"; do
         IFS='|' read -r name _ _ _ <<< "$check_def"
-        printf "%b %s\n" "$CHECK_PENDING" "$name"
+        printf "%b %s\n" "$UI_MARK_PENDING" "$name"
 
         if [[ "$name" == "Test suite" ]]; then
             for subcheck_def in "${TEST_SUBCHECKS[@]}"; do
                 IFS='|' read -r subname _ _ _ <<< "$subcheck_def"
-                printf "  %b %s\n" "$CHECK_PENDING" "$subname"
+                printf "  %b %s\n" "$UI_MARK_PENDING" "$subname"
             done
         fi
     done
@@ -816,7 +820,7 @@ main() {
     echo ""
     if [ "$success" = false ]; then
         local failure_count=$(wc -l < "${STATUS_DIR}/failures" 2>/dev/null || echo "1")
-        echo -e "${RED}✗ ${failure_count} check(s) failed${RESET} ${GRAY}after ${elapsed}s${RESET}"
+        echo -e "${UI_MARK_FAIL} ${failure_count} check(s) failed ${UI_GRAY}after ${elapsed}s${UI_RESET}"
         echo ""
         display_failures
         display_skip_summary
@@ -825,9 +829,9 @@ main() {
         # Check for warnings
         if [ -f "${STATUS_DIR}/warnings" ]; then
             local warning_count=$(wc -l < "${STATUS_DIR}/warnings")
-            echo -e "${YELLOW}⚠ All checks passed with ${warning_count} warning(s)${RESET} ${GRAY}in ${elapsed}s${RESET}"
+            echo -e "${UI_MARK_WARN} All checks passed with ${warning_count} warning(s) ${UI_GRAY}in ${elapsed}s${UI_RESET}"
         else
-            echo -e "${GREEN}✓ All checks passed${RESET} ${GRAY}in ${elapsed}s${RESET}"
+            echo -e "${UI_MARK_OK} All checks passed ${UI_GRAY}in ${elapsed}s${UI_RESET}"
         fi
         display_skip_summary
     fi

@@ -31,9 +31,11 @@ from appinfra.cli.tools.pg_tool import (
     _detect_runtime_env,
     _exec_pg,
     _pg_script_path,
+    _pgserver_configured,
     _project_env,
     _project_postgres_conf,
     _render_conf_value,
+    _report_no_pgserver,
     _resolve_image,
 )
 from appinfra.dot_dict import DotDict
@@ -249,6 +251,104 @@ class TestExec:
         env = kwargs["env"]
         assert env["_INFRA_PG_CONTAINER_NAME"] == "n"
         assert env["_INFRA_PG_MODE"] == "single"
+
+    def test_detect_runtime_prefers_podman_compose_binary(self, monkeypatch):
+        """When podman-compose is on PATH, use it directly so the
+        ``podman compose`` shim's banner stays out of user output."""
+        monkeypatch.delenv("INFRA_CONTAINER_CMD", raising=False)
+        monkeypatch.delenv("INFRA_COMPOSE_CMD", raising=False)
+        with patch(
+            "appinfra.cli.tools.pg_tool.shutil.which",
+            side_effect=lambda name: (
+                f"/usr/bin/{name}" if name in ("podman", "podman-compose") else None
+            ),
+        ):
+            env = _detect_runtime_env()
+        assert env == {
+            "INFRA_CONTAINER_CMD": "podman",
+            "INFRA_COMPOSE_CMD": "podman-compose",
+        }
+
+    def test_detect_runtime_falls_back_to_podman_compose_shim(self, monkeypatch):
+        """Without ``podman-compose`` on PATH, fall back to the shim."""
+        monkeypatch.delenv("INFRA_CONTAINER_CMD", raising=False)
+        monkeypatch.delenv("INFRA_COMPOSE_CMD", raising=False)
+        with patch(
+            "appinfra.cli.tools.pg_tool.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}" if name == "podman" else None,
+        ):
+            env = _detect_runtime_env()
+        assert env["INFRA_COMPOSE_CMD"] == "podman compose"
+
+
+# =============================================================================
+# No-pgserver precheck — friendly refusal instead of pg.sh wire-var leak
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestNoPgserverPrecheck:
+    """Verify verbs on an unconfigured pgserver print a friendly message
+    instead of leaking ``_INFRA_PG_CONTAINER_NAME required`` from pg.sh."""
+
+    def _no_pgserver_cfg(self):
+        return DotDict({"other": {"key": "value"}})
+
+    def _configured_cfg(self):
+        return DotDict(
+            {
+                "pgserver": {
+                    "name": "n",
+                    "version": 18,
+                    "port": 25432,
+                    "user": "postgres",
+                    "host": "127.0.0.1",
+                    "postgres_conf": {},
+                }
+            }
+        )
+
+    def test_pgserver_configured_false_when_missing(self):
+        assert _pgserver_configured(self._no_pgserver_cfg()) is False
+
+    def test_pgserver_configured_true_when_set(self):
+        assert _pgserver_configured(self._configured_cfg()) is True
+
+    def test_pgserver_configured_false_when_empty_string(self):
+        cfg = DotDict({"pgserver": {"name": ""}})
+        assert _pgserver_configured(cfg) is False
+
+    @pytest.mark.parametrize("verb", ["down", "info", "logs"])
+    def test_no_pgserver_idempotent_verbs_exit_zero(self, verb, capsys):
+        """Idempotent verbs on an unconfigured pgserver are quiet no-ops."""
+        rc = _report_no_pgserver(verb)
+        assert rc == 0
+        err = capsys.readouterr().err
+        assert f"appinfra pg {verb}" in err
+        assert "nothing to do" in err
+
+    @pytest.mark.parametrize("verb", ["up", "reboot", "clean", "erase", "psql"])
+    def test_no_pgserver_active_verbs_exit_two(self, verb, capsys):
+        """Verbs that can't proceed without config refuse with a hint."""
+        rc = _report_no_pgserver(verb)
+        assert rc == 2
+        err = capsys.readouterr().err
+        assert f"appinfra pg {verb}" in err
+        assert "set `pgserver:`" in err
+
+    def test_exec_pg_short_circuits_without_pgserver(self):
+        """``_exec_pg`` returns the precheck code without invoking pg.sh."""
+        with patch("appinfra.cli.tools.pg_tool.subprocess.call") as mock_call:
+            rc = _exec_pg(self._no_pgserver_cfg(), "down")
+        assert rc == 0
+        mock_call.assert_not_called()
+
+    def test_exec_pg_short_circuits_up_returns_two(self):
+        """``up`` on an unconfigured pgserver returns 2, not 0."""
+        with patch("appinfra.cli.tools.pg_tool.subprocess.call") as mock_call:
+            rc = _exec_pg(self._no_pgserver_cfg(), "up")
+        assert rc == 2
+        mock_call.assert_not_called()
 
 
 # =============================================================================
@@ -510,7 +610,9 @@ class TestPgEraseConfirmation:
         t = _erase_tool(cfg=cfg)
         rc = t.run()
         assert rc == 2
-        assert "pgserver.name is empty" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "appinfra pg erase" in err
+        assert "no pgserver configured" in err
 
     def test_nothing_to_erase_short_circuits_with_exit_0(self, capsys):
         """When no target resources exist, skip the prompt entirely and

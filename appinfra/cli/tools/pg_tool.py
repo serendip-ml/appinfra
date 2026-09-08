@@ -125,6 +125,11 @@ def _detect_runtime_env() -> dict[str, str]:
     ``INFRA_COMPOSE_CMD`` to a matching ``<runtime> compose`` when
     unset. Falls through empty if neither is present — pg.sh will then
     report its own missing-runtime error.
+
+    For podman, calls ``podman-compose`` directly when it is on PATH so
+    the ``podman compose`` shim's ``>>>> Executing external compose
+    provider <<<<`` banner stays out of the user's output. The shim was
+    only going to invoke ``podman-compose`` anyway.
     """
     if os.environ.get("INFRA_CONTAINER_CMD"):
         return {}
@@ -132,9 +137,35 @@ def _detect_runtime_env() -> dict[str, str]:
         if shutil.which(runtime):
             env = {"INFRA_CONTAINER_CMD": runtime}
             if not os.environ.get("INFRA_COMPOSE_CMD"):
-                env["INFRA_COMPOSE_CMD"] = f"{runtime} compose"
+                if runtime == "podman" and shutil.which("podman-compose"):
+                    env["INFRA_COMPOSE_CMD"] = "podman-compose"
+                else:
+                    env["INFRA_COMPOSE_CMD"] = f"{runtime} compose"
             return env
     return {}
+
+
+# Verbs that are safe no-ops when the resolved config carries no
+# ``pgserver.name`` — nothing to stop, inspect, or tail. The rest need a
+# configured server and refuse with a hint instead of leaking pg.sh's
+# ``_INFRA_PG_CONTAINER_NAME required`` guard error.
+_NO_CONFIG_NOOP_VERBS = frozenset({"down", "info", "logs"})
+
+
+def _pgserver_configured(cfg: Any) -> bool:
+    """True iff the resolved config declares a non-empty ``pgserver.name``."""
+    return bool(str(cfg.get("pgserver.name", "") or ""))
+
+
+def _report_no_pgserver(verb: str) -> int:
+    """Print a user-facing message when the resolved config has no
+    ``pgserver:`` block, and return the exit code for ``verb``. Read-only
+    and teardown verbs (``down``/``info``/``logs``) exit 0 so idempotent
+    scripts don't fail on the no-op; every other verb exits 2."""
+    idempotent = verb in _NO_CONFIG_NOOP_VERBS
+    tail = "nothing to do" if idempotent else "set `pgserver:` in the resolved config"
+    print(f"appinfra pg {verb}: no pgserver configured — {tail}", file=sys.stderr)
+    return 0 if idempotent else 2
 
 
 def _exec_pg(
@@ -144,6 +175,8 @@ def _exec_pg(
     extra_env: dict[str, str] | None = None,
 ) -> int:
     """Project env + exec pg.sh <verb>. Returns exit code."""
+    if not _pgserver_configured(cfg):
+        return _report_no_pgserver(verb)
     env = {**os.environ, **_detect_runtime_env(), **_project_env(cfg)}
     if extra_env:
         env.update(extra_env)
@@ -530,13 +563,9 @@ class PgEraseTool(_PgVerbTool):
     def run(self, **kwargs: Any) -> int:
         """Preview + confirm, then delegate to pg.sh erase."""
         cfg = self.app.config
-        name = str(cfg.get("pgserver.name", "") or "")
-        if not name:
-            print(
-                "appinfra pg erase: pgserver.name is empty in resolved config",
-                file=sys.stderr,
-            )
-            return 2
+        if not _pgserver_configured(cfg):
+            return _report_no_pgserver(self.VERB)
+        name = str(cfg.get("pgserver.name", ""))
 
         if self.args.yes:
             return _exec_pg(cfg, self.VERB)

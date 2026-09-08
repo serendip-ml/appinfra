@@ -44,12 +44,11 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Shared: color codes
+# Shared: color codes + status marks (see appinfra/scripts/_ui.sh)
 # ---------------------------------------------------------------------------
 
-_BOLD='\033[1m' _RED='\033[0;31m' _GREEN='\033[0;32m'
-_YELLOW='\033[0;33m' _BLUE='\033[0;34m' _CYAN='\033[0;36m'
-_GRAY='\033[0;90m' _RESET='\033[0m'
+# shellcheck source=./_ui.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_ui.sh"
 
 # ---------------------------------------------------------------------------
 # Shared: container / compose helpers
@@ -85,7 +84,7 @@ _pg_ensure_runtime() {
     fi
     explicit="${INFRA_CONTAINER_CMD:-}"
     if [ -n "${explicit}" ]; then
-        printf '%b' "${_RED}pg.sh: INFRA_CONTAINER_CMD='${explicit}' but '${explicit}' is not on PATH.${_RESET}\n" >&2
+        printf '%b' "${UI_RED}pg.sh: INFRA_CONTAINER_CMD='${explicit}' but '${explicit}' is not on PATH.${UI_RESET}\n" >&2
         local other=""
         if [ "${explicit}" = "podman" ] && command -v docker >/dev/null 2>&1; then other="docker"; fi
         if [ "${explicit}" = "docker" ] && command -v podman >/dev/null 2>&1; then other="podman"; fi
@@ -188,7 +187,7 @@ _pg_up() {
 
     # Toggle: stop conflicting mode first to free the port.
     if [ "${_INFRA_PG_MODE}" = "single" ] && [ "${running_mode}" = "repl" ]; then
-        echo "Stopping replication mode..."
+        ui_running "Stopping replication mode..."
         if [ -n "${_INFRA_PG_PORT_R:-}" ]; then
             _pg_compose_run repl down
         else
@@ -197,15 +196,16 @@ _pg_up() {
             ${runtime} stop "${_INFRA_PG_CONTAINER_NAME}-primary" "${_INFRA_PG_CONTAINER_NAME}-standby" 2>/dev/null || true
             ${runtime} rm -f "${_INFRA_PG_CONTAINER_NAME}-primary" "${_INFRA_PG_CONTAINER_NAME}-standby" 2>/dev/null || true
         fi
-        echo "Starting single instance..."
     elif [ "${_INFRA_PG_MODE}" = "repl" ] && [ "${running_mode}" = "single" ]; then
-        echo "Stopping single instance..."
+        ui_running "Stopping single instance..."
         _pg_compose_run single down
-        echo "Starting PostgreSQL replication mode..."
-        echo "  Primary:  port ${_INFRA_PG_PORT}"
-        echo "  Standby:  port ${_INFRA_PG_PORT_R} (read-only replica)"
     fi
 
+    if [ "${_INFRA_PG_MODE}" = "repl" ]; then
+        ui_running "Starting pgserver '${_INFRA_PG_CONTAINER_NAME}' (repl mode; primary ${_INFRA_PG_PORT}, standby ${_INFRA_PG_PORT_R})"
+    else
+        ui_running "Starting pgserver '${_INFRA_PG_CONTAINER_NAME}' (single mode, port ${_INFRA_PG_PORT})"
+    fi
     _pg_compose_run "${_INFRA_PG_MODE}" up -d
 
     if [ "${_INFRA_PG_WAIT}" != "0" ]; then
@@ -331,23 +331,23 @@ _pg_erase() {
     name="${_INFRA_PG_CONTAINER_NAME}"
 
     # Containers: explicit names, single-mode + replication-mode.
-    echo "Stopping containers..."
+    ui_running "Stopping containers..."
     ${runtime} stop "${name}" "${name}-primary" "${name}-standby" 2>/dev/null || true
     ${runtime} rm -f "${name}" "${name}-primary" "${name}-standby" 2>/dev/null || true
 
     # Volumes: enumerate the exact set compose creates for this instance
     # (project=${name}, volumes pgdata / pgdata_primary / pgdata_standby).
     # Substring filters could catch unrelated volumes like ${name}-backup.
-    echo "Removing volumes..."
+    ui_running "Removing volumes..."
     for vol in "${name}_pgdata" "${name}_pgdata_primary" "${name}_pgdata_standby"; do
         ${runtime} volume rm "${vol}" 2>/dev/null || true
     done
 
     # Networks: compose creates ${project}_default; same rationale as volumes.
-    echo "Removing networks..."
+    ui_running "Removing networks..."
     ${runtime} network rm "${name}_default" 2>/dev/null || true
 
-    echo "Erase complete."
+    ui_ok "Erase complete."
     _pg_erase_image_advisory "${runtime}"
 }
 
@@ -400,7 +400,7 @@ _pg_wait_container_up() {
         fi
         sleep 1
     done
-    echo "ERROR: ${target} did not become ready within ${timeout}s" >&2
+    ui_fail "${target} did not become ready within ${timeout}s"
     exit 1
 }
 
@@ -418,9 +418,9 @@ _pg_wait_up() {
         primary_target="${_INFRA_PG_CONTAINER_NAME}-primary"
     fi
 
-    echo "Waiting for ${primary_target} to accept connections..."
+    ui_running "Waiting for ${primary_target} to accept connections..."
     _pg_wait_container_up "${primary_target}" "${_INFRA_PG_WAIT_TIMEOUT}"
-    echo "Server is UP (${primary_target} on port ${_INFRA_PG_PORT})"
+    ui_ok "Server is UP (${primary_target} on port ${_INFRA_PG_PORT})"
 
     # In repl mode the standby container's psql only answers once basebackup
     # completes. Fixes the historic wait-up quirk where the target went ready
@@ -428,9 +428,9 @@ _pg_wait_up() {
     if [ "${primary_target}" = "${_INFRA_PG_CONTAINER_NAME}-primary" ]; then
         local standby_target="${_INFRA_PG_CONTAINER_NAME}-standby"
         if ${runtime} ps --format '{{.Names}}' 2>/dev/null | grep -q "^${standby_target}$"; then
-            echo "Waiting for ${standby_target} to accept connections (basebackup)..."
+            ui_running "Waiting for ${standby_target} to accept connections (basebackup)..."
             _pg_wait_container_up "${standby_target}" "${_INFRA_PG_WAIT_TIMEOUT}"
-            echo "Standby is UP (${standby_target} on port ${_INFRA_PG_PORT_R:-?})"
+            ui_ok "Standby is UP (${standby_target} on port ${_INFRA_PG_PORT_R:-?})"
         fi
     fi
 }
@@ -442,10 +442,10 @@ _pg_wait_down() {
     local runtime i
     runtime="$(_pg_container_runtime)"
 
-    echo "Waiting for ${_INFRA_PG_CONTAINER_NAME} container(s) to be removed..."
+    ui_running "Waiting for ${_INFRA_PG_CONTAINER_NAME} container(s) to be removed..."
     for i in $(seq 1 "${_INFRA_PG_WAIT_TIMEOUT}"); do
         if ! ${runtime} ps -a --format '{{.Names}}' 2>/dev/null | grep -qE "^${_INFRA_PG_CONTAINER_NAME}(-primary|-standby)?$"; then
-            echo "Server is DOWN"
+            ui_ok "Server is DOWN"
             return 0
         fi
         if [ $((i % 5)) -eq 0 ]; then
@@ -453,7 +453,7 @@ _pg_wait_down() {
         fi
         sleep 1
     done
-    echo "ERROR: container(s) for ${_INFRA_PG_CONTAINER_NAME} still present after teardown" >&2
+    ui_fail "container(s) for ${_INFRA_PG_CONTAINER_NAME} still present after teardown"
     exit 1
 }
 
@@ -475,27 +475,27 @@ _pg_check_status() {
     export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-5}"
     if psql -w -h "${_INFRA_PG_HOST}" -p "${_INFRA_PG_PORT}" -U "${_INFRA_PG_USER}" -c "SELECT 1" >/dev/null 2>&1; then
         _primary_up=true
-        _primary_status="${_GREEN}UP${_RESET}"
+        _primary_status="${UI_GREEN}UP${UI_RESET}"
     else
         _primary_up=false
-        _primary_status="${_RED}DOWN${_RESET}"
+        _primary_status="${UI_RED}DOWN${UI_RESET}"
     fi
 
     _standby_up=false
-    _standby_status="${_RED}DOWN${_RESET}"
+    _standby_status="${UI_RED}DOWN${UI_RESET}"
     if [ "$_INFRA_PG_REPLICA_ENABLED" = "true" ]; then
         if psql -w -h "${_INFRA_PG_HOST}" -p "${_INFRA_PG_PORT_R}" -U "${_INFRA_PG_USER}" -c "SELECT 1" >/dev/null 2>&1; then
             _standby_up=true
-            _standby_status="${_GREEN}UP${_RESET}"
+            _standby_status="${UI_GREEN}UP${UI_RESET}"
         fi
     fi
 }
 
 _pg_info_short() {
     if [ "$_INFRA_PG_REPLICA_ENABLED" = "true" ]; then
-        echo -e "${_BOLD}Endpoints:${_RESET} Primary ${_primary_status} (${_INFRA_PG_HOST}:${_INFRA_PG_PORT}) | Standby ${_standby_status} (${_INFRA_PG_HOST}:${_INFRA_PG_PORT_R})"
+        echo -e "${UI_BOLD}Endpoints:${UI_RESET} Primary ${_primary_status} (${_INFRA_PG_HOST}:${_INFRA_PG_PORT}) | Standby ${_standby_status} (${_INFRA_PG_HOST}:${_INFRA_PG_PORT_R})"
     else
-        echo -e "${_BOLD}Endpoint:${_RESET} ${_primary_status} (${_INFRA_PG_HOST}:${_INFRA_PG_PORT})"
+        echo -e "${UI_BOLD}Endpoint:${UI_RESET} ${_primary_status} (${_INFRA_PG_HOST}:${_INFRA_PG_PORT})"
     fi
 
     if [ "$_primary_up" = true ]; then
@@ -504,9 +504,9 @@ _pg_info_short() {
             repl_state=$(psql -h "${_INFRA_PG_HOST}" -p "${_INFRA_PG_PORT}" -U "${_INFRA_PG_USER}" -t -A -c "SELECT state FROM pg_stat_replication LIMIT 1;" 2>/dev/null)
             if [ -n "$repl_state" ]; then
                 repl_sync=$(psql -h "${_INFRA_PG_HOST}" -p "${_INFRA_PG_PORT}" -U "${_INFRA_PG_USER}" -t -A -c "SELECT sync_state FROM pg_stat_replication LIMIT 1;" 2>/dev/null)
-                echo -e "${_BOLD}Replication:${_RESET} ${_YELLOW}${repl_state}${_RESET} (${repl_sync})"
+                echo -e "${UI_BOLD}Replication:${UI_RESET} ${UI_YELLOW}${repl_state}${UI_RESET} (${repl_sync})"
             else
-                echo -e "${_BOLD}Replication:${_RESET} ${_GRAY}not active${_RESET}"
+                echo -e "${UI_BOLD}Replication:${UI_RESET} ${UI_GRAY}not active${UI_RESET}"
             fi
         fi
 
@@ -516,9 +516,9 @@ _pg_info_short() {
         db_size=$(echo "$db_info" | cut -d'|' -f2)
         active_conns=$(psql -h "${_INFRA_PG_HOST}" -p "${_INFRA_PG_PORT}" -U "${_INFRA_PG_USER}" -t -A -c "SELECT COUNT(*) FROM pg_stat_activity WHERE state != 'idle' AND pid != pg_backend_pid();" 2>/dev/null)
 
-        echo -e "${_BOLD}Databases:${_RESET} ${_BLUE}${db_count}${_RESET} (${db_size}) | ${_BOLD}Active connections:${_RESET} ${_BLUE}${active_conns}${_RESET}"
+        echo -e "${UI_BOLD}Databases:${UI_RESET} ${UI_BLUE}${db_count}${UI_RESET} (${db_size}) | ${UI_BOLD}Active connections:${UI_RESET} ${UI_BLUE}${active_conns}${UI_RESET}"
     else
-        echo -e "${_BOLD}Status:${_RESET} ${_RED}Primary server is down${_RESET}"
+        echo -e "${UI_BOLD}Status:${UI_RESET} ${UI_RED}Primary server is down${UI_RESET}"
     fi
 }
 
@@ -531,7 +531,7 @@ _pg_info_containers() {
     local output exit_code=0
     output=$(${runtime} ps -a --filter "name=${_INFRA_PG_CONTAINER_NAME}" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>&1) || exit_code=$?
     if [ $exit_code -ne 0 ]; then
-        echo -e "${_RED}Error from '${runtime}' (exit $exit_code):${_RESET}"
+        echo -e "${UI_RED}Error from '${runtime}' (exit $exit_code):${UI_RESET}"
         echo "$output"
         exit $exit_code
     elif [ "$(echo "$output" | wc -l)" -le 1 ]; then
@@ -542,13 +542,13 @@ _pg_info_containers() {
 }
 
 _pg_info_config() {
-    echo -e "Version:          ${_BLUE}PostgreSQL ${_INFRA_PG_VERSION}${_RESET}"
-    echo -e "Container Name:   ${_BLUE}${_INFRA_PG_CONTAINER_NAME}${_RESET}"
+    echo -e "Version:          ${UI_BLUE}PostgreSQL ${_INFRA_PG_VERSION}${UI_RESET}"
+    echo -e "Container Name:   ${UI_BLUE}${_INFRA_PG_CONTAINER_NAME}${UI_RESET}"
     if [ "$_INFRA_PG_REPLICA_ENABLED" = "true" ]; then
-        echo -e "Primary Port:     ${_BLUE}${_INFRA_PG_PORT}${_RESET}"
-        echo -e "Standby Port:     ${_BLUE}${_INFRA_PG_PORT_R}${_RESET}"
+        echo -e "Primary Port:     ${UI_BLUE}${_INFRA_PG_PORT}${UI_RESET}"
+        echo -e "Standby Port:     ${UI_BLUE}${_INFRA_PG_PORT_R}${UI_RESET}"
     else
-        echo -e "Port:             ${_BLUE}${_INFRA_PG_PORT}${_RESET}"
+        echo -e "Port:             ${UI_BLUE}${_INFRA_PG_PORT}${UI_RESET}"
     fi
 }
 
@@ -582,7 +582,7 @@ _pg_info_tables() {
     for db in $(psql -h "${_INFRA_PG_HOST}" -p "${_INFRA_PG_PORT}" -U "${_INFRA_PG_USER}" \
                 -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres';" 2>/dev/null); do
         echo ""
-        echo -e "${_YELLOW}Database: ${db}${_RESET}"
+        echo -e "${UI_YELLOW}Database: ${db}${UI_RESET}"
         psql -h "${_INFRA_PG_HOST}" -p "${_INFRA_PG_PORT}" -U "${_INFRA_PG_USER}" -d "${db}" \
             -c "SELECT schemaname || '.' || tablename AS table, \
                 pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size \
@@ -602,51 +602,51 @@ _pg_info_connections() {
 
 _pg_info_full() {
     echo ""
-    echo -e "${_BOLD}${_CYAN}PostgreSQL Infrastructure Status${_RESET}"
-    echo -e "${_CYAN}================================${_RESET}"
+    echo -e "${UI_BOLD}${UI_CYAN}PostgreSQL Infrastructure Status${UI_RESET}"
+    echo -e "${UI_CYAN}================================${UI_RESET}"
     echo ""
 
-    echo -e "${_BOLD}CONTAINERS${_RESET}"
-    echo -e "${_GRAY}----------${_RESET}"
+    echo -e "${UI_BOLD}CONTAINERS${UI_RESET}"
+    echo -e "${UI_GRAY}----------${UI_RESET}"
     _pg_info_containers
     echo ""
 
-    echo -e "${_BOLD}SYSTEM CONFIGURATION${_RESET}"
-    echo -e "${_GRAY}--------------------${_RESET}"
+    echo -e "${UI_BOLD}SYSTEM CONFIGURATION${UI_RESET}"
+    echo -e "${UI_GRAY}--------------------${UI_RESET}"
     _pg_info_config
     echo ""
 
-    echo -e "${_BOLD}CONNECTION ENDPOINTS${_RESET}"
-    echo -e "${_GRAY}--------------------${_RESET}"
+    echo -e "${UI_BOLD}CONNECTION ENDPOINTS${UI_RESET}"
+    echo -e "${UI_GRAY}--------------------${UI_RESET}"
     _pg_info_endpoints
     echo ""
 
     if [ "$_primary_up" = true ]; then
         if [ "$_INFRA_PG_REPLICA_ENABLED" = "true" ]; then
-            echo -e "${_BOLD}REPLICATION STATUS${_RESET}"
-            echo -e "${_GRAY}------------------${_RESET}"
+            echo -e "${UI_BOLD}REPLICATION STATUS${UI_RESET}"
+            echo -e "${UI_GRAY}------------------${UI_RESET}"
             _pg_info_replication
             echo ""
         fi
 
-        echo -e "${_BOLD}DATABASES${_RESET}"
-        echo -e "${_GRAY}---------${_RESET}"
+        echo -e "${UI_BOLD}DATABASES${UI_RESET}"
+        echo -e "${UI_GRAY}---------${UI_RESET}"
         _pg_info_databases
         echo ""
 
-        echo -e "${_BOLD}TOP TABLES BY SIZE${_RESET}"
-        echo -e "${_GRAY}------------------${_RESET}"
+        echo -e "${UI_BOLD}TOP TABLES BY SIZE${UI_RESET}"
+        echo -e "${UI_GRAY}------------------${UI_RESET}"
         _pg_info_tables
         echo ""
 
-        echo -e "${_BOLD}ACTIVE CONNECTIONS${_RESET}"
-        echo -e "${_GRAY}------------------${_RESET}"
+        echo -e "${UI_BOLD}ACTIVE CONNECTIONS${UI_RESET}"
+        echo -e "${UI_GRAY}------------------${UI_RESET}"
         _pg_info_connections
         echo ""
     else
-        echo -e "${_BOLD}DATABASES${_RESET}"
-        echo -e "${_GRAY}---------${_RESET}"
-        echo -e "${_RED}(Cannot connect to database - server may be down)${_RESET}"
+        echo -e "${UI_BOLD}DATABASES${UI_RESET}"
+        echo -e "${UI_GRAY}---------${UI_RESET}"
+        echo -e "${UI_RED}(Cannot connect to database - server may be down)${UI_RESET}"
         echo ""
     fi
 }
@@ -682,38 +682,38 @@ _pg_clean() {
         return 0
     fi
 
-    echo "* cleaning pg databases..."
+    ui_running "Cleaning pg databases..."
     local db exists failed=0
     set -f  # disable pathname expansion for the loop
     for db in ${_INFRA_PG_DATABASES}; do
         set +f
         if ! echo "${db}" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$'; then
-            echo "  * skipping unsafe database name: ${db}"
+            ui_warn "skipping unsafe database name: ${db}"
             continue
         fi
         if ! exists=$(psql -w -h "${_INFRA_PG_HOST}" -p "${_INFRA_PG_PORT}" -U "${_INFRA_PG_USER}" \
             -d postgres -XtAc "SELECT 1 FROM pg_database WHERE datname='${db}'" 2>&1); then
-            echo "  * error checking ${db}: ${exists}" >&2
+            ui_fail "error checking ${db}: ${exists}"
             failed=1
             continue
         fi
         if [ "${exists}" = "1" ]; then
-            echo "  * dropping db ${db}..."
+            ui_running "  dropping db ${db}..."
             if ! psql -w -h "${_INFRA_PG_HOST}" -p "${_INFRA_PG_PORT}" -U "${_INFRA_PG_USER}" \
                 -d postgres -c "DROP DATABASE \"${db}\" WITH (FORCE)"; then
-                echo "  * failed to drop ${db}" >&2
+                ui_fail "failed to drop ${db}"
                 failed=1
             fi
         else
-            echo "  * database ${db} not found"
+            ui_pending "database ${db} not found"
         fi
     done
     set +f
     if [ "${failed}" = "1" ]; then
-        echo "* done cleaning pg databases (with errors)" >&2
+        ui_fail "cleaning pg databases finished with errors"
         return 1
     fi
-    echo "* done cleaning pg databases"
+    ui_ok "cleaning pg databases complete"
 }
 
 # ---------------------------------------------------------------------------
