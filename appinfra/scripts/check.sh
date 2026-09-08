@@ -91,16 +91,24 @@ COVERAGE_MARKERS="${INFRA_PYTEST_COVERAGE_MARKERS:-unit}"
 #   "<a> or <b>…" → fold each named suite in the standalone set
 # Anything else (`and`, `not`, parens, unknown names) → no folding.
 # Performance is never folded — perf runs isolated for accurate timing.
+#
+# Only fold when coverage will actually run. When COVERAGE_TARGET is 0
+# (coverage disabled per-project), folding a suite would drop it without
+# anywhere to fold it INTO — the standalone line vanishes and no tests
+# from that marker execute at all.
 FOLDED_MARKERS=""
 _STANDALONE_MARKERS="unit integration e2e security"
-if [ -z "$COVERAGE_MARKERS" ]; then
-    FOLDED_MARKERS="$_STANDALONE_MARKERS"
-elif [[ "$COVERAGE_MARKERS" =~ ^[a-z0-9_]+([[:space:]]+or[[:space:]]+[a-z0-9_]+)*$ ]]; then
-    for _m in $(echo "$COVERAGE_MARKERS" | sed -E 's/[[:space:]]+or[[:space:]]+/ /g'); do
-        case " $_STANDALONE_MARKERS " in
-            *" $_m "*) FOLDED_MARKERS="${FOLDED_MARKERS:+$FOLDED_MARKERS }$_m" ;;
-        esac
-    done
+_COVERAGE_TARGET_RESOLVED="${COVERAGE_TARGET:-${INFRA_PYTEST_COVERAGE_THRESHOLD:-80}}"
+if awk "BEGIN {exit !($_COVERAGE_TARGET_RESOLVED > 0)}" 2>/dev/null; then
+    if [ -z "$COVERAGE_MARKERS" ]; then
+        FOLDED_MARKERS="$_STANDALONE_MARKERS"
+    elif [[ "$COVERAGE_MARKERS" =~ ^[a-z0-9_]+([[:space:]]+or[[:space:]]+[a-z0-9_]+)*$ ]]; then
+        for _m in $(echo "$COVERAGE_MARKERS" | sed -E 's/[[:space:]]+or[[:space:]]+/ /g'); do
+            case " $_STANDALONE_MARKERS " in
+                *" $_m "*) FOLDED_MARKERS="${FOLDED_MARKERS:+$FOLDED_MARKERS }$_m" ;;
+            esac
+        done
+    fi
 fi
 
 # Coverage subcheck's display label: fold-prefixed. E.g. FOLDED_MARKERS
