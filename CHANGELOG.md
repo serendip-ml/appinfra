@@ -25,7 +25,7 @@ For API stability guarantees and deprecation policy, see
   load. Neither takes `--etc-dir` / `--config`; build the spec and `resolve()` for that.
 - `INFRA_PYTEST_WORKERS` Makefile variable (default empty): pytest-xdist worker count for
   `make test.*` targets. `run_pytest_serial` macro for custom targets that must stay in-process.
-- `make examples.check`: runs every script under `examples/` and fails on errors or
+- `make examples.check`: runs eligible scripts under `examples/` and fails on errors or
   timeouts. CI runs it in the container lane.
 - `INFRA_DEV_CHECK_EXAMPLES` Makefile variable (default `false`): include examples in
   `make check`. Files requiring Postgres or a free port are skipped when unavailable.
