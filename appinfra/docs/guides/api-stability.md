@@ -45,7 +45,7 @@ During pre-1.0 development:
 ```toml
 # pyproject.toml
 dependencies = [
-    "appinfra==0.1.0",  # Pin exact version during pre-1.0
+    "appinfra==X.Y.Z",  # Pin exact version during pre-1.0
 ]
 ```
 

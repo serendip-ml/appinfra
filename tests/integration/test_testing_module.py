@@ -89,6 +89,48 @@ class TestPgSessionIsolatedFixture:
 
 
 @pytest.mark.integration
+class TestSchemaIsolationRobustness:
+    """Regression tests for schema isolation under pool-state stress.
+
+    The SchemaManager listener is hooked on the ``checkout`` event so
+    every session that grabs a pooled connection re-establishes
+    ``search_path``. Under the earlier ``connect``-only wiring, a
+    connection whose ``search_path`` had been reset between uses
+    would leak into the next session — the failure mode that surfaces
+    intermittently when parallel test workers share a database.
+    """
+
+    def test_search_path_recovers_after_pool_reset(self, pg_isolated):
+        """After a raw connection deliberately overwrites search_path and
+        returns to the pool, the next session must still see the isolated
+        schema. Under the pre-fix listener this would leak `public` into
+        the next session."""
+        # Overwrite search_path on a pooled connection.
+        with pg_isolated._engine.connect() as conn:
+            conn.execute(text('SET search_path TO "public"'))
+            conn.commit()
+
+        # A fresh session must still route to the isolated schema.
+        with pg_isolated.session() as sess:
+            row = sess.execute(text("SHOW search_path")).scalar()
+            assert pg_isolated.schema in row, (
+                f"search_path leaked past pool reset: got {row!r}, "
+                f"expected schema {pg_isolated.schema!r}"
+            )
+
+    def test_search_path_stable_across_many_checkouts(self, pg_isolated):
+        """Every session in a long sequence sees the isolated schema.
+        Exercises pool reuse without creating new physical connections."""
+        for i in range(50):
+            with pg_isolated.session() as sess:
+                row = sess.execute(text("SHOW search_path")).scalar()
+                assert pg_isolated.schema in row, (
+                    f"iteration {i}: search_path {row!r} lost schema "
+                    f"{pg_isolated.schema!r}"
+                )
+
+
+@pytest.mark.integration
 class TestMakeMigrateFixture:
     """Test the make_migrate_fixture factory."""
 

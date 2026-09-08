@@ -172,8 +172,8 @@ endif # skip type
 .PHONY: type
 
 examples.check:: ## Run every example script; fail on errors or timeouts
-	@if [ -d "examples" ]; then ${PYTHON} $(_MAKEFILE_DEV_DIR)../run_examples.py examples $(_INFRA_DEV_EXAMPLES_PG_FLAG); \
-	elif [ -d "$(INFRA_DEV_PKG_NAME)/examples" ]; then ${PYTHON} $(_MAKEFILE_DEV_DIR)../run_examples.py $(INFRA_DEV_PKG_NAME)/examples $(_INFRA_DEV_EXAMPLES_PG_FLAG); \
+	@if [ -d "examples" ]; then PYTHONPATH="$(CURDIR):$$PYTHONPATH" ${PYTHON} $(_MAKEFILE_DEV_DIR)../run_examples.py examples $(_INFRA_DEV_EXAMPLES_PG_FLAG); \
+	elif [ -d "$(INFRA_DEV_PKG_NAME)/examples" ]; then PYTHONPATH="$(CURDIR):$$PYTHONPATH" ${PYTHON} $(_MAKEFILE_DEV_DIR)../run_examples.py $(INFRA_DEV_PKG_NAME)/examples $(_INFRA_DEV_EXAMPLES_PG_FLAG); \
 	else echo "No examples directory found"; fi
 .PHONY: examples.check
 

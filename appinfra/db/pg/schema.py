@@ -89,24 +89,40 @@ class SchemaManager:
         return self._search_path
 
     def setup_listeners(self) -> None:
-        """Install event listeners to set search_path on all connections."""
+        """Install a checkout listener that sets search_path on every session.
+
+        Hooks the ``checkout`` event rather than ``connect`` so ``search_path``
+        is re-established every time a session grabs a connection from the
+        pool, not only when a new physical connection is created. This closes
+        two race windows that would otherwise let a session run against
+        ``public`` (or a stale schema): (1) connections created on the
+        engine before this listener attaches, and (2) any pool operation
+        (invalidate, recreate, external ``SET`` from test code) that resets
+        or overwrites the connection-level ``search_path`` between uses.
+        Cost is one ``SET`` per checkout — a single round-trip per session,
+        not per query.
+        """
         if self._listeners_installed:
             return
 
         # Quote schema for reserved word safety (consistent with CREATE SCHEMA)
         set_path_sql = f'SET search_path TO "{self._schema}", public'
 
-        @event.listens_for(self._engine, "connect")
-        def _on_connect(dbapi_conn: Any, connection_record: Any) -> None:
+        @event.listens_for(self._engine, "checkout")
+        def _on_checkout(
+            dbapi_conn: Any,
+            connection_record: Any,
+            connection_proxy: Any,
+        ) -> None:
             cursor = dbapi_conn.cursor()
             cursor.execute(set_path_sql)
             cursor.close()
             # Commit to persist search_path at session level. Without this,
-            # the SET is part of an implicit transaction that gets rolled back
-            # when SQLAlchemy's pool resets the connection on return.
+            # the SET is part of an implicit transaction that gets rolled
+            # back when SQLAlchemy's pool resets the connection on return.
             dbapi_conn.commit()
 
-        self._connect_listener = _on_connect
+        self._checkout_listener = _on_checkout
         self._listeners_installed = True
         self._lg.debug(
             "installed schema listeners",
@@ -118,8 +134,8 @@ class SchemaManager:
         if not self._listeners_installed:
             return
 
-        if hasattr(self, "_connect_listener"):
-            event.remove(self._engine, "connect", self._connect_listener)
+        if hasattr(self, "_checkout_listener"):
+            event.remove(self._engine, "checkout", self._checkout_listener)
 
         self._listeners_installed = False
         self._lg.debug("removed schema listeners", extra={"schema": self._schema})

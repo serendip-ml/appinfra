@@ -30,7 +30,7 @@ Example:
         env = prompts.select("Environment:", ["dev", "staging", "prod"])
 """
 
-from . import prompts
+from . import prompts, status
 from .console import Console, get_console
 from .help import RichHelpFormatter, get_help_formatter
 from .progress_logger import ProgressLogger
@@ -88,4 +88,6 @@ __all__ = [
     "NonInteractiveError",
     "INQUIRER_AVAILABLE",
     "TERM_MENU_AVAILABLE",  # Backward compatibility alias
+    # Status primitives (shared with appinfra/scripts/_ui.sh)
+    "status",
 ]

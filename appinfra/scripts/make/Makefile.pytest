@@ -46,8 +46,12 @@ define _check_pytest
 }
 endef
 
-# pytest-xdist worker argument (empty when INFRA_PYTEST_WORKERS is unset)
-_PYTEST_WORKERS_ARG := $(if $(INFRA_PYTEST_WORKERS),-n $(INFRA_PYTEST_WORKERS),)
+# pytest-xdist worker argument (empty when INFRA_PYTEST_WORKERS is unset).
+# --dist=worksteal (xdist >= 3.2) tacks on whenever -n is enabled: idle
+# workers steal tests from busy peers, smoothing the tail on skewed cost
+# distributions. No-op with -n 1; incompatible with -n 0, hence the guard
+# on INFRA_PYTEST_WORKERS being set at all.
+_PYTEST_WORKERS_ARG := $(if $(INFRA_PYTEST_WORKERS),-n $(INFRA_PYTEST_WORKERS) --dist=worksteal,)
 
 # Helper to run pytest, treating "no tests collected" (exit 5) as success
 # Usage: $(call run_pytest,args)

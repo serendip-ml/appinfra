@@ -674,8 +674,3 @@ For security-related questions or concerns:
 - **Security Issues:** Use GitHub's private vulnerability reporting (Security tab → Report a vulnerability)
 - **General Questions:** GitHub Discussions (public)
 - **Documentation:** See docs/ directory
-
----
-
-**Last Updated:** 2025-11-27
-**Version:** 0.1.0
