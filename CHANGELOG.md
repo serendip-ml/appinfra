@@ -10,6 +10,8 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-07
+
 ### Added
 - `ConfigSpec(namespace, name, ...)` and `ConfigFile`: declare where a config's packaged
   base lives and resolve the file to load under the protocol chain, `--config` and a
@@ -23,15 +25,10 @@ For API stability guarantees and deprecation policy, see
   load. Neither takes `--etc-dir` / `--config`; build the spec and `resolve()` for that.
 - `INFRA_PYTEST_WORKERS` Makefile variable (default empty): pytest-xdist worker count for
   `make test.*` targets. `run_pytest_serial` macro for custom targets that must stay in-process.
-- `make examples.check`: runs every script under `examples/` (or `<pkg>/examples/`) and
-  fails on errors or timeouts. Per-file `# ci-run:` / `# ci-stop:` / `# ci-timeout:` /
-  `# ci-skip:` comments declare the cases. Files run one per CPU (`--jobs`), each case
-  in a private `TMPDIR`, and results print in discovery order. CI runs it in the
-  container lane.
-- `INFRA_DEV_CHECK_EXAMPLES` Makefile variable (default `false`): run the examples as a
-  test subcheck of `make check`. `# ci-requires: pg` and `# ci-requires: port:N` headers
-  mark a file that needs Postgres or a free TCP port; when unavailable the file is skipped
-  with a warning instead of failing.
+- `make examples.check`: runs eligible scripts under `examples/` and fails on errors or
+  timeouts. CI runs it in the container lane.
+- `INFRA_DEV_CHECK_EXAMPLES` Makefile variable (default `false`): include examples in
+  `make check`. Files requiring Postgres or a free port are skipped when unavailable.
 - Faceted `AppBuilder`: `.cli` (standard flags, presentation, custom arguments), `.lifecycle`
   (hooks), `.tools.with_main`, and a keyword form on every block; `.logging` is the standalone
   `LoggingBuilder` bound to the app, so its whole API is available there. One block is open at
@@ -92,9 +89,8 @@ For API stability guarantees and deprecation policy, see
 - `AppBuilder.with_name`, `with_version`, `with_standard_args`, `with_standard_arg`,
   `without_standard_args`, `with_main_tool` and `.advanced`: the name is the constructor
   argument, the rest moved to the `.cli`, `.version`, `.tools` and `.lifecycle` blocks.
-- `ServerPlugin` and `ServeTool` from `appinfra.app.fastapi`: they took a `Server` built before
-  the app ran, so it never logged through the app's configured logging. Build the server inside
-  a tool's `run()` instead; see [FastAPI Server](appinfra/docs/api/fastapi.md).
+- `ServerPlugin` and `ServeTool` from `appinfra.app.fastapi`: build the server inside a
+  tool's `run()` instead; see [FastAPI Server](appinfra/docs/api/fastapi.md).
 - `.logging.with_format` (nothing read the value), the app-side `ServerConfig` / `LoggingConfig`
   and `.server.with_middleware*` / `with_cors_origins` / `with_ssl` (never reached the app), and
   `ValidationBuilder` / `ValidationRule` (never applied).
@@ -130,10 +126,7 @@ For API stability guarantees and deprecation policy, see
 - Database log handler: batched inserts with rows that differ in optional
   columns (`extra_data`, `exception_info`) no longer fail on a missing bind
   parameter.
-- Examples run again on the current API: `hello_world_with_cfg`,
-  `logging_builder_example`, `advanced_critical_flush`, `generator_usage_example`,
-  `scrollable_selection`, `mixed_approach`, `progress_logger_example`, and the
-  `app_with_ticker` flags.
+- Examples updated to current API and verified via `make examples.check`.
 - `App.main()` on an app with no registered tools calls `run_no_tool()` instead
   of raising `AttributeError` on the missing `tool` argument.
 - Database log handler: batches always insert through a single `executemany`.
@@ -949,7 +942,8 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/llm-works/appinfra/compare/v0.10.5...HEAD
+[Unreleased]: https://github.com/llm-works/appinfra/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/llm-works/appinfra/compare/v0.10.5...v0.11.0
 [0.10.5]: https://github.com/llm-works/appinfra/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/llm-works/appinfra/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/llm-works/appinfra/compare/v0.10.2...v0.10.3
