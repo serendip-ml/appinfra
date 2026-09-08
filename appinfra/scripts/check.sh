@@ -223,6 +223,42 @@ if [ -n "$COVERAGE_MARKERS" ]; then
     COVERAGE_MARKER_ARG="-m \"${COVERAGE_MARKERS}\""
 fi
 
+# Scan tests/ once for every pytest marker actually declared, so empty
+# suites can skip the pytest invocation entirely. Full pytest with xdist
+# spends 5–20s per invocation just importing conftests and spawning
+# workers before it even applies the -m filter and finds zero matches;
+# on a heavy-import repo this is pure waste. A single grep pass
+# extracts the marker set (~tens of ms) and standalone suites whose
+# marker isn't present short-circuit to the "no tests" display.
+#
+# Recognizes ``pytest.mark.<name>`` — the substring shared by decorator
+# usage (`@pytest.mark.X`) and module-level `pytestmark = pytest.mark.X`
+# (including lists). Dynamic markers applied by
+# ``pytest_collection_modifyitems`` hooks are missed; standard patterns
+# are not.
+_MARKERS_FOUND=$(
+    grep -rhoE 'pytest\.mark\.[a-z_][a-z0-9_]*' tests/ --include='*.py' 2>/dev/null \
+        | cut -d. -f3 | sort -u | tr '\n' ' ' || true
+)
+
+# Emit the pytest command for a marker if any test uses it; otherwise a
+# fast `(exit 5)` subshell that hits run_check's "no tests" branch
+# without paying pytest's discovery cost. The subshell parens matter:
+# bare `exit 5` under ``eval`` would kill run_check's own subshell
+# before it could inspect the exit code, so ``wait -n`` in the parent
+# would count the check as a failure.
+_pytest_cmd_for() {
+    local suite="$1" marker="$2" flags="$3"
+    case " $_MARKERS_FOUND " in
+        *" $marker "*)
+            echo "INFRA_CHECK_PYTEST_SUITE=$suite ${PYTHON} -m pytest tests/ -m $marker $flags"
+            ;;
+        *)
+            echo "(exit 5)"
+            ;;
+    esac
+}
+
 # INFRA_CHECK_PYTEST_SUITE prevents schema collisions when test suites run in parallel.
 # Each suite gets unique schema names: unit_gw0, integ_gw0, e2e_gw0, etc.
 #
@@ -233,8 +269,8 @@ _standalone_suite() {
     case " $FOLDED_MARKERS " in
         *" $marker "*) return ;;
     esac
-    TEST_SUBCHECKS+=("$name|$target|INFRA_CHECK_PYTEST_SUITE=$suite ${PYTHON} -m pytest tests/ -m $marker --tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}|")
-    TEST_SUBCHECKS_RAW+=("$name|$target.v|INFRA_CHECK_PYTEST_SUITE=$suite ${PYTHON} -m pytest tests/ -m $marker -v --tb=short -rEfs ${PYTEST_PARALLEL}|")
+    TEST_SUBCHECKS+=("$name|$target|$(_pytest_cmd_for "$suite" "$marker" "--tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}")|")
+    TEST_SUBCHECKS_RAW+=("$name|$target.v|$(_pytest_cmd_for "$suite" "$marker" "-v --tb=short -rEfs ${PYTEST_PARALLEL}")|")
 }
 declare -a TEST_SUBCHECKS=()
 declare -a TEST_SUBCHECKS_RAW=()
@@ -252,8 +288,8 @@ _standalone_suite unit        "Unit tests"        test.unit        unit
 _standalone_suite integration "Integration tests" test.integration integ
 _standalone_suite e2e         "E2E tests"         test.e2e         e2e
 _standalone_suite security    "Security tests"    test.security    sec
-TEST_SUBCHECKS+=("Performance tests|test.perf|INFRA_CHECK_PYTEST_SUITE=perf ${PYTHON} -m pytest tests/ -m performance --tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}|")
-TEST_SUBCHECKS_RAW+=("Performance tests|test.perf.v|INFRA_CHECK_PYTEST_SUITE=perf ${PYTHON} -m pytest tests/ -m performance -v --tb=short -rEfs ${PYTEST_PARALLEL}|")
+TEST_SUBCHECKS+=("Performance tests|test.perf|$(_pytest_cmd_for perf performance "--tb=short --no-header -q -rEfs ${PYTEST_PARALLEL}")|")
+TEST_SUBCHECKS_RAW+=("Performance tests|test.perf.v|$(_pytest_cmd_for perf performance "-v --tb=short -rEfs ${PYTEST_PARALLEL}")|")
 
 # Run the example scripts as the last test subcheck when opted in
 # (INFRA_DEV_CHECK_EXAMPLES=true) and an examples directory exists. Same
