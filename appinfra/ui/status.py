@@ -39,89 +39,94 @@ def _wrap(code: str, text: str, stream: TextIO) -> str:
 
 # Palette. Callers usually reach for the mark constants below, but the
 # color helpers are here for one-off inline styling that doesn't fit a mark.
-def bold(text: str, stream: TextIO = sys.stdout) -> str:
+def bold(text: str, stream: TextIO | None = None) -> str:
     """Wrap ``text`` in the bold ANSI code (no-op on non-TTY streams)."""
-    return _wrap("1", text, stream)
+    return _wrap("1", text, stream if stream is not None else sys.stdout)
 
 
-def red(text: str, stream: TextIO = sys.stdout) -> str:
+def red(text: str, stream: TextIO | None = None) -> str:
     """Wrap ``text`` in red (no-op on non-TTY streams)."""
-    return _wrap("0;31", text, stream)
+    return _wrap("0;31", text, stream if stream is not None else sys.stdout)
 
 
-def green(text: str, stream: TextIO = sys.stdout) -> str:
+def green(text: str, stream: TextIO | None = None) -> str:
     """Wrap ``text`` in green (no-op on non-TTY streams)."""
-    return _wrap("0;32", text, stream)
+    return _wrap("0;32", text, stream if stream is not None else sys.stdout)
 
 
-def yellow(text: str, stream: TextIO = sys.stdout) -> str:
+def yellow(text: str, stream: TextIO | None = None) -> str:
     """Wrap ``text`` in yellow (no-op on non-TTY streams)."""
-    return _wrap("0;33", text, stream)
+    return _wrap("0;33", text, stream if stream is not None else sys.stdout)
 
 
-def blue(text: str, stream: TextIO = sys.stdout) -> str:
+def blue(text: str, stream: TextIO | None = None) -> str:
     """Wrap ``text`` in blue (no-op on non-TTY streams)."""
-    return _wrap("0;34", text, stream)
+    return _wrap("0;34", text, stream if stream is not None else sys.stdout)
 
 
-def cyan(text: str, stream: TextIO = sys.stdout) -> str:
+def cyan(text: str, stream: TextIO | None = None) -> str:
     """Wrap ``text`` in cyan (no-op on non-TTY streams)."""
-    return _wrap("0;36", text, stream)
+    return _wrap("0;36", text, stream if stream is not None else sys.stdout)
 
 
-def gray(text: str, stream: TextIO = sys.stdout) -> str:
+def gray(text: str, stream: TextIO | None = None) -> str:
     """Wrap ``text`` in gray (no-op on non-TTY streams)."""
-    return _wrap("0;90", text, stream)
+    return _wrap("0;90", text, stream if stream is not None else sys.stdout)
 
 
 # Status marks — the canonical five. Every progress/status line in appinfra
 # uses one of these; anything outside the set is a design decision.
-def mark_pending(stream: TextIO = sys.stdout) -> str:
+def mark_pending(stream: TextIO | None = None) -> str:
     """Gray ``[ ]`` — queued or skipped item that will not run."""
     return gray("[ ]", stream)
 
 
-def mark_running(stream: TextIO = sys.stdout) -> str:
+def mark_running(stream: TextIO | None = None) -> str:
     """Yellow ``[…]`` — work in progress."""
     return yellow("[…]", stream)
 
 
-def mark_ok(stream: TextIO = sys.stdout) -> str:
+def mark_ok(stream: TextIO | None = None) -> str:
     """Green ``[✓]`` — successful completion."""
     return green("[✓]", stream)
 
 
-def mark_warn(stream: TextIO = sys.stdout) -> str:
+def mark_warn(stream: TextIO | None = None) -> str:
     """Yellow ``[⚠]`` — completed with warnings the caller should notice."""
     return yellow("[⚠]", stream)
 
 
-def mark_fail(stream: TextIO = sys.stdout) -> str:
+def mark_fail(stream: TextIO | None = None) -> str:
     """Red ``[✗]`` — failure the caller must act on."""
     return red("[✗]", stream)
 
 
 # Convenience printers. ui_fail goes to stderr; the others to stdout.
-def ui_ok(message: str, stream: TextIO = sys.stdout) -> None:
+def ui_ok(message: str, stream: TextIO | None = None) -> None:
     """Print ``[✓] <message>`` to ``stream`` (stdout by default)."""
-    print(f"{mark_ok(stream)} {message}", file=stream)
+    out = stream if stream is not None else sys.stdout
+    print(f"{mark_ok(out)} {message}", file=out)
 
 
-def ui_warn(message: str, stream: TextIO = sys.stdout) -> None:
+def ui_warn(message: str, stream: TextIO | None = None) -> None:
     """Print ``[⚠] <message>`` to ``stream`` (stdout by default)."""
-    print(f"{mark_warn(stream)} {message}", file=stream)
+    out = stream if stream is not None else sys.stdout
+    print(f"{mark_warn(out)} {message}", file=out)
 
 
-def ui_running(message: str, stream: TextIO = sys.stdout) -> None:
+def ui_running(message: str, stream: TextIO | None = None) -> None:
     """Print ``[…] <message>`` to ``stream`` (stdout by default)."""
-    print(f"{mark_running(stream)} {message}", file=stream)
+    out = stream if stream is not None else sys.stdout
+    print(f"{mark_running(out)} {message}", file=out)
 
 
-def ui_pending(message: str, stream: TextIO = sys.stdout) -> None:
+def ui_pending(message: str, stream: TextIO | None = None) -> None:
     """Print ``[ ] <message>`` to ``stream`` (stdout by default)."""
-    print(f"{mark_pending(stream)} {message}", file=stream)
+    out = stream if stream is not None else sys.stdout
+    print(f"{mark_pending(out)} {message}", file=out)
 
 
-def ui_fail(message: str, stream: TextIO = sys.stderr) -> None:
+def ui_fail(message: str, stream: TextIO | None = None) -> None:
     """Print ``[✗] <message>`` to ``stream`` (stderr by default)."""
-    print(f"{mark_fail(stream)} {message}", file=stream)
+    out = stream if stream is not None else sys.stderr
+    print(f"{mark_fail(out)} {message}", file=out)

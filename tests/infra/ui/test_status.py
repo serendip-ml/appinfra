@@ -82,8 +82,16 @@ def test_ui_ok_prints_to_stream_with_mark_and_message() -> None:
     assert buf.getvalue() == "[✓] server ready\n"
 
 
-def test_ui_fail_defaults_to_stderr() -> None:
-    """ui_fail writes to stderr by default; explicit stream override wins."""
+def test_ui_fail_defaults_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    """ui_fail writes to stderr by default when no stream is given."""
+    status.ui_fail("bad news")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "[✗] bad news\n" in captured.err
+
+
+def test_ui_fail_explicit_stream_override() -> None:
+    """ui_fail respects explicit stream override."""
     buf = _NonTTYStream()
     status.ui_fail("bad news", buf)
     assert buf.getvalue() == "[✗] bad news\n"

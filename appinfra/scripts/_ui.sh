@@ -9,17 +9,29 @@
 # codebase produces. The Python side (appinfra.ui.status) mirrors these
 # same names and glyphs.
 
-# Color palette. ANSI escape sequences, no-op when the receiving terminal
-# strips them.
-UI_BOLD=$'\033[1m'
-UI_RED=$'\033[0;31m'
-UI_GREEN=$'\033[0;32m'
-UI_YELLOW=$'\033[0;33m'
-UI_BLUE=$'\033[0;34m'
-UI_CYAN=$'\033[0;36m'
-UI_GRAY=$'\033[0;90m'
-UI_RESET=$'\033[0m'
-UI_CLEAR=$'\033[K'
+# Color palette. ANSI escape sequences, disabled when NO_COLOR is set or
+# stdout is not a TTY. See https://no-color.org/
+if [[ -z "${NO_COLOR:-}" ]] && [[ -t 1 ]]; then
+    UI_BOLD=$'\033[1m'
+    UI_RED=$'\033[0;31m'
+    UI_GREEN=$'\033[0;32m'
+    UI_YELLOW=$'\033[0;33m'
+    UI_BLUE=$'\033[0;34m'
+    UI_CYAN=$'\033[0;36m'
+    UI_GRAY=$'\033[0;90m'
+    UI_RESET=$'\033[0m'
+    UI_CLEAR=$'\033[K'
+else
+    UI_BOLD=''
+    UI_RED=''
+    UI_GREEN=''
+    UI_YELLOW=''
+    UI_BLUE=''
+    UI_CYAN=''
+    UI_GRAY=''
+    UI_RESET=''
+    UI_CLEAR=''
+fi
 
 # Status marks — the canonical five. Every progress/status line in appinfra
 # uses one of these; anything outside the set is a design decision.

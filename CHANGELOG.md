@@ -20,7 +20,7 @@ For API stability guarantees and deprecation policy, see
 - `make check` UI: the coverage subcheck absorbs standalone suites its marker
   set covers (e.g. "Unit & E2E & Coverage tests"), runs first with `NPROC/2`
   xdist workers, and shows per-subcheck elapsed time when ≥ 5 s. Suites whose
-  marker no test declares skip pytest entirely and land at `[ ] (no tests)`.
+  marker set declares no tests skip pytest entirely and land at `[ ] (no tests)`.
 - `make check` pytest lanes now run with `--dist=worksteal`, and the coverage
   subcheck sets `COVERAGE_CORE=sysmon` on Python 3.12+ for a lower-overhead
   tracer.
