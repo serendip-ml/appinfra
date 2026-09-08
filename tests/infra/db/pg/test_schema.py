@@ -121,7 +121,7 @@ class TestSchemaManagerListeners:
     """Test SchemaManager event listener management."""
 
     def test_setup_listeners_installs_events(self):
-        """Test setup_listeners installs connect listener."""
+        """Test setup_listeners installs a checkout listener."""
         engine = Mock()
         logger = Mock()
         mgr = SchemaManager(engine, "test_schema", logger)
@@ -129,13 +129,12 @@ class TestSchemaManagerListeners:
         with patch("appinfra.db.pg.schema.event") as mock_event:
             mgr.setup_listeners()
 
-            # Verify connect listener was installed
+            # Verify one checkout listener was installed
             calls = mock_event.listens_for.call_args_list
             assert len(calls) == 1
 
-            # Check 'connect' listener
-            connect_call = [c for c in calls if c[0][1] == "connect"]
-            assert len(connect_call) == 1
+            checkout_call = [c for c in calls if c[0][1] == "checkout"]
+            assert len(checkout_call) == 1
 
     def test_setup_listeners_is_idempotent(self):
         """Test calling setup_listeners twice only installs once."""
@@ -162,7 +161,7 @@ class TestSchemaManagerListeners:
             mgr.setup_listeners()
 
             # Store the listener
-            mgr._connect_listener = Mock()
+            mgr._checkout_listener = Mock()
 
             # Now remove
             mgr.remove_listeners()
@@ -182,8 +181,8 @@ class TestSchemaManagerListeners:
 
             assert mock_event.remove.call_count == 0
 
-    def test_connect_listener_sets_search_path(self):
-        """Test the connect event listener sets search_path correctly."""
+    def test_checkout_listener_sets_search_path(self):
+        """Test the checkout event listener sets search_path correctly."""
         engine = Mock()
         logger = Mock()
         mgr = SchemaManager(engine, "test_schema", logger)
@@ -201,12 +200,14 @@ class TestSchemaManagerListeners:
         with patch("appinfra.db.pg.schema.event.listens_for", mock_listens_for):
             mgr.setup_listeners()
 
-        # Now invoke the captured connect callback with mock dbapi connection
+        # Invoke the captured checkout callback with a mock dbapi connection.
+        # SQLAlchemy's checkout event signature is
+        # (dbapi_conn, connection_record, connection_proxy).
         mock_dbapi_conn = Mock()
         mock_cursor = Mock()
         mock_dbapi_conn.cursor.return_value = mock_cursor
 
-        captured_callbacks["connect"](mock_dbapi_conn, None)
+        captured_callbacks["checkout"](mock_dbapi_conn, None, None)
 
         # Verify cursor was used to set search_path
         mock_dbapi_conn.cursor.assert_called_once()
@@ -214,6 +215,9 @@ class TestSchemaManagerListeners:
             'SET search_path TO "test_schema", public'
         )
         mock_cursor.close.assert_called_once()
+        # search_path must be committed so the SET persists past a pool
+        # rollback on connection return.
+        mock_dbapi_conn.commit.assert_called_once()
 
 
 @pytest.mark.unit
