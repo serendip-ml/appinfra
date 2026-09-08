@@ -470,14 +470,14 @@ display_skip_summary() {
 # count on the Examples line with a warning mark and record it for the
 # examples block of the skip summary. Returns 1 when nothing was unmet.
 mark_examples_unmet() {
-    local line_num="$1" label="$2" logfile="$3"
+    local line_num="$1" label="$2" logfile="$3" timing_suffix="${4:-}"
     local clause
     clause=$(grep -oE '[0-9]+ unmet \([^)]*\)' "$logfile" 2>/dev/null | tail -1)
     [ -n "$clause" ] || return 1
     local count="${clause%% *}"
     local reasons="${clause#*(}"
     reasons="${reasons%)}"
-    update_line "$line_num" "${UI_MARK_WARN} " "$label" " ${UI_GRAY}(${count} skipped: ${reasons})${UI_RESET}"
+    update_line "$line_num" "${UI_MARK_WARN} " "$label" " ${UI_GRAY}(${count} skipped: ${reasons})${UI_RESET}${timing_suffix}"
     [ -d "$STATUS_DIR" ] && printf '%s\t%s\n' "$count" "$reasons" >> "${STATUS_DIR}/example_skips"
     return 0
 }
@@ -510,7 +510,17 @@ run_check() {
     # Execute and capture output
     local tmpfile="${STATUS_DIR}/check-${check_id}.log"
     local exit_code=0
+    local _start=$SECONDS
     eval "$cmd" > "$tmpfile" 2>&1 || exit_code=$?
+    local _elapsed=$((SECONDS - _start))
+
+    # Timing suffix appended to every result line for this check. Muted
+    # below the noise threshold so the display stays clean — pre-test
+    # lint checks that finish in a second or two aren't worth annotating.
+    local timing_suffix=""
+    if [ "$_elapsed" -ge 5 ]; then
+        timing_suffix=" ${UI_GRAY}[${_elapsed}s]${UI_RESET}"
+    fi
 
     # Check if cleanup happened (fail-fast triggered by another check)
     [ -d "$STATUS_DIR" ] || return 0
@@ -524,7 +534,7 @@ run_check() {
                 record_skips "$name" "$tmpfile"
             fi
 
-            if [[ "$name" == "Examples" ]] && mark_examples_unmet "$line_num" "${prefix}${name}" "$tmpfile"; then
+            if [[ "$name" == "Examples" ]] && mark_examples_unmet "$line_num" "${prefix}${name}" "$tmpfile" "$timing_suffix"; then
                 :  # line carries the warning mark and skip count
             elif [ -n "$coverage_target" ]; then
                 # Use appropriate parser based on check type
@@ -537,14 +547,14 @@ run_check() {
                 # Format target to 1 decimal for consistent display
                 local target_display=$(awk "BEGIN {printf \"%.1f\", int($coverage_target * 10) / 10}")
                 if check_coverage_threshold "$actual" "$coverage_target"; then
-                    update_line "$line_num" "${UI_MARK_OK} " "${prefix}${name}" " ${UI_GRAY}(${actual}% ≥ ${target_display}%)${UI_RESET}"
+                    update_line "$line_num" "${UI_MARK_OK} " "${prefix}${name}" " ${UI_GRAY}(${actual}% ≥ ${target_display}%)${UI_RESET}${timing_suffix}"
                 else
-                    update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" " ${UI_GRAY}(${actual}% < ${target_display}%)${UI_RESET}"
+                    update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" " ${UI_GRAY}(${actual}% < ${target_display}%)${UI_RESET}${timing_suffix}"
                     record_failure "$name" "$make_target" "" "$tmpfile" "Coverage: ${actual}% (target: ${target_display}%)"
                     return 1
                 fi
             else
-                update_line "$line_num" "${UI_MARK_OK} " "${prefix}${name}" ""
+                update_line "$line_num" "${UI_MARK_OK} " "${prefix}${name}" "${timing_suffix}"
             fi
             rm -f "$tmpfile"
             ;;
@@ -553,34 +563,34 @@ run_check() {
                 local actual=$(parse_docstring_coverage "$tmpfile")
                 # Format target to 1 decimal for consistent display
                 local target_display=$(awk "BEGIN {printf \"%.1f\", int($coverage_target * 10) / 10}")
-                update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" " ${UI_GRAY}(${actual}% < ${target_display}%)${UI_RESET}"
+                update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" " ${UI_GRAY}(${actual}% < ${target_display}%)${UI_RESET}${timing_suffix}"
                 record_failure "$name" "$make_target" "" "$tmpfile" "Coverage: ${actual}% (target: ${target_display}%)"
                 return 1
             fi
             # Fall through to default failure handling for non-docstring checks
-            update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" ""
+            update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" "${timing_suffix}"
             record_failure "$name" "$make_target" "$fix_target" "$tmpfile"
             return 1
             ;;
         5)  # No tests collected
-            update_line "$line_num" "${UI_MARK_PENDING} " "${prefix}${name}" " ${UI_GRAY}(no tests)${UI_RESET}"
+            update_line "$line_num" "${UI_MARK_PENDING} " "${prefix}${name}" " ${UI_GRAY}(no tests)${UI_RESET}${timing_suffix}"
             rm -f "$tmpfile"
             ;;
         42)  # Warning: violations found but non-strict mode (EXIT_CODE_WARNING)
             # Extract violation count from output if available
             local warning_count=$(grep -oP '(?<=Violations found: )\d+|(?<=Violations: )\d+' "$tmpfile" 2>/dev/null | head -1)
             if [ -n "$warning_count" ]; then
-                update_line "$line_num" "${UI_MARK_WARN} " "${prefix}${name}" " ${UI_GRAY}(${warning_count} violations, run make cq)${UI_RESET}"
+                update_line "$line_num" "${UI_MARK_WARN} " "${prefix}${name}" " ${UI_GRAY}(${warning_count} violations, run make cq)${UI_RESET}${timing_suffix}"
                 record_warning "$name" "$warning_count"
             else
-                update_line "$line_num" "${UI_MARK_WARN} " "${prefix}${name}" " ${UI_GRAY}(run make cq)${UI_RESET}"
+                update_line "$line_num" "${UI_MARK_WARN} " "${prefix}${name}" " ${UI_GRAY}(run make cq)${UI_RESET}${timing_suffix}"
                 record_warning "$name"
             fi
             rm -f "$tmpfile"
             # Return 0 - warnings don't fail the build in non-strict mode
             ;;
         *)  # Failure
-            update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" ""
+            update_line "$line_num" "${UI_MARK_FAIL} " "${prefix}${name}" "${timing_suffix}"
             record_failure "$name" "$make_target" "$fix_target" "$tmpfile"
             return $exit_code
             ;;
