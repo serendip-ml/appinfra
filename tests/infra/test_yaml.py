@@ -729,18 +729,18 @@ data: !include "../../outside.yaml"
                 load(f, current_file=main_config, origin=origin)
 
     def test_path_traversal_protection_allows_within_root(self, tmp_path):
-        """Test that includes within project root work when origin is set."""
+        """Test that includes within the origin work when origin is set."""
         # Create project structure
         origin = tmp_path / "project"
         origin.mkdir()
         config_dir = origin / "config"
         config_dir.mkdir()
 
-        # Create included file within project root
+        # Create included file within the origin
         included_file = origin / "shared.yaml"
         included_file.write_text("shared_value: 42")
 
-        # Create main config that includes file within project root
+        # Create main config that includes file within the origin
         main_config = config_dir / "main.yaml"
         main_config.write_text(
             """
