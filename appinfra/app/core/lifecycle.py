@@ -172,11 +172,11 @@ class LifecycleManager:
         reloader = LogConfigReloader(self._logger, section="logging")
 
         assert self._lifecycle_logger is not None
-        project_root = getattr(self.application, "_project_root", None)
+        origin = getattr(self.application, "_origin", None)
         watcher = ConfigWatcher(
             lg=self._lifecycle_logger,
             etc_dir=etc_dir,
-            project_root=project_root,
+            origin=origin,
         )
         watcher.configure(config_file, debounce_ms=debounce_ms, on_change=reloader)
         watcher.start()

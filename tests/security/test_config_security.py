@@ -306,7 +306,7 @@ paths:
     resolved_path = Path(resolved_path_str)
 
     # If resolution succeeded, verify it's within project boundaries
-    # (The YAML loader's project_root enforcement should prevent escapes)
+    # (The YAML loader's origin enforcement should prevent escapes)
     if resolved_path.exists():
         # If path exists and was resolved, it should be safe
         # The yaml loader should have blocked dangerous includes
@@ -326,7 +326,7 @@ def test_config_path_symlink_attack(secure_temp_project: Path):
 
     Security Concern: Symlinks can point outside the project directory.
     The .resolve() call should detect this, and combined with YAML loader's
-    project_root enforcement, should prevent access to sensitive files.
+    origin enforcement, should prevent access to sensitive files.
     """
     # Create a symlink pointing outside project (to /etc/passwd or similar)
     target_path = Path("/etc/passwd")
@@ -357,7 +357,7 @@ paths:
     resolved = Path(config.paths.dangerous)
 
     # Verify the resolved path
-    # If it points outside project_root, that's a security issue
+    # If it points outside origin, that's a security issue
     # However, the actual enforcement is in yaml.py for includes
     # This test documents the behavior for !path tag resolution
 

@@ -670,10 +670,10 @@ cfg = Config(
 )
 ```
 
-`allowed_paths` is a list of specific files the loader may reach outside `project_root`. Each entry
+`allowed_paths` is a list of specific files the loader may reach outside `origin`. Each entry
 is `~`-expanded and resolved once; an include path bypasses the guard only if it resolves to an
 exact match. Allowlisting one file does not permit siblings — any include path not on the list
-still hits the guard. Omit `allowed_paths` and every `~/…` include is blocked by `project_root` as
+still hits the guard. Omit `allowed_paths` and every `~/…` include is blocked by `origin` as
 before.
 
 **`!reset`** - Bypass deep merge for specific keys:

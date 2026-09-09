@@ -72,10 +72,13 @@ class ConfigConfigurer:
         Builds a ``ConfigSpec`` from the same arguments: the base is
         ``<origin dir>/<etc_dir>/<filename>``, each part defaulting to rule 2
         (the module named after the config or the calling script, ``etc``,
-        ``<name>.yaml``); ``path`` names the file outright. At setup the App
-        resolves the spec against ``--etc-dir`` and ``--config`` (when
-        exposed via ``.cli(config_file=True)``), the project-local walk-up, XDG
-        overlays and the packaged base. See ``ConfigSpec``.
+        ``<name>.yaml``); ``path`` names the file outright. An explicit
+        ``origin`` is also the include boundary, so a base whose includes
+        climb above its ``etc/`` passes the directory they may reach. At
+        setup the App resolves the spec against ``--etc-dir`` and
+        ``--config`` (when exposed via ``.cli(config_file=True)``), the
+        project-local walk-up, XDG overlays and the packaged base. See
+        ``ConfigSpec``.
         """
         self._app_builder._config_spec = ConfigSpec(
             namespace,

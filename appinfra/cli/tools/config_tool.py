@@ -30,7 +30,7 @@ _PRECEDENCE_EPILOG = """\
 config-source precedence (v1, checked top-down; first match wins):
 
   1. --config /abs.yaml | ./rel | ../rel | ~/x     (direct path)
-     project_root = the file's parent; --etc-dir is ignored.
+     origin = the file's parent; --etc-dir is ignored.
 
   2. --config bare.yaml + --etc-dir /foo           (bare + etc-dir)
      resolves to /foo/bare.yaml; without --etc-dir, to cwd/bare.yaml.

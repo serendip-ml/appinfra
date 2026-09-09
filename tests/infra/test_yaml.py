@@ -703,19 +703,19 @@ data: !!python/object/apply:os.system ["echo pwned"]
         with pytest.raises(yaml.YAMLError):
             load(StringIO(malicious_yaml))
 
-    def test_path_traversal_protection_with_project_root(self, tmp_path):
-        """Test that path traversal is blocked when project_root is set."""
+    def test_path_traversal_protection_with_origin(self, tmp_path):
+        """Test that path traversal is blocked when origin is set."""
         # Create project structure
-        project_root = tmp_path / "project"
-        project_root.mkdir()
-        config_dir = project_root / "config"
+        origin = tmp_path / "project"
+        origin.mkdir()
+        config_dir = origin / "config"
         config_dir.mkdir()
 
-        # Create a file outside project root
+        # Create a file outside origin
         outside_file = tmp_path / "outside.yaml"
         outside_file.write_text("secret: password")
 
-        # Create main config that tries to include file outside project root
+        # Create main config that tries to include file outside origin
         main_config = config_dir / "main.yaml"
         main_config.write_text(
             """
@@ -725,19 +725,19 @@ data: !include "../../outside.yaml"
 
         # Should raise security error
         with open(main_config) as f:
-            with pytest.raises(yaml.YAMLError, match="Security.*outside project root"):
-                load(f, current_file=main_config, project_root=project_root)
+            with pytest.raises(yaml.YAMLError, match="Security.*outside origin"):
+                load(f, current_file=main_config, origin=origin)
 
     def test_path_traversal_protection_allows_within_root(self, tmp_path):
-        """Test that includes within project root work when project_root is set."""
+        """Test that includes within project root work when origin is set."""
         # Create project structure
-        project_root = tmp_path / "project"
-        project_root.mkdir()
-        config_dir = project_root / "config"
+        origin = tmp_path / "project"
+        origin.mkdir()
+        config_dir = origin / "config"
         config_dir.mkdir()
 
         # Create included file within project root
-        included_file = project_root / "shared.yaml"
+        included_file = origin / "shared.yaml"
         included_file.write_text("shared_value: 42")
 
         # Create main config that includes file within project root
@@ -750,12 +750,12 @@ data: !include "../shared.yaml"
 
         # Should work fine
         with open(main_config) as f:
-            result = load(f, current_file=main_config, project_root=project_root)
+            result = load(f, current_file=main_config, origin=origin)
 
         assert result["data"]["shared_value"] == 42
 
-    def test_path_traversal_without_project_root_unrestricted(self, tmp_path):
-        """Test that includes work normally when project_root is not set."""
+    def test_path_traversal_without_origin_unrestricted(self, tmp_path):
+        """Test that includes work normally when origin is not set."""
         # Create files outside the config directory
         parent_dir = tmp_path / "parent"
         parent_dir.mkdir()
@@ -771,24 +771,24 @@ data: !include "../included.yaml"
 """
         )
 
-        # Without project_root, traversal should work (backward compatibility)
+        # Without origin, traversal should work (backward compatibility)
         with open(main_config) as f:
             result = load(f, current_file=main_config)
 
         assert result["data"]["value"] == 123
 
-    def test_absolute_path_outside_project_root_blocked(self, tmp_path):
-        """Test that absolute paths outside project root are blocked."""
+    def test_absolute_path_outside_origin_blocked(self, tmp_path):
+        """Test that absolute paths outside origin are blocked."""
         # Create project structure
-        project_root = tmp_path / "project"
-        project_root.mkdir()
+        origin = tmp_path / "project"
+        origin.mkdir()
 
-        # Create file outside project root with absolute path
+        # Create file outside origin with absolute path
         outside_file = tmp_path / "secrets.yaml"
         outside_file.write_text("password: secret123")
 
         # Create main config with absolute path to outside file
-        main_config = project_root / "config.yaml"
+        main_config = origin / "config.yaml"
         main_config.write_text(
             f"""
 data: !include "{outside_file}"
@@ -797,8 +797,8 @@ data: !include "{outside_file}"
 
         # Should raise security error
         with open(main_config) as f:
-            with pytest.raises(yaml.YAMLError, match="Security.*outside project root"):
-                load(f, current_file=main_config, project_root=project_root)
+            with pytest.raises(yaml.YAMLError, match="Security.*outside origin"):
+                load(f, current_file=main_config, origin=origin)
 
 
 # =============================================================================
@@ -1821,20 +1821,20 @@ server:
                 load(f, current_file=file_a)
 
     def test_document_level_include_security(self, tmp_path):
-        """Test that document-level includes respect project_root."""
+        """Test that document-level includes respect origin."""
         # Create project structure
-        project_root = tmp_path / "project"
-        project_root.mkdir()
+        origin = tmp_path / "project"
+        origin.mkdir()
 
         outside_file = tmp_path / "outside.yaml"
         outside_file.write_text("secret: password\n")
 
-        main_file = project_root / "main.yaml"
+        main_file = origin / "main.yaml"
         main_file.write_text('!include "../outside.yaml"\n')
 
         with open(main_file) as f:
-            with pytest.raises(yaml.YAMLError, match="Security.*outside project root"):
-                load(f, current_file=main_file, project_root=project_root)
+            with pytest.raises(yaml.YAMLError, match="Security.*outside origin"):
+                load(f, current_file=main_file, origin=origin)
 
     def test_document_level_include_source_tracking(self, tmp_path):
         """Test source tracking with document-level includes."""
@@ -2041,8 +2041,8 @@ class TestIncludePathEdgeCases:
 class TestIncludeSecurityEdgeCases:
     """Test security-related edge cases for includes."""
 
-    def test_include_outside_project_root(self, tmp_path):
-        """Test error when include path is outside project root."""
+    def test_include_outside_origin(self, tmp_path):
+        """Test error when include path is outside origin."""
         # Create project directory
         project = tmp_path / "project"
         project.mkdir()
@@ -2056,8 +2056,8 @@ class TestIncludeSecurityEdgeCases:
         main_file.write_text('data: !include "../outside.yaml"\n')
 
         with open(main_file) as f:
-            with pytest.raises(yaml.YAMLError, match="outside project root"):
-                load(f, current_file=main_file, project_root=project)
+            with pytest.raises(yaml.YAMLError, match="outside origin"):
+                load(f, current_file=main_file, origin=project)
 
 
 @pytest.mark.unit
@@ -3642,7 +3642,7 @@ class TestAllowedPaths:
         main = proj / "main.yaml"
         main.write_text('overlay: !include "~/.overlay.yaml"\n')
 
-        data = load_file(main, project_root=proj, allowed_paths=["~/.overlay.yaml"])
+        data = load_file(main, origin=proj, allowed_paths=["~/.overlay.yaml"])
         assert data == {"overlay": {"db": {"port": 9999}}}
 
     def test_home_include_blocked_by_default(self, home_and_proj):
@@ -3651,8 +3651,8 @@ class TestAllowedPaths:
         main = proj / "main.yaml"
         main.write_text('overlay: !include "~/.overlay.yaml"\n')
 
-        with pytest.raises(yaml.YAMLError, match="outside project root"):
-            load_file(main, project_root=proj)
+        with pytest.raises(yaml.YAMLError, match="outside origin"):
+            load_file(main, origin=proj)
 
     def test_non_allowlisted_home_path_still_blocked(self, home_and_proj):
         """Allowlisting one file does NOT unlock all of home."""
@@ -3663,29 +3663,29 @@ class TestAllowedPaths:
         main.write_text('extra: !include "~/.other.yaml"\n')
 
         with pytest.raises(yaml.YAMLError, match="is not authorized"):
-            load_file(main, project_root=proj, allowed_paths=["~/.overlay.yaml"])
+            load_file(main, origin=proj, allowed_paths=["~/.overlay.yaml"])
 
     def test_optional_allowlisted_include_missing_returns_empty(self, home_and_proj):
         _, proj = home_and_proj
         main = proj / "main.yaml"
         main.write_text('overlay: !include? "~/.absent.yaml"\n')
 
-        data = load_file(main, project_root=proj, allowed_paths=["~/.absent.yaml"])
+        data = load_file(main, origin=proj, allowed_paths=["~/.absent.yaml"])
         assert data == {"overlay": {}}
 
     def test_optional_non_allowlisted_missing_still_blocked(self, home_and_proj):
-        """Missing optional path outside project_root must still hit guard.
+        """Missing optional path outside origin must still hit guard.
 
         Ensures authorization happens before existence check - we reject the
-        path for being outside project_root, not silently return empty because
+        path for being outside origin, not silently return empty because
         the file is missing.
         """
         _, proj = home_and_proj
         main = proj / "main.yaml"
         main.write_text('overlay: !include? "~/.absent.yaml"\n')
 
-        with pytest.raises(yaml.YAMLError, match="outside project root"):
-            load_file(main, project_root=proj)
+        with pytest.raises(yaml.YAMLError, match="outside origin"):
+            load_file(main, origin=proj)
 
     def test_deep_merge_overlay_pattern(self, home_and_proj):
         """Package-ships-defaults + user-overlay: <<: !deep !include? '~/.file#section'."""
@@ -3699,7 +3699,7 @@ class TestAllowedPaths:
             '<<: !deep !include? "~/.overlay.yaml#myapp"\n'
         )
 
-        data = load_file(main, project_root=proj, allowed_paths=["~/.overlay.yaml"])
+        data = load_file(main, origin=proj, allowed_paths=["~/.overlay.yaml"])
         assert data["db"] == {"host": "overlay-host", "port": 5432}
 
     def test_absolute_traversal_still_blocked_with_allowlist(
@@ -3715,7 +3715,7 @@ class TestAllowedPaths:
         main.write_text(f'extra: !include "{outside}/other.yaml"\n')
 
         with pytest.raises(yaml.YAMLError, match="is not authorized"):
-            load_file(main, project_root=proj, allowed_paths=["~/.overlay.yaml"])
+            load_file(main, origin=proj, allowed_paths=["~/.overlay.yaml"])
 
     def test_document_level_include_honors_allowlist(self, home_and_proj):
         home, proj = home_and_proj
@@ -3723,7 +3723,7 @@ class TestAllowedPaths:
         main = proj / "main.yaml"
         main.write_text('!include? "~/.base.yaml"\nversion: 1\n')
 
-        data = load_file(main, project_root=proj, allowed_paths=["~/.base.yaml"])
+        data = load_file(main, origin=proj, allowed_paths=["~/.base.yaml"])
         assert data == {"name": "overlay", "version": 1}
 
     def test_allowlist_accepts_pathlib_and_str_mixed(self, home_and_proj):
@@ -3732,13 +3732,11 @@ class TestAllowedPaths:
         main = proj / "main.yaml"
         main.write_text('overlay: !include "~/.overlay.yaml"\n')
 
-        data = load_file(
-            main, project_root=proj, allowed_paths=[Path("~/.overlay.yaml")]
-        )
+        data = load_file(main, origin=proj, allowed_paths=[Path("~/.overlay.yaml")])
         assert data == {"overlay": {"v": 1}}
 
-    def test_no_project_root_allowlist_is_noop(self, home_and_proj):
-        """Without project_root the guard is off; allowlist doesn't change data."""
+    def test_no_origin_allowlist_is_noop(self, home_and_proj):
+        """Without origin the guard is off; allowlist doesn't change data."""
         home, proj = home_and_proj
         (home / ".overlay.yaml").write_text("v: 42\n")
         main = proj / "main.yaml"

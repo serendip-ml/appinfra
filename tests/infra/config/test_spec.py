@@ -134,6 +134,8 @@ class TestExplicitParts:
 
     def test_origin_file_anchors_on_its_directory(self, tmp_path):
         script = tmp_path / "examples" / "demo.py"
+        script.parent.mkdir()
+        script.write_text("")
         spec = ConfigSpec("ns", "demo-app", origin=script)
         assert (
             spec.base_config
@@ -146,10 +148,12 @@ class TestExplicitParts:
 
     def test_origin_accepts_string_and_expands_tilde(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HOME", str(tmp_path))
+        (tmp_path / "x.py").write_text("")
         spec = ConfigSpec("ns", "demo", origin="~/x.py")
         assert spec.base_config == (tmp_path / "etc" / "demo.yaml").resolve()
 
     def test_etc_dir_empty_means_beside_the_origin(self, tmp_path):
+        (tmp_path / "s.py").write_text("")
         spec = ConfigSpec("ns", "bday", origin=tmp_path / "s.py", etc_dir="")
         assert spec.base_config == (tmp_path / "bday.yaml").resolve()
 
@@ -166,6 +170,7 @@ class TestExplicitParts:
         assert spec.base_config == (tmp_path / "etc" / "infra.yaml").resolve()
 
     def test_parts_combine(self, tmp_path):
+        (tmp_path / "s.py").write_text("")
         spec = ConfigSpec(
             "ns",
             "hot-reload",
@@ -401,7 +406,7 @@ class TestResolveEtcDirXdgBase:
         custom.mkdir()
         cf = ConfigSpec("myorg", "myapp", path=bundled_base).resolve(etc_dir=custom)
         assert not cf.path.exists()
-        assert cf.project_root == custom.resolve()
+        assert cf.origin == custom.resolve()
 
     def test_etc_dir_string_accepted(self, bundled_base, tmp_path):
         custom = tmp_path / "user_etc"
@@ -417,7 +422,7 @@ class TestResolveEtcDirXdgBase:
         cf = ConfigSpec("myorg", "myapp", path=bundled_base).resolve(
             etc_dir="~/user_etc"
         )
-        assert cf.project_root == (tmp_path / "user_etc").resolve()
+        assert cf.origin == (tmp_path / "user_etc").resolve()
 
     def test_etc_dir_uses_base_filename_not_name(self, tmp_path, clean_xdg_env):
         """The etc-dir tier looks for the file the spec declares, not <name>.yaml."""
@@ -511,7 +516,7 @@ class TestResolveConfigFile:
         etc.mkdir()
         cf = spec.resolve(etc_dir=etc, config_file=str(target))
         assert cf.path == target
-        assert cf.project_root == target.parent
+        assert cf.origin == target.parent
 
     def test_absolute_path_with_dotdot_is_canonicalized(self, spec, tmp_path):
         target = tmp_path / "elsewhere" / "custom.yaml"
@@ -520,7 +525,7 @@ class TestResolveConfigFile:
         non_canonical = str(tmp_path / "elsewhere" / ".." / "elsewhere" / "custom.yaml")
         cf = spec.resolve(config_file=non_canonical)
         assert cf.path == target.resolve()
-        assert cf.project_root == target.parent.resolve()
+        assert cf.origin == target.parent.resolve()
         assert ".." not in str(cf.path)
 
     def test_explicit_relative_path_resolves_from_cwd(
@@ -531,7 +536,7 @@ class TestResolveConfigFile:
         monkeypatch.chdir(tmp_path)
         cf = spec.resolve(config_file="./custom.yaml")
         assert cf.path == target.resolve()
-        assert cf.project_root == target.resolve().parent
+        assert cf.origin == target.resolve().parent
         assert cf.rule == 1
 
     def test_parent_relative_path_resolves_from_cwd(self, spec, tmp_path, monkeypatch):
@@ -542,7 +547,7 @@ class TestResolveConfigFile:
         monkeypatch.chdir(sub)
         cf = spec.resolve(config_file="../custom.yaml")
         assert cf.path == target.resolve()
-        assert cf.project_root == target.resolve().parent
+        assert cf.origin == target.resolve().parent
 
     def test_bare_filename_composes_with_etc_dir(self, spec, tmp_path):
         etc = tmp_path / "user_etc"
@@ -590,7 +595,7 @@ class TestResolveConfigFile:
         (tmp_path / "custom.yaml").write_text("")
         cf = spec.resolve(config_file="~/custom.yaml")
         assert cf.path == (tmp_path / "custom.yaml").resolve()
-        assert cf.project_root == tmp_path.resolve()
+        assert cf.origin == tmp_path.resolve()
 
     def test_tilde_no_slash_is_bare_filename(self, spec, monkeypatch, tmp_path):
         """``~config.yaml`` is a bare filename; ``expanduser`` would raise for ``~user``."""
@@ -607,6 +612,99 @@ class TestResolveConfigFile:
         cf = spec.resolve(config_file="./~config.yaml")
         assert cf.path == (tmp_path / "~config.yaml").resolve()
         assert cf.rule == 1
+
+
+# =============================================================================
+# Explicit origin: include boundary
+# =============================================================================
+
+
+@pytest.mark.unit
+class TestExplicitOriginBoundary:
+    """An explicit ``origin`` is the include boundary; AUTO and ``path`` keep the base's dir."""
+
+    @pytest.fixture
+    def pkg(self, bundled_base):
+        return bundled_base.parent.parent
+
+    def test_auto_origin_field_is_none(self, tmp_path, monkeypatch):
+        _module_with_base(tmp_path, "mypkg", "mypkg.yaml")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        assert ConfigSpec("ns", "mypkg").origin is None
+
+    def test_path_origin_field_is_none(self, bundled_base):
+        spec = ConfigSpec("myorg", "myapp", path=bundled_base)
+        assert spec.origin is None
+        assert spec.include_root == bundled_base.parent.resolve()
+
+    def test_explicit_origin_is_include_root(self, bundled_base, pkg):
+        spec = ConfigSpec("myorg", "myapp", origin=pkg)
+        assert spec.origin == pkg.resolve()
+        assert spec.include_root == pkg.resolve()
+        assert spec.base_config == bundled_base.resolve()
+
+    def test_file_origin_uses_its_directory(self, bundled_base, pkg):
+        marker = pkg / "__init__.py"
+        marker.write_text("")
+        assert ConfigSpec("myorg", "myapp", origin=marker).origin == pkg.resolve()
+
+    def test_missing_origin_is_taken_as_a_directory(self, tmp_path):
+        """A non-existent origin anchors on itself, never widening to its parent."""
+        missing = tmp_path / "pkg"
+        spec = ConfigSpec("myorg", "myapp", origin=missing)
+        assert spec.origin == missing.resolve()
+        assert spec.base_config == missing.resolve() / "etc" / "myapp.yaml"
+
+    def test_packaged_base_resolves_under_origin(self, bundled_base, pkg, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", "/nonexistent/home")
+        monkeypatch.setenv("XDG_CONFIG_DIRS", "/nonexistent/system")
+        cf = ConfigSpec("myorg", "myapp", origin=pkg).resolve()
+        assert cf == ConfigFile(bundled_base.resolve(), pkg.resolve(), 6)
+
+    def test_xdg_overlay_resolves_under_origin(self, pkg, monkeypatch, tmp_path):
+        xdg_home = tmp_path / "xdg"
+        (xdg_home / "myorg").mkdir(parents=True)
+        overlay = xdg_home / "myorg" / "myapp.yaml"
+        overlay.write_text("")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_home))
+        monkeypatch.delenv("XDG_CONFIG_DIRS", raising=False)
+        cf = ConfigSpec("myorg", "myapp", origin=pkg).resolve()
+        assert cf == ConfigFile(overlay, pkg.resolve(), 5)
+
+    def test_etc_dir_under_origin_widens(self, bundled_base, pkg):
+        etc = bundled_base.parent
+        cf = ConfigSpec("myorg", "myapp", origin=pkg).resolve(etc_dir=etc)
+        assert cf == ConfigFile(bundled_base.resolve(), pkg.resolve(), 3)
+
+    def test_etc_dir_outside_origin_keeps_own_root(self, pkg, tmp_path):
+        custom = tmp_path / "user_etc"
+        custom.mkdir()
+        cf = ConfigSpec("myorg", "myapp", origin=pkg).resolve(etc_dir=custom)
+        assert cf == ConfigFile(custom.resolve() / "myapp.yaml", custom.resolve(), 3)
+
+    def test_config_file_under_origin_widens(self, bundled_base, pkg):
+        alt = bundled_base.parent / "alt.yaml"
+        cf = ConfigSpec("myorg", "myapp", origin=pkg).resolve(config_file=str(alt))
+        assert cf == ConfigFile(alt.resolve(), pkg.resolve(), 1)
+
+    def test_config_file_outside_origin_keeps_own_root(self, pkg, tmp_path):
+        alt = tmp_path / "elsewhere.yaml"
+        cf = ConfigSpec("myorg", "myapp", origin=pkg).resolve(config_file=str(alt))
+        assert cf == ConfigFile(alt.resolve(), tmp_path.resolve(), 1)
+
+    def test_project_local_under_origin_widens(
+        self, tmp_path, monkeypatch, clean_xdg_env
+    ):
+        home = tmp_path / "home"
+        project = home / "project"
+        etc = project / "etc"
+        etc.mkdir(parents=True)
+        local = etc / "myapp.yaml"
+        local.write_text("")
+        _fake_home(monkeypatch, home)
+        monkeypatch.chdir(project)
+        cf = ConfigSpec("myorg", "myapp", origin=project).resolve()
+        assert cf == ConfigFile(local, project.resolve(), 4)
 
 
 # =============================================================================

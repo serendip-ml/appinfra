@@ -43,7 +43,7 @@ class IncludeContext(ErrorContext):
     """Extended context for !include directive processing."""
 
     include_chain: frozenset[Path] = frozenset()
-    project_root: Path | None = None
+    origin: Path | None = None
     max_include_depth: int = 10
     allowed_paths: frozenset[Path] = frozenset()
 

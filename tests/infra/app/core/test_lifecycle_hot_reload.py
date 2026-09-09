@@ -172,15 +172,15 @@ class TestStartHotReloadWatcher:
 
         lifecycle_manager._lifecycle_logger.error.assert_called_once()
 
-    def test_forwards_project_root_to_watcher(
+    def test_forwards_origin_to_watcher(
         self, lifecycle_manager, mock_config_with_hot_reload
     ):
-        """Test that app._project_root is passed to ConfigWatcher on create."""
+        """Test that app._origin is passed to ConfigWatcher on create."""
         from pathlib import Path
 
         lifecycle_manager._lifecycle_logger = MagicMock()
         lifecycle_manager._logger = MagicMock()
-        lifecycle_manager.application._project_root = Path("/pkg/etc")
+        lifecycle_manager.application._origin = Path("/pkg/etc")
 
         with patch("appinfra.config.ConfigWatcher") as mock_watcher_class:
             lifecycle_manager._configure_and_start_watcher(
@@ -191,16 +191,16 @@ class TestStartHotReloadWatcher:
 
         mock_watcher_class.assert_called_once()
         kwargs = mock_watcher_class.call_args.kwargs
-        assert kwargs["project_root"] == Path("/pkg/etc")
+        assert kwargs["origin"] == Path("/pkg/etc")
 
-    def test_forwards_no_project_root_when_unset(
+    def test_forwards_no_origin_when_unset(
         self, lifecycle_manager, mock_config_with_hot_reload
     ):
-        """Test that project_root defaults to None when app hasn't set it."""
+        """Test that origin defaults to None when app hasn't set it."""
         lifecycle_manager._lifecycle_logger = MagicMock()
         lifecycle_manager._logger = MagicMock()
         # MagicMock fixture returns a Mock for any attr; force None here.
-        lifecycle_manager.application._project_root = None
+        lifecycle_manager.application._origin = None
 
         with patch("appinfra.config.ConfigWatcher") as mock_watcher_class:
             lifecycle_manager._configure_and_start_watcher(
@@ -210,7 +210,7 @@ class TestStartHotReloadWatcher:
             )
 
         kwargs = mock_watcher_class.call_args.kwargs
-        assert kwargs["project_root"] is None
+        assert kwargs["origin"] is None
 
 
 @pytest.mark.unit

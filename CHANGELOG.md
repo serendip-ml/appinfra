@@ -17,6 +17,10 @@ For API stability guarantees and deprecation policy, see
   framework provides.
 
 ### Changed
+- **Breaking:** `origin` replaces `project_root` as the include-boundary argument on
+  `Config`, `Config.from_path`, `ConfigWatcher`, `SubprocessContext`, `yaml.load`,
+  `yaml.load_file`, `YAMLConfigLoader` and the `ConfigFile` field. An explicit `origin` on
+  `ConfigSpec` / `.config.with_spec()` is now also the include boundary.
 - `make check` UI: the coverage subcheck absorbs standalone suites its marker
   set covers (e.g. "Unit & E2E & Coverage tests"), runs first with `NPROC/2`
   xdist workers, and shows per-subcheck elapsed time when ≥ 5 s. Suites whose
@@ -29,6 +33,8 @@ For API stability guarantees and deprecation policy, see
   `container` vs `containers` pluralizes correctly.
 
 ### Fixed
+- `ConfigSpec(origin=...)` with a path that does not exist anchors on that path; it was
+  treated as a file and anchored on its parent.
 - `appinfra pg <verb>` on an unconfigured pgserver prints a user-facing message
   and exits 0 for idempotent verbs (`down`, `info`, `logs`), 2 for others,
   instead of leaking pg.sh's `_INFRA_PG_CONTAINER_NAME` wire-protocol guard.

@@ -731,11 +731,11 @@ class TestConfigWatcherIncludedFiles:
         finally:
             watcher.stop()
 
-    def test_project_root_enables_bundled_base_discovery(self, tmp_path, mock_logger):
-        """ConfigWatcher with project_root discovers bundled base files.
+    def test_origin_enables_bundled_base_discovery(self, tmp_path, mock_logger):
+        """ConfigWatcher with origin discovers bundled base files.
 
-        Without project_root, an overlay under a different directory cannot
-        include a bundled base (rejected as path traversal). With project_root
+        Without origin, an overlay under a different directory cannot
+        include a bundled base (rejected as path traversal). With origin
         pointing to the package install directory, the include succeeds and
         the watcher discovers both the overlay and the bundled base files.
         """
@@ -753,15 +753,15 @@ class TestConfigWatcherIncludedFiles:
         overlay = overlay_dir / "myapp.yaml"
         overlay.write_text(f'!include "{base}"\napp: overlay\n')
 
-        # Without project_root, discovery fails and falls back to overlay only
+        # Without origin, discovery fails and falls back to overlay only
         watcher_no_root = ConfigWatcher(mock_logger, etc_dir=overlay_dir)
         watcher_no_root.configure("myapp.yaml")
         files_no_root = watcher_no_root._get_source_files_from_config()
         assert files_no_root == {overlay}  # fallback — couldn't load
 
-        # With project_root, discovery succeeds and finds all source files
+        # With origin, discovery succeeds and finds all source files
         watcher_with_root = ConfigWatcher(
-            mock_logger, etc_dir=overlay_dir, project_root=pkg_root
+            mock_logger, etc_dir=overlay_dir, origin=pkg_root
         )
         watcher_with_root.configure("myapp.yaml")
         files_with_root = watcher_with_root._get_source_files_from_config()

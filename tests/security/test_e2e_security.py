@@ -20,12 +20,12 @@ def test_traversal_to_code_execution_chain(secure_temp_project: Path):
     Verify defense-in-depth prevents traversal -> YAML load -> code execution.
 
     Attack Scenario: Multi-stage attack chain
-    1. Attacker uses path traversal to load YAML file outside project root
+    1. Attacker uses path traversal to load YAML file outside origin
     2. Malicious YAML file contains code execution payload (!!python/object)
     3. Code execution payload attempts to run arbitrary commands
 
     Modules Tested:
-    - infra/yaml.py: project_root validation, SafeLoader
+    - infra/yaml.py: origin validation, SafeLoader
     - infra/app/cfg.py: Config loading with path restrictions
 
     OWASP: A01:2021 - Broken Access Control, A03:2021 - Injection
@@ -34,9 +34,9 @@ def test_traversal_to_code_execution_chain(secure_temp_project: Path):
     should prevent the attack. This test verifies that:
     - Path traversal is blocked at the include resolution layer
     - Even if traversal succeeds, SafeLoader blocks code execution
-    - Config loading respects project_root boundaries
+    - Config loading respects origin boundaries
     """
-    # Stage 1: Create a malicious YAML file outside project root
+    # Stage 1: Create a malicious YAML file outside origin
     # This simulates an attacker-controlled file
     import tempfile
 
@@ -76,16 +76,16 @@ malicious_include: !include {malicious_yaml}
             loader = Loader(
                 f,
                 current_file=config_file,
-                project_root=secure_temp_project,
+                origin=secure_temp_project,
             )
 
-            # The include should be blocked because malicious_yaml is outside project_root
+            # The include should be blocked because malicious_yaml is outside origin
             with pytest.raises(
-                yaml.YAMLError, match="outside project root|is not authorized"
+                yaml.YAMLError, match="outside origin|is not authorized"
             ):
                 loader.get_single_data()
 
-        # Stage 4: Test second defense layer - even without project_root restriction
+        # Stage 4: Test second defense layer - even without origin restriction
         # SafeLoader should block code execution
         with open(malicious_yaml) as f:
             loader_no_root = Loader(f, current_file=malicious_yaml)
@@ -223,7 +223,7 @@ def test_legitimate_config_workflow(secure_temp_project: Path):
     Security Concern: Security measures should block attacks without breaking
     normal, legitimate operations. This test ensures that:
     - Normal YAML configs load successfully
-    - Includes within project_root work
+    - Includes within origin work
     - Tool registration with valid names succeeds
     - End-to-end config -> tool registration flow works
     """
@@ -245,7 +245,7 @@ app:
   name: "Production App"
   version: "1.0.0"
 
-# Legitimate include (within project_root)
+# Legitimate include (within origin)
 database: !include database.yaml
 
 tools:
@@ -257,12 +257,12 @@ tools:
     main_config_file = secure_temp_project / "configs" / "config.yaml"
     main_config_file.write_text(main_config)
 
-    # Load config with project_root protection
+    # Load config with origin protection
     with open(main_config_file) as f:
         loader = Loader(
             f,
             current_file=main_config_file,
-            project_root=secure_temp_project,
+            origin=secure_temp_project,
         )
         data = loader.get_single_data()
 
