@@ -55,7 +55,7 @@ class _LoadContext:
     include_chain: set[Path]
     merge_strategy: str
     track_sources: bool
-    project_root: Path | None
+    origin: Path | None
     max_include_depth: int
     env_overrides: dict[str, str] | None
     allowed_paths: frozenset[Path]
@@ -129,7 +129,7 @@ def _resolve_and_validate_include(
 ) -> Path | None:
     """Resolve and validate include path. Returns None if optional and missing."""
     err_ctx = _create_document_error_context(ctx.current_file, line)
-    resolved_root = ctx.project_root.resolve() if ctx.project_root else None
+    resolved_root = ctx.origin.resolve() if ctx.origin else None
     include_path = _resolve_include_path_standalone(
         include_path_str,
         ctx.current_file,
@@ -233,7 +233,7 @@ def _parse_yaml_content(
         include_chain=ctx.include_chain,
         merge_strategy=ctx.merge_strategy,
         track_sources=ctx.track_sources,
-        project_root=ctx.project_root.resolve() if ctx.project_root else None,
+        origin=ctx.origin.resolve() if ctx.origin else None,
         max_include_depth=ctx.max_include_depth,
         env_overrides=ctx.env_overrides,
         allowed_paths=list(ctx.allowed_paths),
@@ -295,7 +295,7 @@ def load(
     current_file: Path | None = None,
     merge_strategy: str = "replace",
     track_sources: bool = False,
-    project_root: Path | None = None,
+    origin: Path | None = None,
     max_include_depth: int = 10,
     env_overrides: dict[str, str] | None = None,
     allowed_paths: list[Path | str] | None = None,
@@ -313,16 +313,16 @@ def load(
         current_file: Path to current file (for relative includes)
         merge_strategy: Strategy for merging - "replace" or "merge"
         track_sources: If True, return (data, source_map) tuple
-        project_root: Restrict includes to this directory
+        origin: Restrict includes to this directory
         max_include_depth: Max nested include depth (default: 10)
         env_overrides: Optional explicit name→value map applied during
             include-time `${var}` substitution. Callers that want env-aware
             substitution (e.g. Config) pass an explicit map; standalone callers
             leave this None and get raw YAML values only.
         allowed_paths: Optional list of specific paths that `!include*` may
-            reach even when outside `project_root`. Each entry is `~`-expanded
+            reach even when outside `origin`. Each entry is `~`-expanded
             and resolved once; each include path is compared against that set
-            before the project_root guard fires. Use for narrow user-overlay
+            before the origin guard fires. Use for narrow user-overlay
             patterns (e.g. `["~/.myapp.yaml"]`). `!path` is untouched (it
             remains a value-marshalling tag, not a load-time resource read).
     """
@@ -331,7 +331,7 @@ def load(
         include_chain=_init_include_chain(current_file, _include_chain),
         merge_strategy=merge_strategy,
         track_sources=track_sources,
-        project_root=project_root,
+        origin=origin,
         max_include_depth=max_include_depth,
         env_overrides=env_overrides,
         allowed_paths=_normalize_allowed_paths(allowed_paths),
@@ -363,7 +363,7 @@ def load_file(
     path: str | Path,
     merge_strategy: str = ...,
     track_sources: Literal[False] = ...,
-    project_root: Path | None = ...,
+    origin: Path | None = ...,
     max_include_depth: int = ...,
     optional: bool = ...,
     allowed_paths: list[Path | str] | None = ...,
@@ -375,7 +375,7 @@ def load_file(
     path: str | Path,
     merge_strategy: str = ...,
     track_sources: Literal[True] = ...,
-    project_root: Path | None = ...,
+    origin: Path | None = ...,
     max_include_depth: int = ...,
     optional: bool = ...,
     allowed_paths: list[Path | str] | None = ...,
@@ -386,7 +386,7 @@ def load_file(
     path: str | Path,
     merge_strategy: str = "replace",
     track_sources: bool = False,
-    project_root: Path | None = None,
+    origin: Path | None = None,
     max_include_depth: int = 10,
     optional: bool = False,
     allowed_paths: list[Path | str] | None = None,
@@ -401,12 +401,12 @@ def load_file(
         path: Path to YAML file
         merge_strategy: Strategy for merging - "replace" or "merge"
         track_sources: If True, return (data, source_map) tuple
-        project_root: Restrict includes to this directory
+        origin: Restrict includes to this directory
         max_include_depth: Max nested include depth (default: 10)
         optional: If True, return empty dict (or ({}, {}) with track_sources)
             when file doesn't exist instead of raising FileNotFoundError
         allowed_paths: Optional list of specific paths that `!include*` may
-            reach even when outside `project_root`. See `load()` for detail.
+            reach even when outside `origin`. See `load()` for detail.
 
     Example:
         config = load_file('etc/config.yaml')
@@ -420,7 +420,7 @@ def load_file(
                 current_file=path,
                 merge_strategy=merge_strategy,
                 track_sources=track_sources,
-                project_root=project_root,
+                origin=origin,
                 max_include_depth=max_include_depth,
                 allowed_paths=allowed_paths,
             )

@@ -877,7 +877,7 @@ class TestHelperFunctions:
         mock_config._env_prefix = "TEST_"
         mock_config._merge_strategy = "merge"
         mock_config._allowed_paths = ["~/.myapp.yaml"]
-        mock_config._project_root_override = Path("/pkg")
+        mock_config._origin_override = Path("/pkg")
 
         attrs = _preserve_config_attributes(mock_config)
 
@@ -885,7 +885,7 @@ class TestHelperFunctions:
         assert attrs["env_prefix"] == "TEST_"
         assert attrs["merge_strategy"] == "merge"
         assert attrs["allowed_paths"] == ["~/.myapp.yaml"]
-        assert attrs["project_root_override"] == Path("/pkg")
+        assert attrs["origin_override"] == Path("/pkg")
 
     def test_preserve_config_attributes_with_defaults(self):
         """Test preserving config attributes with missing attributes."""
@@ -898,7 +898,7 @@ class TestHelperFunctions:
         assert attrs["env_prefix"] == "INFRA_"
         assert attrs["merge_strategy"] == "replace"
         assert attrs["allowed_paths"] is None
-        assert attrs["project_root_override"] is None
+        assert attrs["origin_override"] is None
 
     def test_restore_config_attributes(self):
         """Test restoring config attributes."""
@@ -908,7 +908,7 @@ class TestHelperFunctions:
             "env_prefix": "CUSTOM_",
             "merge_strategy": "deep",
             "allowed_paths": ["~/.myapp.yaml"],
-            "project_root_override": Path("/pkg"),
+            "origin_override": Path("/pkg"),
         }
 
         _restore_config_attributes(mock_config, attrs)
@@ -917,7 +917,7 @@ class TestHelperFunctions:
         assert mock_config._env_prefix == "CUSTOM_"
         assert mock_config._merge_strategy == "deep"
         assert mock_config._allowed_paths == ["~/.myapp.yaml"]
-        assert mock_config._project_root_override == Path("/pkg")
+        assert mock_config._origin_override == Path("/pkg")
 
 
 # =============================================================================
@@ -1637,7 +1637,7 @@ class TestConfigAllowedPaths:
 
         import yaml as _yaml
 
-        with pytest.raises(_yaml.YAMLError, match="outside project root"):
+        with pytest.raises(_yaml.YAMLError, match="outside origin"):
             Config(str(cfg_file), enable_env_overrides=False)
 
     def test_allowlist_enables_named_overlay(self, tmp_path, monkeypatch):
@@ -1704,14 +1704,14 @@ class TestConfigAllowedPaths:
 
 
 @pytest.mark.unit
-class TestConfigProjectRootOverride:
-    """Config-level integration for the project_root override.
+class TestConfigOriginOverride:
+    """Config-level integration for the origin override.
 
     Covers the overlay-loads-bundled-base pattern from the v1 config
     protocol: a user overlay under $XDG_CONFIG_HOME `!include`s a base
     config shipped inside a package's etc/ directory, and the base's own
     sibling includes must resolve against the package install directory —
-    which the auto-derived project_root cannot reach.
+    which the auto-derived origin cannot reach.
     """
 
     def _make_bundled_base(self, tmp_path):
@@ -1731,13 +1731,13 @@ class TestConfigProjectRootOverride:
 
     def test_default_derivation_rejects_bundled_base_siblings(self, tmp_path):
         """Without an override, sibling relative includes in the base are
-        rejected — this is the failure mode `project_root` fixes."""
+        rejected — this is the failure mode `origin` fixes."""
         _, base = self._make_bundled_base(tmp_path)
         overlay = self._make_overlay(tmp_path, base)
 
         import yaml as _yaml
 
-        with pytest.raises(_yaml.YAMLError, match="outside project root"):
+        with pytest.raises(_yaml.YAMLError, match="outside origin"):
             Config(
                 str(overlay),
                 enable_env_overrides=False,
@@ -1745,7 +1745,7 @@ class TestConfigProjectRootOverride:
             )
 
     def test_override_authorizes_base_and_relative_siblings(self, tmp_path):
-        """`project_root=<pkg root>` authorizes the base's absolute include
+        """`origin=<pkg root>` authorizes the base's absolute include
         AND the base's own relative sibling includes in one call."""
         pkg_root, base = self._make_bundled_base(tmp_path)
         overlay = self._make_overlay(tmp_path, base)
@@ -1753,13 +1753,13 @@ class TestConfigProjectRootOverride:
         cfg = Config(
             str(overlay),
             enable_env_overrides=False,
-            project_root=pkg_root,
+            origin=pkg_root,
         )
         assert cfg.app == "overlay"
         assert cfg.models.model == "gpt"
 
     def test_override_wins_over_auto_derivation(self, tmp_path):
-        """When project_root is set, auto-derivation is skipped even if the
+        """When origin is set, auto-derivation is skipped even if the
         entry file has an etc/*.yaml marker ancestor."""
         pkg_root, base = self._make_bundled_base(tmp_path)
         # Overlay lives INSIDE an unrelated project root with its own etc/
@@ -1776,12 +1776,12 @@ class TestConfigProjectRootOverride:
         cfg = Config(
             str(overlay),
             enable_env_overrides=False,
-            project_root=pkg_root,
+            origin=pkg_root,
         )
         assert cfg.models.model == "gpt"
 
     def test_none_preserves_auto_derivation(self, tmp_path):
-        """`project_root=None` (the default) leaves auto-derivation in
+        """`origin=None` (the default) leaves auto-derivation in
         place — same behavior as before this parameter existed."""
         pkg_root, base = self._make_bundled_base(tmp_path)
         # Load the base directly from inside the package: auto-derivation
@@ -1797,7 +1797,7 @@ class TestConfigProjectRootOverride:
         the security boundary to cwd via `Path("").resolve()`.
         """
         pkg_root, base = self._make_bundled_base(tmp_path)
-        cfg = Config(str(base), enable_env_overrides=False, project_root="")
+        cfg = Config(str(base), enable_env_overrides=False, origin="")
         assert cfg.app == "base"
         assert cfg.models.model == "gpt"
 
@@ -1818,12 +1818,12 @@ class TestConfigProjectRootOverride:
         cfg = Config(
             str(overlay),
             enable_env_overrides=False,
-            project_root="~/pkg",
+            origin="~/pkg",
         )
         assert cfg.models.model == "gpt"
 
     def test_reload_preserves_override(self, tmp_path):
-        """Reload keeps the project_root override — same discipline as
+        """Reload keeps the origin override — same discipline as
         allowed_paths (preserved via _preserve_config_attributes)."""
         pkg_root, base = self._make_bundled_base(tmp_path)
         overlay = self._make_overlay(tmp_path, base)
@@ -1831,7 +1831,7 @@ class TestConfigProjectRootOverride:
         cfg = Config(
             str(overlay),
             enable_env_overrides=False,
-            project_root=pkg_root,
+            origin=pkg_root,
         )
         assert cfg.models.model == "gpt"
 
@@ -1876,7 +1876,7 @@ class TestConfigFromConfigFile:
         cfg = Config(ConfigFile(base, base.parent, 6))
         assert cfg.app == "bundled"
 
-    def test_config_file_supplies_project_root(self, tmp_path, clean_xdg_env):
+    def test_config_file_supplies_origin(self, tmp_path, clean_xdg_env):
         """An overlay outside the base's directory loads under the base's root."""
         base = _bundled(tmp_path)
         overlay = tmp_path / "xdg" / "myorg" / "mypkg.yaml"
@@ -1886,10 +1886,44 @@ class TestConfigFromConfigFile:
         assert cfg.app == "bundled"
         assert cfg.extra == 1
 
-    def test_rejects_project_root_alongside_config_file(self, tmp_path):
+    def test_rejects_origin_alongside_config_file(self, tmp_path):
         base = _bundled(tmp_path)
         with pytest.raises(ValueError, match="do not pass both"):
-            Config(ConfigFile(base, base.parent, 6), project_root=tmp_path)
+            Config(ConfigFile(base, base.parent, 6), origin=tmp_path)
+
+    @staticmethod
+    def _repo_with_env_include(tmp_path: Path) -> Path:
+        """A base at <repo>/etc/myapp.yaml including <repo>/.env.yaml above it."""
+        repo = tmp_path / "repo"
+        (repo / "etc").mkdir(parents=True)
+        (repo / ".env.yaml").write_text("secret: 1\n")
+        (repo / "etc" / "myapp.yaml").write_text(
+            "app: bundled\nenv: !include ../.env.yaml\n"
+        )
+        return repo
+
+    def test_explicit_origin_authorizes_include_above_etc(
+        self, tmp_path, clean_xdg_env, monkeypatch
+    ):
+        monkeypatch.setenv("XDG_CONFIG_HOME", "/nonexistent/home")
+        monkeypatch.setenv("XDG_CONFIG_DIRS", "/nonexistent/system")
+        repo = self._repo_with_env_include(tmp_path)
+        spec = ConfigSpec("myorg", "myapp", origin=repo)
+        cfg = Config(spec.resolve(), enable_env_overrides=False)
+        assert cfg.app == "bundled"
+        assert cfg.env.secret == 1
+
+    def test_base_directory_boundary_rejects_include_above_etc(
+        self, tmp_path, clean_xdg_env, monkeypatch
+    ):
+        import yaml as _yaml
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", "/nonexistent/home")
+        monkeypatch.setenv("XDG_CONFIG_DIRS", "/nonexistent/system")
+        repo = self._repo_with_env_include(tmp_path)
+        spec = ConfigSpec("myorg", "myapp", path=repo / "etc" / "myapp.yaml")
+        with pytest.raises(_yaml.YAMLError, match="outside origin"):
+            Config(spec.resolve(), enable_env_overrides=False)
 
     def test_accepts_path_object(self, tmp_path, clean_xdg_env):
         base = _bundled(tmp_path)
@@ -1981,7 +2015,7 @@ class TestConfigFactories:
         assert config.app.name == "base"
         assert base.resolve() in config.get_source_files()
         # include root comes from the resolved ConfigFile, the base's directory
-        assert config._project_root_override == base.parent.resolve()
+        assert config._origin_override == base.parent.resolve()
 
     def test_from_spec_applies_xdg_overlay(self, tmp_path, monkeypatch):
         base = self._base(tmp_path)

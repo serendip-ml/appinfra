@@ -83,9 +83,7 @@ def _preserve_config_attributes(config_instance: Any) -> dict[str, Any]:
         "env_prefix": getattr(config_instance, "_env_prefix", "INFRA_"),
         "merge_strategy": getattr(config_instance, "_merge_strategy", "replace"),
         "allowed_paths": getattr(config_instance, "_allowed_paths", None),
-        "project_root_override": getattr(
-            config_instance, "_project_root_override", None
-        ),
+        "origin_override": getattr(config_instance, "_origin_override", None),
     }
 
 
@@ -97,7 +95,7 @@ def _restore_config_attributes(
     config_instance._env_prefix = preserved_attrs["env_prefix"]
     config_instance._merge_strategy = preserved_attrs["merge_strategy"]
     config_instance._allowed_paths = preserved_attrs["allowed_paths"]
-    config_instance._project_root_override = preserved_attrs["project_root_override"]
+    config_instance._origin_override = preserved_attrs["origin_override"]
 
 
 def _check_file_size(fname_path: Any) -> None:
@@ -114,9 +112,9 @@ def _check_file_size(fname_path: Any) -> None:
 def _has_yaml_config_marker(etc_dir: Path) -> bool:
     """Return True if etc_dir contains at least one *.yaml or *.yml file.
 
-    A yaml file directly under etc/ marks the ancestor as a real project
-    root. A bare etc/ directory with no yaml children does not qualify —
-    a would-be project root that ships zero yaml is not one.
+    A yaml file directly under etc/ marks the ancestor as the origin. A
+    bare etc/ directory with no yaml children does not qualify — a
+    would-be origin that ships zero yaml is not one.
     """
     try:
         for entry in etc_dir.iterdir():
@@ -127,14 +125,14 @@ def _has_yaml_config_marker(etc_dir: Path) -> bool:
     return False
 
 
-def _get_project_root_from_config(config_path: Path) -> Path | None:
+def _get_origin_from_config(config_path: Path) -> Path | None:
     """
-    Determine project root from config file location.
+    Derive the origin from the config file's location.
 
     Searches upward from the config file's directory for a directory
     containing an 'etc' folder with at least one yaml file inside it.
     This allows appinfra to work correctly when used as a submodule,
-    where the consuming project's config defines the security boundary.
+    where the consuming project's config defines the include boundary.
 
     The walk requires the etc/ directory to contain at least one *.yaml
     or *.yml file (see _has_yaml_config_marker) and never accepts the
@@ -146,7 +144,7 @@ def _get_project_root_from_config(config_path: Path) -> Path | None:
         config_path: Resolved path to the config file being loaded
 
     Returns:
-        Path to project root, or None if not determinable
+        The origin: the qualifying ancestor, else the file's own directory
     """
     for parent in config_path.parents:
         if parent == parent.parent:
@@ -161,7 +159,7 @@ def _get_project_root_from_config(config_path: Path) -> Path | None:
 def _load_yaml_with_includes(
     fname_path: Any,
     merge_strategy: str,
-    project_root: Path | None = None,
+    origin: Path | None = None,
     env_overrides: dict[str, str] | None = None,
     allowed_paths: list[Path | str] | None = None,
 ) -> tuple[Any, dict[str, Path | None]]:
@@ -171,11 +169,11 @@ def _load_yaml_with_includes(
     Args:
         fname_path: Path to the YAML file to load
         merge_strategy: Strategy for merging includes
-        project_root: Optional project root to restrict includes (security feature)
+        origin: Optional include boundary (security feature)
         env_overrides: Optional explicit name→value map applied during
             include-time ${var} substitution (forwarded to yaml.load).
         allowed_paths: Explicit list of paths that `!include*` may reach even
-            when outside project_root (forwarded to yaml.load).
+            when outside origin (forwarded to yaml.load).
     """
     from ..yaml import load as yaml_load
 
@@ -186,7 +184,7 @@ def _load_yaml_with_includes(
                 current_file=fname_path,
                 merge_strategy=merge_strategy,
                 track_sources=True,
-                project_root=project_root,
+                origin=origin,
                 env_overrides=env_overrides,
                 allowed_paths=allowed_paths,
             )
@@ -242,7 +240,7 @@ class Config(DotDict):
         env_prefix: str = "INFRA_",
         merge_strategy: str = "replace",
         allowed_paths: list[Path | str] | None = None,
-        project_root: Path | str | None = None,
+        origin: Path | str | None = None,
     ):
         """
         Initialize configuration from a YAML file with optional environment variable overrides.
@@ -250,7 +248,7 @@ class Config(DotDict):
         Args:
             fname: Path to the YAML configuration file, or a `ConfigFile` from
                 `ConfigSpec.resolve()`. A `ConfigFile` carries its own
-                `project_root`; passing both raises `ValueError`.
+                `origin`; passing both raises `ValueError`.
             enable_env_overrides: Whether to apply environment variable overrides
             env_prefix: Prefix for environment variables (default: 'INFRA_')
             merge_strategy: Strategy for handling includes - "replace" or "merge" (default: "replace")
@@ -259,24 +257,21 @@ class Config(DotDict):
                 user overlay at `~/.myapp.yaml`) that absolute `!include*`
                 directives may reach. Each entry is `~`-expanded and resolved
                 once. Applies only to absolute / tilde-expanded includes —
-                relative includes stay bound to the effective project_root
-                (auto-derived, or overridden via the `project_root` parameter).
+                relative includes stay bound to the effective origin
+                (auto-derived, or overridden via the `origin` parameter).
                 Use for narrow, named files; avoid broad prefixes. `!path` is
                 not gated by this list — it remains a value-marshalling tag
                 whose use is the application's responsibility.
-            project_root: Optional override for the include-authorization
-                boundary. When set, this path replaces the auto-derived
-                `project_root` for every include check in the load — both
-                relative and absolute. Use when the entry file's own
-                ancestry does not reach the directory that must anchor
-                includes (typical case: a user overlay under
-                `$XDG_CONFIG_HOME` that `!include`s a base config shipped
-                inside a package's `etc/` directory, whose sibling
-                `!include './...'` directives would otherwise be rejected
-                as path traversal). A `ConfigFile` from `ConfigSpec.resolve()`
-                carries the right value; pass a wider ancestor explicitly only
-                when the base's includes reach files outside its `etc/`.
-                `~`-expanded and resolved once.
+            origin: The include boundary for this load: every `!include`
+                check, relative and absolute, is made against this
+                directory and nothing is auto-derived. Without it the
+                boundary is derived by walking the file's ancestry for an
+                `etc/*.yaml` marker, falling back to the file's own
+                directory — which cannot reach a base shipped inside a
+                package from a user overlay under `$XDG_CONFIG_HOME`, nor
+                climb above `etc/` when the base's own includes do. A
+                `ConfigFile` from `ConfigSpec.resolve()` carries its
+                origin already. `~`-expanded and resolved once.
 
         Note:
             Path resolution is handled explicitly via the !path YAML tag. Use !path for paths
@@ -284,18 +279,18 @@ class Config(DotDict):
         """
         super().__init__()  # Initialize DotDict first
         if isinstance(fname, ConfigFile):
-            if project_root is not None:
+            if origin is not None:
                 raise ValueError(
-                    "project_root is carried by the ConfigFile; do not pass both"
+                    "origin is carried by the ConfigFile; do not pass both"
                 )
-            project_root = fname.project_root
+            origin = fname.origin
             fname = fname.path
         self._enable_env_overrides = enable_env_overrides
         self._env_prefix = env_prefix
         self._merge_strategy = merge_strategy
         self._allowed_paths = allowed_paths
-        self._project_root_override = (
-            Path(str(project_root)).expanduser().resolve() if project_root else None
+        self._origin_override = (
+            Path(str(origin)).expanduser().resolve() if origin else None
         )
         self._load(str(fname))
 
@@ -308,7 +303,7 @@ class Config(DotDict):
         env_prefix: str = "INFRA_",
         merge_strategy: str = "replace",
         allowed_paths: list[Path | str] | None = None,
-        project_root: Path | str | None = None,
+        origin: Path | str | None = None,
     ) -> Self:
         """Load one YAML file by path; nothing else is consulted.
 
@@ -321,7 +316,7 @@ class Config(DotDict):
             env_prefix=env_prefix,
             merge_strategy=merge_strategy,
             allowed_paths=allowed_paths,
-            project_root=project_root,
+            origin=origin,
         )
 
     @classmethod
@@ -414,15 +409,13 @@ class Config(DotDict):
         """
         Load the YAML file with env-aware include-time substitution.
 
-        Computes the project root (security boundary) and the env-override map
-        and hands them to the YAML loader. The env map is what lets URL strings
+        Computes the origin (include boundary) and the env-override map and
+        hands them to the YAML loader. The env map is what lets URL strings
         pick up env values during include-time `${var}` substitution —
         otherwise raw YAML values get baked in before `_apply_env_overrides`
         runs and Config._resolve has nothing left to substitute.
         """
-        proj_root = self._project_root_override or _get_project_root_from_config(
-            fname_path
-        )
+        origin = self._origin_override or _get_origin_from_config(fname_path)
         env_overrides = (
             self._collect_env_overrides_for_yaml()
             if self._enable_env_overrides
@@ -431,7 +424,7 @@ class Config(DotDict):
         return _load_yaml_with_includes(
             fname_path,
             self._merge_strategy,
-            proj_root,
+            origin,
             env_overrides,
             allowed_paths=self._allowed_paths,
         )

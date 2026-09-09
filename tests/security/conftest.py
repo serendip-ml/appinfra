@@ -39,40 +39,40 @@ def secure_temp_project() -> Generator[Path, None, None]:
         Path: Root directory of temporary project
     """
     with TemporaryDirectory(prefix="infra-security-test-", dir="/tmp") as tmpdir:
-        project_root = Path(tmpdir)
-        (project_root / "configs").mkdir()
-        (project_root / "includes").mkdir()
-        (project_root / "logs").mkdir()
-        yield project_root
+        origin = Path(tmpdir)
+        (origin / "configs").mkdir()
+        (origin / "includes").mkdir()
+        (origin / "logs").mkdir()
+        yield origin
 
 
 @pytest.fixture
 def malicious_yaml_loader(secure_temp_project: Path):
     """
-    YAML loader configured for security testing with project_root protection.
+    YAML loader configured for security testing with origin protection.
 
     Args:
         secure_temp_project: Temporary project directory
 
     Returns:
-        YAMLConfigLoader: Loader instance with project_root set
+        YAMLConfigLoader: Loader instance with origin set
     """
     from appinfra.yaml import YAMLConfigLoader
 
-    return YAMLConfigLoader(project_root=secure_temp_project)
+    return YAMLConfigLoader(origin=secure_temp_project)
 
 
 @pytest.fixture
 def yaml_loader_no_root():
     """
-    YAML loader WITHOUT project_root protection (for testing vulnerabilities).
+    YAML loader WITHOUT origin protection (for testing vulnerabilities).
 
     Returns:
-        YAMLConfigLoader: Loader instance without project_root restriction
+        YAMLConfigLoader: Loader instance without origin restriction
     """
     from appinfra.yaml import YAMLConfigLoader
 
-    return YAMLConfigLoader(project_root=None)
+    return YAMLConfigLoader(origin=None)
 
 
 @pytest.fixture(params=["unix", "windows"])

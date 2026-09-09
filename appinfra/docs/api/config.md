@@ -17,7 +17,7 @@ class Config(DotDict):
         env_prefix: str = "INFRA_",
         merge_strategy: str = "replace",
         allowed_paths: list[Path | str] | None = None,
-        project_root: Path | str | None = None,
+        origin: Path | str | None = None,
     ): ...
 
     @classmethod
@@ -49,8 +49,8 @@ class Config(DotDict):
 | `enable_env_overrides` | `True` | Apply environment variable overrides |
 | `env_prefix` | `"INFRA_"` | Prefix for environment variables |
 | `merge_strategy` | `"replace"` | Strategy for handling `!include` directives: `"replace"` (included content replaces target key) or `"merge"` (deep merge with existing). Note: only `"replace"` is currently fully supported |
-| `allowed_paths` | `None` | Explicit list of specific paths (e.g. `["~/.myapp.yaml"]`) that absolute `!include*` directives may reach even when outside `project_root`. Each entry is `~`-expanded and resolved once; an include path bypasses the guard only if it resolves to an exact match. Applies to absolute / tilde-expanded includes only — relative includes stay bound to `project_root`. Use for narrow user-overlay patterns. See [YAML custom tags](utilities.md#custom-tags) for the overlay-pattern example. |
-| `project_root` | `None` | Override for the include-authorization boundary. When set, replaces the auto-derived `project_root` for every include check in the load — both relative and absolute. Auto-derivation walks the config file's ancestry for an `etc/*.yaml` marker and falls back to the file's parent directory; a user overlay under `$XDG_CONFIG_HOME` has no such marker and cannot reach a base config shipped inside a package's `etc/`. A `ConfigFile` from `ConfigSpec.resolve()` carries the right value, the base's own directory; pass a wider ancestor explicitly only when the base's includes reach files outside it. `~`-expanded and resolved once. See [Config Protocol](../guides/config-protocol.md) for the overlay pattern. |
+| `allowed_paths` | `None` | Explicit list of specific paths (e.g. `["~/.myapp.yaml"]`) that absolute `!include*` directives may reach even when outside `origin`. Each entry is `~`-expanded and resolved once; an include path bypasses the guard only if it resolves to an exact match. Applies to absolute / tilde-expanded includes only — relative includes stay bound to `origin`. Use for narrow user-overlay patterns. See [YAML custom tags](utilities.md#custom-tags) for the overlay-pattern example. |
+| `origin` | `None` | The include boundary for the load: every `!include` check, relative and absolute, is made against this directory and nothing is auto-derived. Without it the boundary is derived by walking the config file's ancestry for an `etc/*.yaml` marker, falling back to the file's parent directory — a user overlay under `$XDG_CONFIG_HOME` has no such marker and cannot reach a base config shipped inside a package's `etc/`, and a base whose own includes climb above `etc/` needs the wider directory. A `ConfigFile` from `ConfigSpec.resolve()` carries its origin already. `~`-expanded and resolved once. See [Config Protocol](../guides/config-protocol.md) for the overlay pattern. |
 
 **Constructors:**
 
@@ -62,8 +62,8 @@ class Config(DotDict):
   that parses those builds the spec and passes `resolve(...)` to the constructor.
 - `Config(fname | ConfigFile, ...)`: the low-level entry, used by the App and by the flags case.
 
-`**options` are the constructor's keyword parameters; `from_spec` omits `project_root`, which
-the resolved file carries.
+`**options` are the constructor's keyword parameters other than `origin`; on `from_spec`,
+`origin` is the `ConfigSpec` anchor, and the resolved file carries the boundary.
 
 **Basic Usage:**
 
@@ -202,6 +202,7 @@ class ConfigSpec:
     name: str
     etc_dir: str
     base_config: Path
+    origin: Path | None
     include_root: Path
 
     def resolve(self, *, etc_dir=None, config_file=None) -> ConfigFile: ...
@@ -212,7 +213,7 @@ class ConfigSpec:
 @dataclass(frozen=True)
 class ConfigFile:
     path: Path
-    project_root: Path
+    origin: Path
     rule: int
 ```
 
@@ -229,7 +230,7 @@ ConfigSpec("myorg", "myapp")  # <myapp module dir>/etc/myapp.yaml
 
 | Keyword    | Decides                                                        | Default                      |
 |------------|----------------------------------------------------------------|------------------------------|
-| `origin`   | the anchor: a file's directory (`__file__`) or a directory     | `AUTO`, see below            |
+| `origin`   | the anchor: a file's directory (`__file__`) or a directory; when explicit, also the include boundary | `AUTO`, see below |
 | `etc_dir`  | directory under the anchor; `""` for the anchor itself; an absolute path stands alone | `"etc"` |
 | `filename` | the file inside it                                             | `<name>.yaml`                |
 | `path`     | the file outright; excludes the other three                    | none                         |
@@ -239,6 +240,18 @@ wins: the directory of the module named after the config (`"-"` mapped to `"_"`,
 `importlib.util.find_spec` without importing it), then the directory of the calling script.
 Neither existing raises `ValueError` naming both. Explicit `origin` and `path` never probe.
 `origin=None` is a `TypeError`; the absent value is `AUTO`.
+
+An explicit `origin` is also the include boundary: `!include` directives in the base, and in
+any resolved file that lives under the origin, may reach anything beneath it. A base whose
+includes climb out of its own directory declares that shape this way:
+
+```python
+# <repo>/etc/myapp.yaml has `!include '../.env.yaml'`:
+# base <repo>/etc/myapp.yaml, boundary <repo>
+spec = ConfigSpec("myorg", "myapp", origin=REPO_ROOT)
+```
+
+Left `AUTO`, the boundary is the base's own directory, and `spec.origin` is `None`.
 
 **Resolution** (see [rule
 6](../guides/config-protocol.md#6---config-and---etc-dir-are-user-authoritative)).
@@ -253,8 +266,12 @@ this run and returns the first tier that applies:
    surfaces at `Config(...)` load time as a `FileNotFoundError`.
 4. Project-local: walk up from cwd for `<spec etc_dir>/<base filename>`; first hit; root is that
    directory. Stops before `$HOME` and before the filesystem root.
-5. First existing XDG candidate; root is `include_root`, the base's directory.
+5. First existing XDG candidate; root is `include_root`: the explicit `origin`, else the
+   base's directory.
 6. The packaged base; root is `include_root`.
+
+With an explicit `origin`, a file chosen by tiers 1-4 that lives under it takes the origin as
+its root instead of its own directory; a file outside the origin keeps the tier's root.
 
 `ConfigFile.rule` records which tier won. `xdg_candidates()` enumerates tier 5 in load order
 (`<namespace>/<name>.yaml` then `<namespace>/config.yaml` under `$XDG_CONFIG_HOME`, then each
@@ -284,10 +301,10 @@ def load_user_config(
     return Config(SPEC.resolve(etc_dir=etc_dir, config_file=config_file))
 ```
 
-A `ConfigFile` carries its own `project_root`; passing `project_root=` alongside it raises.
+A `ConfigFile` carries its own `origin`; passing `origin=` alongside it raises.
 For applications built on `AppBuilder`, declare the same spec through the
 [config block](#appbuilderconfig); the App resolves it on every parse and wires
-`ConfigWatcher` with the same `project_root`.
+`ConfigWatcher` with the same `origin`.
 
 ## Config Reload
 
@@ -471,7 +488,7 @@ from appinfra.config import MAX_CONFIG_SIZE_BYTES  # security size limit
 
 The config-source block. It declares the [`ConfigSpec`](#config-spec) the App resolves at
 setup, the programmatic layer above the loaded file, and whether the resolved file is watched
-for hot reload. `ConfigWatcher` is wired with the resolved `project_root`, so reloads use the
+for hot reload. `ConfigWatcher` is wired with the resolved `origin`, so reloads use the
 initial-load boundary.
 
 | Method                                   | Effect                                                                 |

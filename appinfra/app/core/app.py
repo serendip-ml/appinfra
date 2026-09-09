@@ -95,7 +95,7 @@ class App(Traceable):
         self._config_source: ConfigFile | None = None
         # Include-authorization root for the loaded config; forwarded to
         # ConfigWatcher so reloads use the same boundary as the initial load.
-        self._project_root: Path | None = None
+        self._origin: Path | None = None
 
     @property
     def config_watcher(self) -> ConfigWatcher | None:
@@ -442,7 +442,7 @@ class App(Traceable):
 
         See ``ConfigSpec.resolve``. Populates ``self.config``,
         ``self._config_source``, ``self._etc_dir``, ``self._config_file`` and
-        ``self._project_root`` (forwarded to ``ConfigWatcher`` on hot-reload
+        ``self._origin`` (forwarded to ``ConfigWatcher`` on hot-reload
         so the reload boundary matches the initial load).
         """
         spec = self._config_spec
@@ -461,7 +461,7 @@ class App(Traceable):
         self._config_source = source
         self._etc_dir = str(source.path.parent)
         self._config_file = source.path.name
-        self._project_root = source.project_root
+        self._origin = source.origin
         return {
             "etc_dir": self._etc_dir,
             "files": [{"path": str(source.path), "name": source.path.name}],
@@ -714,7 +714,7 @@ class App(Traceable):
             lg=lg,
             config_files=[str(config_path)] if config_path else [],
             handle_signals=handle_signals,
-            project_root=self._project_root,
+            origin=self._origin,
         )
 
     def create_config_watcher(self) -> ConfigWatcher | None:
@@ -745,7 +745,7 @@ class App(Traceable):
         watcher = ConfigWatcher(
             lg=type_cast(Logger, self.lg),
             etc_dir=source.path.parent,
-            project_root=self._project_root,
+            origin=self._origin,
         )
         watcher.add_config_file(source.path)
         return watcher

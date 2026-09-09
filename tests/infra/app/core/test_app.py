@@ -1104,7 +1104,7 @@ class TestSubprocessContextMethod:
         # Clean up
         ctx._lg.handlers.clear()
 
-    def test_subprocess_context_forwards_project_root(self, tmp_path):
+    def test_subprocess_context_forwards_origin(self, tmp_path):
         """Test that subprocess_context() forwards the resolved include root."""
         from appinfra.config import ConfigFile
 
@@ -1112,11 +1112,11 @@ class TestSubprocessContextMethod:
         app = App()
         app.config = DotDict(logging=DotDict(level="info", location=0))
         app._config_source = ConfigFile(etc / "config.yaml", etc, rule=6)
-        app._project_root = etc
+        app._origin = etc
 
         ctx = app.subprocess_context()
 
-        assert ctx._project_root == etc.resolve()
+        assert ctx._origin == etc.resolve()
         # Clean up
         ctx._lg.handlers.clear()
 
@@ -1167,7 +1167,7 @@ class TestCreateConfigWatcherMethod:
         path.parent.mkdir()
         path.write_text("logging:\n  level: info\n")
         app._config_source = ConfigFile(path, path.parent, rule=6)
-        app._project_root = path.parent
+        app._origin = path.parent
         return path
 
     def test_create_config_watcher_returns_watcher_when_configured(self, tmp_path):
@@ -1350,7 +1350,7 @@ class TestConfigSpecLoading:
         assert app.config.api.port == 12345
         assert app._etc_dir == str(custom.resolve())
         assert app._config_file == "myapp.yaml"
-        assert app._project_root == custom.resolve()
+        assert app._origin == custom.resolve()
         assert result["etc_dir"] == str(custom.resolve())
         assert app.config_spec is spec
         assert app.config_path == custom.resolve() / "myapp.yaml"
@@ -1379,7 +1379,7 @@ class TestConfigSpecLoading:
 
         assert app.config.origin == "overlay"
         assert app._config_file == "myapp.yaml"
-        assert app._project_root == spec.base_config.parent.resolve()
+        assert app._origin == spec.base_config.parent.resolve()
 
     def test_bundled_base_when_no_custom_and_no_overlay(self, monkeypatch, tmp_path):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "nonexistent"))
@@ -1393,7 +1393,7 @@ class TestConfigSpecLoading:
         app._load_config_spec()
 
         assert app.config.origin == "bundled"
-        assert app._project_root == spec.base_config.parent.resolve()
+        assert app._origin == spec.base_config.parent.resolve()
 
     def test_custom_wins_over_xdg_overlay(self, monkeypatch, tmp_path):
         """Explicit --etc-dir must not be shadowed by an existing overlay."""
@@ -1435,7 +1435,7 @@ class TestConfigSpecLoading:
 
         assert app.config.origin == "cli-config"
         assert app.config.api.port == 55555
-        assert app._project_root == target.parent.resolve()
+        assert app._origin == target.parent.resolve()
 
     def test_custom_config_bare_filename_composes_with_etc_dir(
         self, monkeypatch, tmp_path
@@ -1473,7 +1473,7 @@ class TestConfigSpecLoading:
         app._load_config_spec()
 
         assert app.config.origin == "cli-absolute"
-        assert app._project_root == target.parent.resolve()
+        assert app._origin == target.parent.resolve()
 
     def test_load_and_merge_config_uses_spec(self, monkeypatch, tmp_path):
         """With a spec set, _load_and_merge_config loads the resolved file

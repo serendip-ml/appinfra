@@ -17,7 +17,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import FrameType
 
@@ -40,14 +40,14 @@ class ConfigFile:
 
     Attributes:
         path: the file to load.
-        project_root: include-authorization root for ``!include`` directives
-            inside ``path``.
+        origin: include boundary for ``!include`` directives inside
+            ``path``; includes cannot reach beyond it.
         rule: which precedence rule chose ``path`` (1-6, see
             ``ConfigSpec.resolve``). Diagnostic only.
     """
 
     path: Path
-    project_root: Path
+    origin: Path
     rule: int
 
 
@@ -72,6 +72,13 @@ class ConfigSpec:
     absolute directory; ``filename`` names the file. ``path`` names the
     file outright and excludes the other three.
 
+    An explicit ``origin`` is also the include boundary: ``!include``
+    directives in the base, and in any resolved file that lives under the
+    origin, may reach anything beneath it. This is how a base whose
+    includes climb out of its own directory (``!include '../.env.yaml'``)
+    declares that shape. Left ``AUTO``, the boundary is the base's own
+    directory.
+
     Attributes:
         namespace: XDG namespace (e.g. ``"llm-works"``).
         name: the config's name (e.g. ``"my-app"``): the base filename
@@ -79,6 +86,8 @@ class ConfigSpec:
             ``--etc-dir`` looks for. For a package, its package name.
         etc_dir: the declared etc directory, as given.
         base_config: absolute path to the packaged base config.
+        origin: the explicit origin directory, or ``None`` when the base
+            was located automatically or named by ``path``.
 
     Example::
 
@@ -90,6 +99,7 @@ class ConfigSpec:
     name: str
     etc_dir: str
     base_config: Path
+    origin: Path | None
 
     def __init__(
         self,
@@ -104,6 +114,7 @@ class ConfigSpec:
         _check_identity(namespace, name)
         if origin is None or filename is None:
             raise TypeError("origin and filename take a value or AUTO, not None")
+        origin_dir: Path | None = None
         if path is not None:
             if origin is not AUTO or filename is not AUTO or etc_dir != "etc":
                 raise ValueError("path excludes origin, etc_dir and filename")
@@ -113,20 +124,24 @@ class ConfigSpec:
             if isinstance(origin, Auto):
                 base = _locate_base(name, etc_dir, fname)
             else:
-                base = _origin_dir(origin) / etc_dir / fname
+                origin_dir = _origin_dir(origin)
+                base = origin_dir / etc_dir / fname
         object.__setattr__(self, "namespace", namespace)
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "etc_dir", etc_dir)
         object.__setattr__(self, "base_config", base)
+        object.__setattr__(self, "origin", origin_dir)
 
     @property
     def include_root(self) -> Path:
-        """Include-authorization root for the packaged base: its directory.
+        """Include boundary for the packaged base.
 
-        The tightest boundary that authorizes both an overlay's absolute
-        ``!include <base>`` and the base's own relative sibling includes.
+        The explicit origin when one was declared; otherwise the base's own
+        directory, the tightest boundary that authorizes both an overlay's
+        absolute ``!include <base>`` and the base's relative sibling
+        includes.
         """
-        return self.base_config.parent
+        return self.origin if self.origin is not None else self.base_config.parent
 
     def xdg_candidates(self) -> list[Path]:
         """Enumerate user-override candidates in XDG load order.
@@ -198,19 +213,29 @@ class ConfigSpec:
         ``config_file`` bypasses everything below it. Existence is probed
         only on tiers 4 and 5; direct paths are trusted and ``Config`` raises
         ``FileNotFoundError`` at load time if they do not exist.
+
+        With an explicit ``origin`` on the spec, a file chosen by rules 1-4
+        that lives under the origin takes the origin as its root instead of
+        its own directory; a file outside the origin keeps the rule's root.
         """
         if config_file is not None:
-            return _resolve_custom_config(config_file, etc_dir)
+            return self._widen(_resolve_custom_config(config_file, etc_dir))
         if etc_dir is not None:
             etc = Path(str(etc_dir)).expanduser().resolve()
-            return ConfigFile(etc / self.base_config.name, etc, rule=3)
+            return self._widen(ConfigFile(etc / self.base_config.name, etc, rule=3))
         local = self.project_local()
         if local is not None:
-            return ConfigFile(local, local.parent, rule=4)
+            return self._widen(ConfigFile(local, local.parent, rule=4))
         for candidate in self.xdg_candidates():
             if candidate.exists():
                 return ConfigFile(candidate, self.include_root, rule=5)
         return ConfigFile(self.base_config, self.include_root, rule=6)
+
+    def _widen(self, located: ConfigFile) -> ConfigFile:
+        """Replace the root with the explicit origin for a file under it."""
+        if self.origin is None or not located.path.is_relative_to(self.origin):
+            return located
+        return replace(located, origin=self.origin)
 
 
 def _check_identity(namespace: object, name: object) -> None:
@@ -273,9 +298,14 @@ def _caller_dir() -> Path | None:
 
 
 def _origin_dir(origin: str | Path) -> Path:
-    """Anchor directory for an explicit origin: the directory itself, or a file's parent."""
+    """Anchor directory for an explicit origin: a file's parent, otherwise the path itself.
+
+    A path that does not exist is taken as a directory, never as a file:
+    the origin is also the include boundary, and a typo must not widen it
+    to the parent.
+    """
     resolved = Path(str(origin)).expanduser().resolve()
-    return resolved if resolved.is_dir() else resolved.parent
+    return resolved.parent if resolved.is_file() else resolved
 
 
 def _resolve_custom_config(config_file: str, etc_dir: str | Path | None) -> ConfigFile:

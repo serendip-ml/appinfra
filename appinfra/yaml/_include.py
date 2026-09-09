@@ -91,7 +91,7 @@ def _resolve_include_path_standalone(
     Resolve include path to absolute path (standalone version for preprocessing).
 
     Tilde is expanded unconditionally (parity with !path). The expanded
-    path still has to satisfy the project_root guard or match an entry in
+    path still has to satisfy the origin guard or match an entry in
     `allowed_paths` — expansion is UX, not authorization.
 
     Args:
@@ -161,28 +161,28 @@ def _check_file_exists(
         raise yaml.YAMLError(f"Include file not found: {include_path}{location}")
 
 
-def _check_project_root(
+def _check_origin(
     include_path: Path,
-    project_root: Path | None,
+    origin: Path | None,
     ctx: ErrorContext | None = None,
     allowed_paths: frozenset[Path] = frozenset(),
 ) -> None:
-    """Raise error if path is outside project root.
+    """Raise error if path is outside origin.
 
     Paths listed in `allowed_paths` bypass the guard — an explicit,
     per-path opt-in for narrow overlay use cases.
     """
-    if project_root is None:
+    if origin is None:
         return
     if include_path in allowed_paths:
         return
     try:
-        include_path.relative_to(project_root)
+        include_path.relative_to(origin)
     except (ValueError, TypeError) as e:
         location = f" ({ctx.format_location()})" if ctx else ""
         msg = (
-            f"Security: Include path '{include_path}' is outside project root "
-            f"'{project_root}'. This could be a path traversal attack.{location}"
+            f"Security: Include path '{include_path}' is outside origin "
+            f"'{origin}'. This could be a path traversal attack.{location}"
         )
         raise yaml.YAMLError(msg) from e
 
@@ -190,7 +190,7 @@ def _check_project_root(
 def _validate_include_standalone(
     include_path: Path,
     include_chain: set[Path],
-    project_root: Path | None,
+    origin: Path | None,
     max_include_depth: int,
     ctx: ErrorContext | None = None,
     optional: bool = False,
@@ -202,11 +202,11 @@ def _validate_include_standalone(
     Args:
         include_path: Path to validate
         include_chain: Set of files already in the include chain
-        project_root: Optional project root to restrict includes
+        origin: Optional include boundary
         max_include_depth: Maximum allowed include depth
         ctx: Error context for location info
         optional: If True, missing files return False instead of raising
-        allowed_paths: Resolved set of paths that bypass the project_root
+        allowed_paths: Resolved set of paths that bypass the origin
             guard.
 
     Returns:
@@ -217,7 +217,7 @@ def _validate_include_standalone(
     """
     _check_circular_include(include_path, include_chain, ctx)
     _check_include_depth(include_path, include_chain, max_include_depth, ctx)
-    _check_project_root(include_path, project_root, ctx, allowed_paths=allowed_paths)
+    _check_origin(include_path, origin, ctx, allowed_paths=allowed_paths)
     if optional and not _file_exists(include_path):
         return False
     if not optional:

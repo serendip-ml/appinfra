@@ -58,7 +58,7 @@ class ConfigWatcher:
         self,
         lg: Logger,
         etc_dir: str | Path,
-        project_root: Path | str | None = None,
+        origin: Path | str | None = None,
     ) -> None:
         """
         Initialize the watcher.
@@ -66,15 +66,13 @@ class ConfigWatcher:
         Args:
             lg: Logger for watcher's own logging (debug messages, errors, etc.)
             etc_dir: Base directory for config files (from --etc-dir)
-            project_root: Optional override for include-authorization boundary,
+            origin: Optional override for include-authorization boundary,
                 forwarded to Config() on every load/reload. Required when the
                 watched config is a user overlay that includes a bundled base.
         """
         self._lg = lg
         self._etc_dir = Path(etc_dir).resolve()
-        self._project_root = (
-            Path(str(project_root)).expanduser().resolve() if project_root else None
-        )
+        self._origin = Path(str(origin)).expanduser().resolve() if origin else None
         self._observer: Any = None  # watchdog Observer
         self._config_paths: list[
             Path
@@ -205,7 +203,7 @@ class ConfigWatcher:
             try:
                 from .config import Config
 
-                config = Config(str(config_path), project_root=self._project_root)
+                config = Config(str(config_path), origin=self._origin)
                 all_files.update(config.get_source_files())
             except Exception:
                 # Fall back to just this config file
@@ -401,7 +399,7 @@ class ConfigWatcher:
 
         for config_path in self._config_paths:
             try:
-                config = Config(str(config_path), project_root=self._project_root)
+                config = Config(str(config_path), origin=self._origin)
                 config_dict = config.dict()
                 if merged_dict is None:
                     merged_dict = config_dict
