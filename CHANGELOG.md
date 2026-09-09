@@ -10,6 +10,8 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-09-08
+
 ### Added
 - `appinfra.ui.status` (Python) and `appinfra/scripts/_ui.sh` (bash): shared
   status primitives — one color palette and five status marks (pending, running,
@@ -28,6 +30,8 @@ For API stability guarantees and deprecation policy, see
 - `make check` pytest lanes now run with `--dist=worksteal`, and the coverage
   subcheck sets `COVERAGE_CORE=sysmon` on Python 3.12+ for a lower-overhead
   tracer.
+- Minimum versions bumped: `coverage>=7.4.0` (required for `COVERAGE_CORE=sysmon`)
+  and `pytest-xdist>=3.2.0` (required for `--dist=worksteal`).
 - `appinfra pg up/down` output: honest headers ("Starting pgserver 'X' (mode,
   port N)" / "Stopping pgserver 'X' (mode)" / "already up|down — verifying");
   `container` vs `containers` pluralizes correctly.
@@ -981,7 +985,8 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/llm-works/appinfra/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/llm-works/appinfra/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/llm-works/appinfra/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/llm-works/appinfra/compare/v0.10.5...v0.11.0
 [0.10.5]: https://github.com/llm-works/appinfra/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/llm-works/appinfra/compare/v0.10.3...v0.10.4
