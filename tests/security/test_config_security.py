@@ -305,8 +305,8 @@ paths:
     resolved_path_str = config.paths.data_dir
     resolved_path = Path(resolved_path_str)
 
-    # If resolution succeeded, verify it's within project boundaries
-    # (The YAML loader's origin enforcement should prevent escapes)
+    # If resolution succeeded, verify the path is absolute
+    # (!path is value resolution only; origin enforcement applies to !include*)
     if resolved_path.exists():
         # If path exists and was resolved, it should be safe
         # The yaml loader should have blocked dangerous includes
@@ -325,8 +325,8 @@ def test_config_path_symlink_attack(secure_temp_project: Path):
     OWASP: A01:2021 - Broken Access Control
 
     Security Concern: Symlinks can point outside the project directory.
-    The .resolve() call should detect this, and combined with YAML loader's
-    origin enforcement, should prevent access to sensitive files.
+    The .resolve() call canonicalizes the path; !path is value-only (no
+    origin enforcement — that applies to !include* resource reads).
     """
     # Create a symlink pointing outside project (to /etc/passwd or similar)
     target_path = Path("/etc/passwd")
@@ -356,10 +356,9 @@ paths:
     # The path will be resolved via !path tag
     resolved = Path(config.paths.dangerous)
 
-    # Verify the resolved path
-    # If it points outside origin, that's a security issue
-    # However, the actual enforcement is in yaml.py for includes
-    # This test documents the behavior for !path tag resolution
+    # Verify the resolved path — !path resolves and canonicalizes but does
+    # not enforce origin boundaries (that's !include*'s job). This test
+    # documents !path behavior: it yields an absolute, resolved path.
 
     # For this test, we verify that .resolve() is being called
     # (which is the basis for security checks elsewhere)
