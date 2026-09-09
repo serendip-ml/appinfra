@@ -18,10 +18,10 @@ The version module provides tools to:
 ```bash
 # Show version with commit hash
 appinfra version
-# Output: appinfra 0.1.0 (abc123f)
+# Output: appinfra X.Y.Z (abc123f)
 
 # Extract specific fields
-appinfra version semver    # 0.1.0
+appinfra version semver    # X.Y.Z
 appinfra version commit    # abc123f
 appinfra version full      # abc123def456789...
 appinfra version modified  # true/false/unknown

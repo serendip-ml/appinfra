@@ -393,12 +393,12 @@ class TestSubprocessContextUnit:
                 lg.handlers.clear()
 
     @pytest.mark.usefixtures("clean_env")
-    def test_project_root_forwarded_to_watcher(self, tmp_path):
+    def test_origin_forwarded_to_watcher(self, tmp_path):
         """Reload honors the include boundary the parent app resolved.
 
         An overlay outside the packaged etc dir that includes the packaged
         base (the XDG tier) reloads only when the watcher gets the parent's
-        project_root. Without it, the walk-up from the overlay's own location
+        origin. Without it, the walk-up from the overlay's own location
         picks a root that rejects the include.
         """
         pytest.importorskip("watchdog")
@@ -420,13 +420,11 @@ class TestSubprocessContextUnit:
         config = LogConfig.from_params(level="info", location=0)
         lg = LoggerFactory.create_root(config)
         try:
-            ctx = SubprocessContext(
-                lg=lg, config_files=[str(overlay)], project_root=etc
-            )
+            ctx = SubprocessContext(lg=lg, config_files=[str(overlay)], origin=etc)
             ctx._start_config_watcher()
             assert ctx._watcher is not None
             try:
-                assert ctx._watcher._project_root == etc.resolve()
+                assert ctx._watcher._origin == etc.resolve()
                 merged, _ = ctx._watcher._load_and_merge_configs()
                 assert merged == {"logging": {"level": "info"}}
             finally:
@@ -436,7 +434,7 @@ class TestSubprocessContextUnit:
             bare._start_config_watcher()
             assert bare._watcher is not None
             try:
-                with pytest.raises(yaml.YAMLError, match="outside project root"):
+                with pytest.raises(yaml.YAMLError, match="outside origin"):
                     bare._watcher._load_and_merge_configs()
             finally:
                 bare._watcher.stop()

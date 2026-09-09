@@ -10,6 +10,49 @@ For API stability guarantees and deprecation policy, see
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-09-08
+
+### Added
+- `appinfra.ui.status` (Python) and `appinfra/scripts/_ui.sh` (bash): shared
+  status primitives — one color palette and five status marks (pending, running,
+  ok, warn, fail) so terminal output reads consistently across every tool the
+  framework provides.
+
+### Changed
+- **Breaking:** `origin` replaces `project_root` as the include-boundary argument on
+  `Config`, `Config.from_path`, `ConfigWatcher`, `SubprocessContext`, `yaml.load`,
+  `yaml.load_file`, `YAMLConfigLoader` and the `ConfigFile` field. An explicit `origin` on
+  `ConfigSpec` / `.config.with_spec()` is now also the include boundary.
+- `make check` UI: the coverage subcheck absorbs standalone suites its marker
+  set covers (e.g. "Unit & E2E & Coverage tests"), runs first with `NPROC/2`
+  xdist workers, and shows per-subcheck elapsed time when ≥ 5 s. Suites whose
+  marker set declares no tests skip pytest entirely and land at `[ ] (no tests)`.
+- `make check` pytest lanes now run with `--dist=worksteal`, and the coverage
+  subcheck sets `COVERAGE_CORE=sysmon` on Python 3.12+ for a lower-overhead
+  tracer.
+- Minimum versions bumped: `coverage>=7.4.0` (required for `COVERAGE_CORE=sysmon`)
+  and `pytest-xdist>=3.2.0` (required for `--dist=worksteal`).
+- `appinfra pg up/down` output: honest headers ("Starting pgserver 'X' (mode,
+  port N)" / "Stopping pgserver 'X' (mode)" / "already up|down — verifying");
+  `container` vs `containers` pluralizes correctly.
+
+### Fixed
+- `ConfigSpec(origin=...)` with a path that does not exist anchors on that path; it was
+  treated as a file and anchored on its parent.
+- `appinfra pg <verb>` on an unconfigured pgserver prints a user-facing message
+  and exits 0 for idempotent verbs (`down`, `info`, `logs`), 2 for others,
+  instead of leaking pg.sh's `_INFRA_PG_CONTAINER_NAME` wire-protocol guard.
+- `SchemaManager` sets `search_path` on every connection checkout (was on
+  `connect` only), so a session reusing a pooled connection whose
+  `search_path` was overwritten between uses can no longer end up querying the
+  wrong schema.
+- `appinfra pg` under podman prefers the `podman-compose` binary when on
+  `PATH`, skipping the `podman compose` shim's "Executing external compose
+  provider" banner.
+- `appinfra pg down` on an already-stopped cluster no longer surfaces podman's
+  benign "no such container/pod" errors; only that specific message shape is
+  filtered, other stderr passes through.
+
 ## [0.11.0] - 2026-09-07
 
 ### Added
@@ -942,7 +985,8 @@ as config. Affected: `ConfigValidator`, `PG.readonly`, `PG.migrate()`,
 ### Changed
 - Package renamed to `appinfra` (install and import both use `appinfra`)
 
-[Unreleased]: https://github.com/llm-works/appinfra/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/llm-works/appinfra/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/llm-works/appinfra/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/llm-works/appinfra/compare/v0.10.5...v0.11.0
 [0.10.5]: https://github.com/llm-works/appinfra/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/llm-works/appinfra/compare/v0.10.3...v0.10.4

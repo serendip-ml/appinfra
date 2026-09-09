@@ -76,18 +76,18 @@ with open("config.yaml") as f:
 
 #### Path Traversal Protection
 - Validates all `!include` paths
-- Restricts includes to project root
+- Restricts includes to the origin directory
 - Prevents `../../../etc/passwd` attacks
 
 ```python
-# Automatic protection when using project_root
+# Automatic protection when using origin
 from appinfra.yaml import Loader
 from pathlib import Path
 
 loader = Loader(
     stream,
     current_file=config_file,
-    project_root=Path.cwd(),  # Restricts includes to current directory and below
+    origin=Path.cwd(),  # Restricts includes to current directory and below
 )
 ```
 
@@ -283,7 +283,7 @@ chmod 600 etc/config.yaml
 chmod 600 etc/credentials.json
 ```
 
-#### 3. Validate Includes with project_root
+#### 3. Validate Includes with origin
 
 ```python
 from pathlib import Path
@@ -294,7 +294,7 @@ with open("/app/config/config.yaml") as f:
     config = load(
         f,
         current_file=Path("/app/config/config.yaml"),
-        project_root=Path("/app/config"),
+        origin=Path("/app/config"),
     )
 
 # ❌ RISKY - No path restrictions (and relative !include/!path won't resolve)
@@ -492,7 +492,7 @@ Use this checklist when deploying applications:
 - [ ] Enable TLS/SSL for database connections
 - [ ] Set appropriate resource limits (connection pools, timeouts)
 - [ ] Validate all user-provided regex patterns with `safe_compile()`
-- [ ] Use `project_root` parameter for YAML includes
+- [ ] Use `origin` parameter for YAML includes
 - [ ] Review logging configuration (no sensitive data in logs)
 
 ### Deployment
@@ -546,7 +546,7 @@ logger.info(f"User login: {user_input}")  # Can inject newlines
 
 **Mitigation:**
 ```python
-# ✅ GOOD - Restrict to project root
+# ✅ GOOD - Restrict to the origin directory
 from pathlib import Path
 from appinfra.yaml import load
 
@@ -554,7 +554,7 @@ with open("/app/config/config.yaml") as f:
     config = load(
         f,
         current_file=Path("/app/config/config.yaml"),
-        project_root=Path("/app/config"),
+        origin=Path("/app/config"),
     )
 
 # ❌ RISKY - No restrictions (and relative !include/!path won't resolve)
@@ -674,8 +674,3 @@ For security-related questions or concerns:
 - **Security Issues:** Use GitHub's private vulnerability reporting (Security tab → Report a vulnerability)
 - **General Questions:** GitHub Discussions (public)
 - **Documentation:** See docs/ directory
-
----
-
-**Last Updated:** 2025-11-27
-**Version:** 0.1.0

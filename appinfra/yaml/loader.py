@@ -218,7 +218,7 @@ class Loader(yaml.SafeLoader):
         include_chain: set[Path] | None = None,
         merge_strategy: str = "replace",
         track_sources: bool = False,
-        project_root: Path | None = None,
+        origin: Path | None = None,
         max_include_depth: int = 10,
         env_overrides: dict[str, str] | None = None,
         allowed_paths: list[Path | str] | None = None,
@@ -232,10 +232,10 @@ class Loader(yaml.SafeLoader):
             include_chain: Set of files in the current include chain (for circular detection)
             merge_strategy: Strategy for merging includes - "replace" or "merge"
             track_sources: If True, track source file for each value (for path resolution)
-            project_root: Optional project root path. Relative `!include*`
-                paths are bounded to this directory; absolute (or tilde-
-                expanded) `!include*` paths are permitted only when they
-                resolve inside it (or match `allowed_paths` below).
+            origin: Optional include boundary. Relative `!include*` paths
+                are bounded to this directory; absolute (or tilde-expanded)
+                `!include*` paths are permitted only when they resolve
+                inside it (or match `allowed_paths` below).
             max_include_depth: Maximum allowed depth for nested includes (default: 10)
             env_overrides: Optional explicit name→value map applied during
                 include-time `${var}` substitution. Used by Config to inject
@@ -245,9 +245,9 @@ class Loader(yaml.SafeLoader):
                 `!include*` may reach. Each entry is expanded (~) and
                 resolved once at loader init. Applies only to absolute /
                 tilde-expanded includes — relative includes stay bound to
-                `project_root`. Use for narrow user-overlay patterns (e.g.
+                `origin`. Use for narrow user-overlay patterns (e.g.
                 `["~/.myapp.yaml"]`). Absolute includes that are neither in
-                this list nor inside `project_root` are denied. `!path` is
+                this list nor inside `origin` are denied. `!path` is
                 untouched — it remains a value-marshalling tag, not a load-
                 time resource read.
         """
@@ -256,7 +256,7 @@ class Loader(yaml.SafeLoader):
         self.include_chain = include_chain if include_chain is not None else set()
         self.merge_strategy = merge_strategy
         self.track_sources = track_sources
-        self.project_root = project_root.resolve() if project_root else None
+        self.origin = origin.resolve() if origin else None
         self.max_include_depth = max_include_depth
         self.env_overrides = env_overrides
         self.allowed_paths = _normalize_allowed_paths(allowed_paths)
@@ -469,7 +469,7 @@ class Loader(yaml.SafeLoader):
         Resolve include path to absolute path.
 
         Tilde is expanded unconditionally (parity with !path). This is a UX
-        affordance — the expanded path still has to satisfy the project_root
+        affordance — the expanded path still has to satisfy the origin
         guard or match an entry in `allowed_paths`.
 
         Args:
@@ -481,7 +481,7 @@ class Loader(yaml.SafeLoader):
             is True when the original include string was absolute (either a
             leading `/` or a `~` that tilde-expanded to one). The flag drives
             the two-shape authorization contract in
-            `_check_project_root_security`.
+            `_check_origin_security`.
 
         Raises:
             yaml.YAMLError: If relative path cannot be resolved
@@ -500,16 +500,16 @@ class Loader(yaml.SafeLoader):
 
         return include_path.resolve(), True
 
-    def _check_project_root_security(
+    def _check_origin_security(
         self, include_path: Path, ctx: IncludeContext, was_absolute: bool
     ) -> None:
         """Enforce the include-authorization contract.
 
-        Relative includes are bounded to project_root when it is set and
+        Relative includes are bounded to origin when it is set and
         unbounded otherwise (the YAML author owns the file's layout).
         Absolute or tilde-expanded includes follow stricter rules: when
         `allowed_paths` is set they must appear in it or resolve inside
-        project_root; when only project_root is set they must resolve
+        origin; when only origin is set they must resolve
         inside it; when neither is set no boundary is enforced.
         """
         if not was_absolute:
@@ -520,15 +520,15 @@ class Loader(yaml.SafeLoader):
     def _authorize_relative_include(
         self, include_path: Path, ctx: IncludeContext
     ) -> None:
-        if ctx.project_root is None:
+        if ctx.origin is None:
             return
         try:
-            include_path.relative_to(ctx.project_root)
+            include_path.relative_to(ctx.origin)
         except (ValueError, TypeError):
             location = ctx.format_location()
             raise yaml.YAMLError(
-                f"Security: Include path '{include_path}' is outside project "
-                f"root '{ctx.project_root}'. This could be a path traversal "
+                f"Security: Include path '{include_path}' is outside origin "
+                f"'{ctx.origin}'. This could be a path traversal "
                 f"attack. ({location})"
             )
 
@@ -537,20 +537,18 @@ class Loader(yaml.SafeLoader):
     ) -> None:
         if include_path in ctx.allowed_paths:
             return
-        inside_root = self._include_inside_project_root(include_path, ctx)
+        inside_root = self._include_inside_origin(include_path, ctx)
         if inside_root:
             return
-        if ctx.project_root is None and not ctx.allowed_paths:
+        if ctx.origin is None and not ctx.allowed_paths:
             return
         self._raise_absolute_not_authorized(include_path, ctx)
 
-    def _include_inside_project_root(
-        self, include_path: Path, ctx: IncludeContext
-    ) -> bool:
-        if ctx.project_root is None:
+    def _include_inside_origin(self, include_path: Path, ctx: IncludeContext) -> bool:
+        if ctx.origin is None:
             return False
         try:
-            include_path.relative_to(ctx.project_root)
+            include_path.relative_to(ctx.origin)
         except (ValueError, TypeError):
             return False
         return True
@@ -563,11 +561,11 @@ class Loader(yaml.SafeLoader):
             raise yaml.YAMLError(
                 f"Security: Absolute include path '{include_path}' is not "
                 f"authorized. Add it to allowed_paths, or place it inside "
-                f"project_root. ({location})"
+                f"origin. ({location})"
             )
         raise yaml.YAMLError(
-            f"Security: Include path '{include_path}' is outside project root "
-            f"'{ctx.project_root}'. This could be a path traversal attack. "
+            f"Security: Include path '{include_path}' is outside origin "
+            f"'{ctx.origin}'. This could be a path traversal attack. "
             f"({location})"
         )
 
@@ -595,7 +593,7 @@ class Loader(yaml.SafeLoader):
 
         # Authorization check must happen before existence check to avoid
         # leaking file existence info for paths outside the authorized surface
-        self._check_project_root_security(include_path, ctx, was_absolute)
+        self._check_origin_security(include_path, ctx, was_absolute)
 
         if optional and not _file_exists(include_path):
             return False
@@ -643,7 +641,7 @@ class Loader(yaml.SafeLoader):
                 include_chain=set(new_chain),
                 merge_strategy=self.merge_strategy,
                 track_sources=self.track_sources,
-                project_root=ctx.project_root,
+                origin=ctx.origin,
                 max_include_depth=ctx.max_include_depth,
                 env_overrides=self.env_overrides,
                 allowed_paths=list(ctx.allowed_paths),
@@ -701,7 +699,7 @@ class Loader(yaml.SafeLoader):
             line=line,
             column=column,
             include_chain=frozenset(self.include_chain),
-            project_root=self.project_root,
+            origin=self.origin,
             max_include_depth=self.max_include_depth,
             allowed_paths=self.allowed_paths,
         )

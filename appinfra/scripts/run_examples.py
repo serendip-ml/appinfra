@@ -72,26 +72,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
 
+# Allow running from a source checkout without installing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from appinfra.ui import status
+
 _MARKER_RE = re.compile(r"^#\s*ci-(run|skip|stop|timeout|requires):\s*(.*?)\s*$")
 _DEFAULT_TIMEOUT_S = 7.0
 _OUTPUT_TAIL_LINES = 15
 _FAILING = ("FAIL", "TIMEOUT")
-# Same palette as check.sh.
-_GREEN, _RED, _YELLOW, _GRAY, _RESET = (
-    "\033[32m",
-    "\033[31m",
-    "\033[33m",
-    "\033[90m",
-    "\033[0m",
-)
-# UNMET: the file needs a service that is not reachable. Reported with a
-# warning mark, counted as skipped, never as a failure.
+# Result-state marks. Draws from the shared status palette so scripts and
+# Python tooling stay visually consistent. TIMEOUT reuses the FAIL mark —
+# the specific reason surfaces in the result's ``detail`` field. SKIP
+# reuses the pending mark; both mean "did not run".
 _MARKS = {
-    "PASS": f"{_GREEN}[✓]{_RESET}",
-    "FAIL": f"{_RED}[✗]{_RESET}",
-    "TIMEOUT": f"{_RED}[⏱]{_RESET}",
-    "SKIP": f"{_GRAY}[–]{_RESET}",
-    "UNMET": f"{_YELLOW}[⚠]{_RESET}",
+    "PASS": status.mark_ok(),
+    "FAIL": status.mark_fail(),
+    "TIMEOUT": status.mark_fail(),
+    "SKIP": status.mark_pending(),
+    "UNMET": status.mark_warn(),
 }
 
 # Requirement keys are "pg" or "port:N". The pg skip reason matches the
@@ -413,11 +412,11 @@ def print_result(result: Result, root: Path, verbose: bool) -> None:
     """Print one line for a case, plus details for failures."""
     label = f"{result.spec.path.relative_to(root)} {result.args}".rstrip()
     if result.status in ("PASS", "SKIP", "UNMET") and result.detail:
-        label = f"{label}  {_GRAY}({result.detail}){_RESET}"
+        label = f"{label}  {status.gray('(' + result.detail + ')')}"
     print(f"{_MARKS[result.status]} {label}", flush=True)
     if result.status in _FAILING or (verbose and result.detail):
         for line in result.detail.splitlines():
-            print(f"    {_GRAY}{line}{_RESET}", flush=True)
+            print(f"    {status.gray(line)}", flush=True)
 
 
 def print_summary(
@@ -433,16 +432,18 @@ def print_summary(
         status: sum(1 for r in results if r.status == status)
         for status in ("PASS", "FAIL", "TIMEOUT", "SKIP", "UNMET")
     }
-    color = _GREEN if counts["FAIL"] + counts["TIMEOUT"] == 0 else _RED
+    paint = status.green if counts["FAIL"] + counts["TIMEOUT"] == 0 else status.red
     skipped = counts["SKIP"] + counts["UNMET"]
     unmet_clause = ""
     if counts["UNMET"]:
         reasons = ", ".join(requirement_reason(key) for key in sorted(unmet))
         unmet_clause = f", {counts['UNMET']} unmet ({reasons})"
+    body = (
+        f"{counts['PASS']} passed, {counts['FAIL']} failed, "
+        f"{counts['TIMEOUT']} timed out, {skipped} skipped{unmet_clause}"
+    )
     print(
-        f"\n{color}{counts['PASS']} passed, {counts['FAIL']} failed, "
-        f"{counts['TIMEOUT']} timed out, {skipped} skipped{unmet_clause}{_RESET} "
-        f"{_GRAY}in {elapsed_s:.1f}s{_RESET}",
+        f"\n{paint(body)} {status.gray(f'in {elapsed_s:.1f}s')}",
         flush=True,
     )
 

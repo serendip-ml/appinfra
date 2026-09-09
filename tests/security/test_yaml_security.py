@@ -56,14 +56,14 @@ def test_yaml_include_path_traversal(
     traversal_path: str, secure_temp_project: Path, write_yaml_files
 ):
     """
-    Verify project_root enforcement prevents path traversal in includes.
+    Verify origin enforcement prevents path traversal in includes.
 
     Attack Vector: Path traversal via !include directives
-    Module: infra/yaml.py:293-303 (project_root validation)
+    Module: infra/yaml.py:293-303 (origin validation)
     OWASP: A01:2021 - Broken Access Control
 
     Security Concern: Attackers could use path traversal in !include directives
-    to read arbitrary files outside the project directory. The project_root
+    to read arbitrary files outside the project directory. The origin
     parameter should enforce boundary restrictions.
     """
     # Create a config with malicious include
@@ -71,12 +71,12 @@ def test_yaml_include_path_traversal(
     config_path = secure_temp_project / "configs" / "malicious.yaml"
     config_path.write_text(malicious_config)
 
-    # Attempt to load with project_root protection
+    # Attempt to load with origin protection
     with open(config_path) as f:
         loader = Loader(
             f,
             current_file=config_path,
-            project_root=secure_temp_project,
+            origin=secure_temp_project,
         )
 
         # PermissionError is also valid - it means the path traversal was blocked
@@ -103,14 +103,14 @@ def test_yaml_include_path_traversal(
 @pytest.mark.expected_skip  # Skips on Windows (no /etc/passwd)
 def test_yaml_include_symlink_attack(secure_temp_project: Path):
     """
-    Verify symlink resolution respects project_root boundary.
+    Verify symlink resolution respects origin boundary.
 
     Attack Vector: Symlink-based path traversal
     Module: infra/yaml.py:298 (relative_to check on resolved path)
     OWASP: A01:2021 - Broken Access Control
 
     Security Concern: Attackers could create symlinks pointing outside
-    project_root, then include them. The .resolve() call should detect
+    origin, then include them. The .resolve() call should detect
     this and raise an error.
     """
     # Create a symlink pointing outside project (to /etc/passwd)
@@ -131,15 +131,15 @@ def test_yaml_include_symlink_attack(secure_temp_project: Path):
     config_path = secure_temp_project / "configs" / "config.yaml"
     config_path.write_text(config_content)
 
-    # Attempt to load - should fail because symlink points outside project_root
+    # Attempt to load - should fail because symlink points outside origin
     with open(config_path) as f:
         loader = Loader(
             f,
             current_file=config_path,
-            project_root=secure_temp_project,
+            origin=secure_temp_project,
         )
 
-        with pytest.raises(yaml.YAMLError, match="outside project root"):
+        with pytest.raises(yaml.YAMLError, match="outside origin"):
             loader.get_single_data()
 
 
@@ -170,7 +170,7 @@ def test_yaml_include_depth_bomb(secure_temp_project: Path):
         loader = Loader(
             f,
             current_file=entry_file,
-            project_root=secure_temp_project,
+            origin=secure_temp_project,
         )
 
         with pytest.raises(yaml.YAMLError, match="Include depth exceeds maximum"):
@@ -235,7 +235,7 @@ def test_yaml_circular_include_detection(secure_temp_project: Path):
         loader = Loader(
             f,
             current_file=entry_file,
-            project_root=secure_temp_project,
+            origin=secure_temp_project,
         )
 
         with pytest.raises(yaml.YAMLError, match="Circular include detected"):
@@ -274,7 +274,7 @@ def test_yaml_null_byte_in_include_path(payload: str, secure_temp_project: Path)
             loader = Loader(
                 f,
                 current_file=config_path,
-                project_root=secure_temp_project,
+                origin=secure_temp_project,
             )
             loader.get_single_data()
 
@@ -285,12 +285,12 @@ def test_allowed_paths_does_not_broaden_beyond_listed_entries(
     secure_temp_project: Path, tmp_path: Path
 ):
     """
-    Verify allowed_paths bypasses project_root ONLY for the explicit entries
+    Verify allowed_paths bypasses origin ONLY for the explicit entries
     it names — allowlisting one file does not silently permit siblings.
 
     Attack Vector: Assumption that an opt-in for one overlay unlocks a
     directory or a wider surface.
-    Module: appinfra/yaml/loader.py (_check_project_root_security)
+    Module: appinfra/yaml/loader.py (_check_origin_security)
     OWASP: A01:2021 - Broken Access Control
 
     Security Concern: The caller opts into a specific overlay path (e.g.
@@ -310,7 +310,7 @@ def test_allowed_paths_does_not_broaden_beyond_listed_entries(
         loader = Loader(
             f,
             current_file=config_path,
-            project_root=secure_temp_project,
+            origin=secure_temp_project,
             allowed_paths=[str(outside / "allowed.yaml")],
         )
         with pytest.raises(yaml.YAMLError, match="is not authorized"):
@@ -323,13 +323,13 @@ def test_config_outside_project_marker_bounds_to_config_parent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """
-    Config auto-derives project_root even when the config file lives outside
+    Config auto-derives origin even when the config file lives outside
     any project tree with an etc/*.yaml marker. The derivation must resolve
     to a bounded directory, not the filesystem root.
 
     Attack Vector: Absolute-path include reaching beyond the intended
-    boundary when a Config caller relies on the auto-derived project_root.
-    Module: appinfra/config/config.py (_get_project_root_from_config)
+    boundary when a Config caller relies on the auto-derived origin.
+    Module: appinfra/config/config.py (_get_origin_from_config)
     OWASP: A01:2021 - Broken Access Control
     """
     fake_home = tmp_path / "home"
@@ -350,15 +350,15 @@ def test_config_outside_project_marker_bounds_to_config_parent(
 
 @pytest.mark.security
 @pytest.mark.integration
-def test_load_file_no_project_root_denies_unlisted_absolute(tmp_path: Path):
+def test_load_file_no_origin_denies_unlisted_absolute(tmp_path: Path):
     """
-    load_file(project_root=None, allowed_paths=[...]) treats the allowlist
+    load_file(origin=None, allowed_paths=[...]) treats the allowlist
     as authoritative for absolute includes: only exact-match entries are
     permitted; every other absolute path is denied.
 
     Attack Vector: Unlisted absolute include when allowed_paths is set as
     the sole authorization surface.
-    Module: appinfra/yaml/loader.py (_check_project_root_security)
+    Module: appinfra/yaml/loader.py (_check_origin_security)
     OWASP: A01:2021 - Broken Access Control
     """
     from appinfra.yaml import load_file
@@ -371,18 +371,18 @@ def test_load_file_no_project_root_denies_unlisted_absolute(tmp_path: Path):
     base = tmp_path / "base.yaml"
     base.write_text(f'x: !include "{denied}"\n')
     with pytest.raises(yaml.YAMLError, match="is not authorized"):
-        load_file(str(base), project_root=None, allowed_paths=[str(allowed)])
+        load_file(str(base), origin=None, allowed_paths=[str(allowed)])
 
     base.write_text(f'x: !include "{allowed}"\n')
-    result = load_file(str(base), project_root=None, allowed_paths=[str(allowed)])
+    result = load_file(str(base), origin=None, allowed_paths=[str(allowed)])
     assert result == {"x": {"ok": True}}
 
 
 @pytest.mark.security
 @pytest.mark.integration
-def test_relative_include_permitted_without_project_root(tmp_path: Path):
+def test_relative_include_permitted_without_origin(tmp_path: Path):
     """
-    Relative includes are permitted when project_root is not set — the
+    Relative includes are permitted when origin is not set — the
     YAML author owns their own file layout. Verify a plain relative
     sibling include still resolves.
     """
@@ -392,16 +392,16 @@ def test_relative_include_permitted_without_project_root(tmp_path: Path):
     base = tmp_path / "base.yaml"
     base.write_text('x: !include "./sibling.yaml"\n')
 
-    result = load_file(str(base), project_root=None)
+    result = load_file(str(base), origin=None)
     assert result == {"x": {"ok": True}}
 
 
 @pytest.mark.security
 @pytest.mark.integration
-def test_relative_include_bounded_by_project_root_when_set(tmp_path: Path):
+def test_relative_include_bounded_by_origin_when_set(tmp_path: Path):
     """
-    Regression guard: when project_root is set, a relative include using
-    `..` escape resolves outside project_root and is denied.
+    Regression guard: when origin is set, a relative include using
+    `..` escape resolves outside origin and is denied.
     """
     from appinfra.yaml import load_file
 
@@ -414,20 +414,20 @@ def test_relative_include_bounded_by_project_root_when_set(tmp_path: Path):
     base = project / "base.yaml"
     base.write_text('x: !include "../outside/leaked.yaml"\n')
 
-    with pytest.raises(yaml.YAMLError, match="outside project root"):
-        load_file(str(base), project_root=project)
+    with pytest.raises(yaml.YAMLError, match="outside origin"):
+        load_file(str(base), origin=project)
 
 
 @pytest.mark.security
 @pytest.mark.integration
-def test_absolute_inside_project_root_with_allowed_paths_set(tmp_path: Path):
+def test_absolute_inside_origin_with_allowed_paths_set(tmp_path: Path):
     """
-    Regression guard: an absolute include that resolves inside project_root
+    Regression guard: an absolute include that resolves inside origin
     is permitted even when allowed_paths is set for other files. The
-    authorization contract is "in allowed_paths OR inside project_root".
+    authorization contract is "in allowed_paths OR inside origin".
 
     Attack Vector: Inadvertent denial when allowed_paths inadvertently
-    disables the project_root fallback for absolute includes.
+    disables the origin fallback for absolute includes.
     Module: appinfra/yaml/loader.py (_authorize_absolute_include)
     OWASP: A01:2021 - Broken Access Control (false positive variant)
     """
@@ -439,5 +439,5 @@ def test_absolute_inside_project_root_with_allowed_paths_set(tmp_path: Path):
     main = proj / "main.yaml"
     main.write_text(f'x: !include "{proj}/child.yaml"\n')
 
-    result = load_file(str(main), project_root=proj, allowed_paths=["~/.other.yaml"])
+    result = load_file(str(main), origin=proj, allowed_paths=["~/.other.yaml"])
     assert result == {"x": {"ok": True}}

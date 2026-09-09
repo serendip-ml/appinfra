@@ -46,6 +46,12 @@ class TestWithSpec:
         )
         assert builder._config_spec.base_config == (tmp_path / "happy.yaml").resolve()
 
+    def test_explicit_origin_is_include_boundary(self, tmp_path):
+        builder = AppBuilder("test")
+        builder.config.with_spec("ns", "myapp", origin=tmp_path)
+        assert builder._config_spec.origin == tmp_path.resolve()
+        assert builder._config_spec.include_root == tmp_path.resolve()
+
     def test_does_not_auto_register_etc_dir_flag(self, base):
         """Flag exposure is orthogonal; the spec alone must not force the flag on."""
         builder = (
