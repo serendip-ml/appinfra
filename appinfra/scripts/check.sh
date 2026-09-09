@@ -79,6 +79,15 @@ CHECK_EXAMPLES="${INFRA_DEV_CHECK_EXAMPLES:-false}"
 EXAMPLES_PG="${_INFRA_DEV_EXAMPLES_PG:-}"
 COVERAGE_MARKERS="${INFRA_PYTEST_COVERAGE_MARKERS:-unit}"
 
+# Coverage threshold precedence: CLI arg > env var > default (80)
+# Set to 0 to disable coverage checking entirely
+DEFAULT_COVERAGE_TARGET="${INFRA_PYTEST_COVERAGE_THRESHOLD:-80}"
+COVERAGE_TARGET="${COVERAGE_TARGET:-$DEFAULT_COVERAGE_TARGET}"
+if ! echo "$COVERAGE_TARGET" | grep -qE '^[0-9]+\.?[0-9]*$'; then
+    echo "Error: Invalid coverage target: $COVERAGE_TARGET" >&2
+    exit 1
+fi
+
 # Coverage's marker expression can subsume standalone test suites. When
 # check.sh runs both a standalone suite and coverage over the same marker
 # set, both execute the same work with only a fraction of the effective
@@ -91,16 +100,23 @@ COVERAGE_MARKERS="${INFRA_PYTEST_COVERAGE_MARKERS:-unit}"
 #   "<a> or <b>…" → fold each named suite in the standalone set
 # Anything else (`and`, `not`, parens, unknown names) → no folding.
 # Performance is never folded — perf runs isolated for accurate timing.
+#
+# Only fold when coverage will actually run. When COVERAGE_TARGET is 0
+# (coverage disabled per-project), folding a suite would drop it without
+# anywhere to fold it INTO — the standalone line vanishes and no tests
+# from that marker execute at all.
 FOLDED_MARKERS=""
 _STANDALONE_MARKERS="unit integration e2e security"
-if [ -z "$COVERAGE_MARKERS" ]; then
-    FOLDED_MARKERS="$_STANDALONE_MARKERS"
-elif [[ "$COVERAGE_MARKERS" =~ ^[a-z0-9_]+([[:space:]]+or[[:space:]]+[a-z0-9_]+)*$ ]]; then
-    for _m in $(echo "$COVERAGE_MARKERS" | sed -E 's/[[:space:]]+or[[:space:]]+/ /g'); do
-        case " $_STANDALONE_MARKERS " in
-            *" $_m "*) FOLDED_MARKERS="${FOLDED_MARKERS:+$FOLDED_MARKERS }$_m" ;;
-        esac
-    done
+if awk "BEGIN {exit !($COVERAGE_TARGET > 0)}" 2>/dev/null; then
+    if [ -z "$COVERAGE_MARKERS" ]; then
+        FOLDED_MARKERS="$_STANDALONE_MARKERS"
+    elif [[ "$COVERAGE_MARKERS" =~ ^[a-z0-9_]+([[:space:]]+or[[:space:]]+[a-z0-9_]+)*$ ]]; then
+        for _m in $(echo "$COVERAGE_MARKERS" | sed -E 's/[[:space:]]+or[[:space:]]+/ /g'); do
+            case " $_STANDALONE_MARKERS " in
+                *" $_m "*) FOLDED_MARKERS="${FOLDED_MARKERS:+$FOLDED_MARKERS }$_m" ;;
+            esac
+        done
+    fi
 fi
 
 # Coverage subcheck's display label: fold-prefixed. E.g. FOLDED_MARKERS
@@ -129,11 +145,6 @@ MAIN_PID=$$
 DISPLAY_LOCK="/tmp/infra-check-display-lock-${MAIN_PID}"
 STATUS_DIR="/tmp/infra-check-status-${MAIN_PID}"
 mkdir -p "$STATUS_DIR"
-
-# Coverage threshold precedence: CLI arg > env var > default (80)
-# Set to 0 to disable coverage checking entirely
-DEFAULT_COVERAGE_TARGET="${INFRA_PYTEST_COVERAGE_THRESHOLD:-80}"
-COVERAGE_TARGET="${COVERAGE_TARGET:-$DEFAULT_COVERAGE_TARGET}"
 
 # Coverage tracer: on Python 3.12+, use sys.monitoring (PEP 669) via
 # COVERAGE_CORE=sysmon — roughly 2x faster than the default C-tracer on
